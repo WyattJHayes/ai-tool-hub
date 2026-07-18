@@ -15,26 +15,28 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
 ];
 
 export function SortBar() {
-  const sort = useToolStore((s) => s.sort);
-  const setSort = useToolStore((s) => s.setSort);
+  const sort = useToolStore((state) => state.sort);
+  const setSort = useToolStore((state) => state.setSort);
 
   return (
-    <div className="flex items-center gap-1">
-      {SORT_OPTIONS.map((opt) => {
-        const isActive = sort === opt.value;
-
+    <div className="scrollbar-hide flex max-w-full overflow-x-auto rounded-md border border-[var(--line)] bg-[var(--surface)]" aria-label="工具排序">
+      {SORT_OPTIONS.map((option, index) => {
+        const active = sort === option.value;
         return (
           <button
-            key={opt.value}
-            onClick={() => setSort(opt.value)}
+            type="button"
+            key={option.value}
+            onClick={() => setSort(option.value)}
+            aria-pressed={active}
             className={cn(
-              'rounded-lg px-3 py-1.5 text-sm font-medium transition-all duration-200',
-              isActive
-                ? 'bg-blue-500/15 text-blue-400'
-                : 'text-white/40 hover:bg-white/5 hover:text-white/70'
+              'min-h-11 shrink-0 px-3 text-sm font-medium transition-colors duration-150',
+              index > 0 && 'border-l border-[var(--line)]',
+              active
+                ? 'bg-[var(--accent-soft)] text-[var(--accent)]'
+                : 'text-[var(--muted)] hover:bg-[var(--surface-subtle)] hover:text-[var(--ink)]'
             )}
           >
-            {opt.label}
+            {option.label}
           </button>
         );
       })}

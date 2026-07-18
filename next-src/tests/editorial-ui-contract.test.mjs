@@ -34,3 +34,17 @@ test('puts task search and real curated tools ahead of scene browsing', () => {
   assert.match(home, /按任务浏览/);
   assert.doesNotMatch(home, /数据概览|totalCategories|favorites/);
 });
+
+test('uses flat comparison-oriented tool cards and tab-like filters', () => {
+  const card = read('src/components/tools/ToolCard.tsx');
+  const categories = read('src/components/tools/CategoryFilter.tsx');
+  const search = read('src/components/hero/SearchBar.tsx');
+
+  assert.doesNotMatch(card, /rotateX|scan_2s|backdrop-blur|bg-gradient|rounded-2xl/);
+  assert.match(card, /tool\.updateTime/);
+  assert.match(card, /tool\.platforms/);
+  assert.match(card, /aria-label=\{isFavorite \? `取消收藏/);
+  assert.doesNotMatch(categories, /rounded-full|bg-gradient|shadow-\[/);
+  assert.match(categories, /border-b-2/);
+  assert.doesNotMatch(search, /backdrop-blur|rounded-2xl|shadow-\[0_0/);
+});

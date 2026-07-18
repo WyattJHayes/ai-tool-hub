@@ -15,25 +15,24 @@ export default function ToolsBrowsePage() {
   }, [dataLoaded, loadData]);
 
   return (
-    <div className="mx-auto max-w-7xl px-6 pt-24 pb-16">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-white">全部工具</h1>
-        <p className="mt-1 text-sm text-white/40">浏览全部 AI 工具，按分类和排序筛选</p>
+    <main className="mx-auto min-h-screen max-w-7xl px-4 pb-24 pt-10 text-[var(--ink)] sm:px-6 sm:pb-16 sm:pt-12">
+      <div className="max-w-3xl">
+        <h1 className="text-2xl font-semibold sm:text-3xl">工具目录</h1>
+        <p className="mt-2 text-sm text-[var(--muted)]">按任务、价格和来源筛选，快速比较可用工具</p>
+        <div className="mt-6">
+          <SearchBar />
+        </div>
       </div>
 
-      <div className="mb-6">
-        <SearchBar />
-      </div>
-
-      <div className="mb-4">
+      <div className="mt-8">
         <CategoryFilter />
       </div>
-
-      <div className="mb-6">
+      <div className="mt-4">
         <SortBar />
       </div>
-
-      <ToolGrid />
-    </div>
+      <div className="mt-7">
+        <ToolGrid />
+      </div>
+    </main>
   );
 }
