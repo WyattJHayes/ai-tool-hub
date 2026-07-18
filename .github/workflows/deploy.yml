@@ -19,6 +19,9 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ''
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ''
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -26,14 +29,77 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Install locked dependencies
+        run: |
+          npm ci
+          npm --prefix server ci
+          npm --prefix next-src ci
 
-      - name: Run tests
-        run: NODE_OPTIONS='--experimental-vm-modules' npx jest --no-cache --passWithNoTests
+      - name: Test, lint, and build root application
+        run: |
+          npm test -- --runInBand
+          npm run lint
+          npm run build
+
+      - name: Verify Next.js application
+        run: |
+          npm --prefix next-src run lint
+          npm --prefix next-src run build
+          npm --prefix next-src audit --omit=dev
+
+      - name: Run Next.js API regressions
+        run: |
+          (cd next-src && HOSTNAME=127.0.0.1 PORT=4180 node .next/standalone/server.js) > /tmp/ai-tool-hub-next.log 2>&1 &
+          next_pid=$!
+          trap 'kill "$next_pid"' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:4180/ >/dev/null; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              cat /tmp/ai-tool-hub-next.log
+              exit 1
+            fi
+            sleep 1
+          done
+          TEST_BASE_URL=http://127.0.0.1:4180 node next-src/tests/api-regressions.test.mjs
+
+      - name: Verify server and resume optimizer
+        run: |
+          npm audit --omit=dev
+          npm --prefix server audit --omit=dev
+          node --test tools/resume-optimizer/tests/api-client-auth.test.cjs tools/resume-optimizer/tests/build-output.test.cjs
+
+      - name: Run repository guards
+        run: |
+          git diff --check
+          bash -n deploy/tencent-cloud/quick-deploy.sh deploy/tencent-cloud/deploy.sh
+          node scripts/dev-cache-guard.mjs
+          node scripts/review-guard.mjs
+          node scripts/review-regressions.mjs
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run browser layout guard
+        run: |
+          npm run preview -- --host 127.0.0.1 --port 4173 > /tmp/ai-tool-hub-preview.log 2>&1 &
+          preview_pid=$!
+          trap 'kill "$preview_pid"' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:4173/ >/dev/null; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              cat /tmp/ai-tool-hub-preview.log
+              exit 1
+            fi
+            sleep 1
+          done
+          UI_GUARD_URL=http://127.0.0.1:4173/ node scripts/ui-layout-guard.mjs
 
   build-and-deploy:
     environment:
@@ -48,7 +114,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies

@@ -19,6 +19,8 @@ const nginxConfig = read(nginxConfigPath);
 const productionComposePath = 'deploy/tencent-cloud/docker-compose.prod.yml';
 const dockerfilePath = 'next-src/Dockerfile';
 const deploymentScript = read('deploy/tencent-cloud/quick-deploy.sh');
+const workflow = read('.github/workflows/deploy.yml');
+const workflowTestJob = workflow.split('\n  build-and-deploy:')[0];
 
 requireMatch(
   migration,
@@ -136,6 +138,35 @@ requireMatch(
   deploymentScript,
   /docker container inspect ai-resume-optimizer\b/,
   'quick-deploy.sh must distinguish the legacy container from the same-named image'
+);
+
+for (const [pattern, message] of [
+  [/node-version:\s*['"]22['"]/, 'CI must use Node.js 22'],
+  [/npm --prefix server ci/, 'CI must install locked server dependencies'],
+  [/npm --prefix next-src ci/, 'CI must install locked Next.js dependencies'],
+  [/npm run lint/, 'CI must lint the root application'],
+  [/npm run build/, 'CI must build the root application before deployment'],
+  [/npm --prefix next-src run lint/, 'CI must lint the Next.js application'],
+  [/npm --prefix next-src run build/, 'CI must build the Next.js application'],
+  [/npm --prefix next-src audit --omit=dev/, 'CI must audit Next.js production dependencies'],
+  [/npm --prefix server audit --omit=dev/, 'CI must audit server production dependencies'],
+  [/node next-src\/tests\/api-regressions\.test\.mjs/, 'CI must run Next.js API regressions'],
+  [/node \.next\/standalone\/server\.js/, 'CI must start the standalone Next.js server before API regressions'],
+  [/TEST_BASE_URL=http:\/\/127\.0\.0\.1:/, 'CI must provide the Next.js API regression base URL'],
+  [/node --test tools\/resume-optimizer\/tests\/api-client-auth\.test\.cjs/, 'CI must run resume optimizer regressions'],
+  [/node scripts\/review-regressions\.mjs/, 'CI must run deployment regressions'],
+  [/git diff --check/, 'CI must reject whitespace errors'],
+]) {
+  requireMatch(workflowTestJob, pattern, message);
+}
+
+requireMatch(deploymentScript, /rollback_keep=3/, 'deployment must retain exactly three rollback tags');
+requireMatch(deploymentScript, /backup_keep=10/, 'deployment must retain exactly ten backup directories');
+requireMatch(deploymentScript, /prune_deployment_history\s*\(\)/, 'deployment must prune old rollback state');
+requireMatch(
+  deploymentScript,
+  /unlink \/etc\/systemd\/system\/ai-resume-optimizer\.service/,
+  'deployment must remove the retired systemd unit after verification'
 );
 
 if (failures.length > 0) {

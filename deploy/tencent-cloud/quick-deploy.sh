@@ -59,6 +59,8 @@ nginx_target="$dgc_root/nginx/conf.d/legacy-domain-redirect.conf"
 timestamp="$(date +%Y%m%d%H%M%S)"
 backup_root="$remote_root/backups/$timestamp"
 rollback_image=""
+rollback_keep=3
+backup_keep=10
 
 if [ ! -s "$remote_root/.env" ]; then
     echo "Missing required environment file: $remote_root/.env" >&2
@@ -111,6 +113,30 @@ rollback() {
     fi
     docker exec dgc-nginx nginx -t
     docker exec dgc-nginx nginx -s reload
+}
+
+prune_deployment_history() {
+    local index
+    local rollback_tags=()
+    local backup_paths=()
+
+    mapfile -t rollback_tags < <(
+        docker images --format '{{.Repository}}:{{.Tag}}' \
+            | grep '^ai-resume-optimizer:rollback-' \
+            | sort -r
+    )
+    for ((index = rollback_keep; index < ${#rollback_tags[@]}; index++)); do
+        docker image rm "${rollback_tags[$index]}" >/dev/null 2>&1 || true
+    done
+
+    mapfile -t backup_paths < <(
+        find "$remote_root/backups" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' \
+            | sort -nr \
+            | cut -d' ' -f2-
+    )
+    for ((index = backup_keep; index < ${#backup_paths[@]}; index++)); do
+        find "${backup_paths[$index]}" -depth -delete
+    done
 }
 
 if ! docker compose --env-file "$remote_root/.env" -f "$compose_file" up -d --force-recreate; then
@@ -174,10 +200,16 @@ fi
 if systemctl is-active --quiet ai-resume-optimizer.service 2>/dev/null; then
     systemctl stop ai-resume-optimizer.service
 fi
+if [ -f /etc/systemd/system/ai-resume-optimizer.service ]; then
+    unlink /etc/systemd/system/ai-resume-optimizer.service
+    systemctl daemon-reload
+    systemctl reset-failed ai-resume-optimizer.service 2>/dev/null || true
+fi
 if docker container inspect ai-resume-optimizer >/dev/null 2>&1; then
     docker stop ai-resume-optimizer >/dev/null
     docker rm ai-resume-optimizer >/dev/null
 fi
+prune_deployment_history
 
 echo "Deployment completed. Backup: $backup_root"
 REMOTE_SCRIPT

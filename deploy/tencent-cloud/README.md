@@ -8,6 +8,7 @@ deployment. The existing static memorial page remains available at `/love/`.
 ## Prerequisites
 
 - Docker Engine and Docker Compose v2 on `101.43.35.235`.
+- Docker Buildx plugin for BuildKit-backed Compose builds.
 - Existing external Docker network `dramagenai-cloud_dgc-net`.
 - Existing `dgc-nginx` container with the repository's certificate volume.
 - TLS files under `/etc/letsencrypt/live/weihub.cloud` inside `dgc-nginx`.
@@ -39,7 +40,9 @@ application transactionally, validates Nginx, and verifies both domains. It
 does not publish port 3100 on the host. Nginx reaches the application through
 the `weihub-app` alias on the external Docker network. After the new service is
 healthy, the script disables the obsolete `ai-resume-optimizer.service` unit
-that previously recreated a host-published container.
+that previously recreated a host-published container. Successful deployments
+remove that retired unit and retain only the newest three rollback image tags
+and ten timestamped backup directories.
 
 Useful commands:
 
