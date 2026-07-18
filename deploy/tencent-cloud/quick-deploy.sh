@@ -75,7 +75,7 @@ chmod 0600 "$remote_root/.env"
 cp "$remote_root/.env" "$backup_root/app.env"
 chmod 0600 "$backup_root/app.env"
 
-if docker inspect ai-resume-optimizer >"$backup_root/container-inspect.json" 2>/dev/null; then
+if docker container inspect ai-resume-optimizer >"$backup_root/container-inspect.json" 2>/dev/null; then
     chmod 0600 "$backup_root/container-inspect.json"
 fi
 if [ -f /etc/systemd/system/ai-resume-optimizer.service ]; then
@@ -174,7 +174,7 @@ fi
 if systemctl is-active --quiet ai-resume-optimizer.service 2>/dev/null; then
     systemctl stop ai-resume-optimizer.service
 fi
-if docker inspect ai-resume-optimizer >/dev/null 2>&1; then
+if docker container inspect ai-resume-optimizer >/dev/null 2>&1; then
     docker stop ai-resume-optimizer >/dev/null
     docker rm ai-resume-optimizer >/dev/null
 fi

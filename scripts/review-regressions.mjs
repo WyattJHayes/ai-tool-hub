@@ -18,6 +18,7 @@ const nginxConfigPath = 'deploy/tencent-cloud/nginx.conf';
 const nginxConfig = read(nginxConfigPath);
 const productionComposePath = 'deploy/tencent-cloud/docker-compose.prod.yml';
 const dockerfilePath = 'next-src/Dockerfile';
+const deploymentScript = read('deploy/tencent-cloud/quick-deploy.sh');
 
 requireMatch(
   migration,
@@ -127,6 +128,15 @@ if (!fs.existsSync(path.join(root, productionComposePath))) {
     failures.push(`${productionComposePath} must not publish application ports on the host`);
   }
 }
+
+if (/docker inspect ai-resume-optimizer\b/.test(deploymentScript)) {
+  failures.push('quick-deploy.sh must use docker container inspect for the legacy container');
+}
+requireMatch(
+  deploymentScript,
+  /docker container inspect ai-resume-optimizer\b/,
+  'quick-deploy.sh must distinguish the legacy container from the same-named image'
+);
 
 if (failures.length > 0) {
   console.error(failures.join('\n'));
