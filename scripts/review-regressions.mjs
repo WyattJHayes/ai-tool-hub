@@ -141,6 +141,8 @@ requireMatch(
 );
 
 for (const [pattern, message] of [
+  [/actions\/checkout@v5/, 'CI must use the Node 24-based checkout action'],
+  [/actions\/setup-node@v5/, 'CI must use the Node 24-based setup-node action'],
   [/node-version:\s*['"]22['"]/, 'CI must use Node.js 22'],
   [/npm --prefix server ci/, 'CI must install locked server dependencies'],
   [/npm --prefix next-src ci/, 'CI must install locked Next.js dependencies'],
