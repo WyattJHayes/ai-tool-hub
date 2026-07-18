@@ -15,22 +15,23 @@ export default function CompareBar() {
     <div
       className={cn(
         'fixed bottom-0 left-0 right-0 z-50',
-        'border-t border-white/10 bg-gray-900/95 backdrop-blur-md',
+        'border-t border-[var(--line)] bg-[var(--surface)]',
         'px-6 py-4'
       )}
     >
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
         <div className="flex flex-1 items-center gap-2 overflow-x-auto">
-          <span className="shrink-0 text-sm text-white/60">已选择 ({selectedTools.length}/4):</span>
+          <span className="shrink-0 text-sm text-[var(--muted)]">已选择 ({selectedTools.length}/4):</span>
           {selectedTools.map((tool) => (
             <span
               key={tool.id}
-              className="flex shrink-0 items-center gap-1.5 rounded-full bg-violet-500/20 px-3 py-1 text-sm text-violet-300 border border-violet-500/30"
+              className="flex shrink-0 items-center gap-1.5 rounded-md border border-[var(--line)] bg-[var(--accent-soft)] px-3 py-1 text-sm text-[var(--accent)]"
             >
               {tool.name}
               <button
                 onClick={() => removeTool(tool.id)}
-                className="rounded-full p-0.5 transition-colors hover:bg-violet-500/30"
+                className="rounded-sm p-0.5 transition-colors hover:bg-[var(--surface-hover)]"
+                aria-label={`移除 ${tool.name}`}
               >
                 <X className="h-3 w-3" />
               </button>
@@ -41,15 +42,15 @@ export default function CompareBar() {
         <div className="flex shrink-0 items-center gap-3">
           <button
             onClick={clearAll}
-            className="rounded-lg px-4 py-2 text-sm text-white/60 transition-colors hover:bg-white/5 hover:text-white/80"
+            className="min-h-11 rounded-md px-4 py-2 text-sm text-[var(--muted)] transition-colors hover:bg-[var(--surface-subtle)] hover:text-[var(--ink)]"
           >
             清除
           </button>
           <button
             onClick={() => router.push('/compare')}
             className={cn(
-              'rounded-lg bg-violet-600 px-5 py-2 text-sm font-medium text-white',
-              'transition-colors hover:bg-violet-500'
+              'min-h-11 rounded-md bg-[var(--accent)] px-5 py-2 text-sm font-medium text-white',
+              'transition-colors hover:bg-[var(--accent-hover)]'
             )}
           >
             开始对比

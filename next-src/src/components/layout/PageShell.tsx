@@ -14,7 +14,7 @@ interface PageShellProps {
 
 export function PageShell({ children, showNavbar = true, showFooter = true }: PageShellProps) {
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <div className="min-h-screen bg-[var(--page)] text-[var(--ink)]">
       {showNavbar && <Navbar />}
       <ErrorBoundary>
         {children}

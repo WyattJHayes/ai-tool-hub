@@ -35,7 +35,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: '#0f0c29',
+  themeColor: '#f6f7f4',
 };
 
 export default function RootLayout({
@@ -44,8 +44,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN" className="dark">
-      <body className="antialiased min-h-screen bg-gray-950 text-white">
+    <html lang="zh-CN" suppressHydrationWarning>
+      <body className="min-h-screen">
         <Navbar />
         <AuthProvider>
           <ErrorBoundary>

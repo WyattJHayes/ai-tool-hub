@@ -24,7 +24,7 @@ export const useUserStore = create<UserStore>()(
     (set, get) => ({
       favorites: [],
       ratings: {},
-      theme: 'dark',
+      theme: 'light',
       isLoggedIn: false,
       pendingMigration: false,
 

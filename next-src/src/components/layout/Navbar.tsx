@@ -1,93 +1,97 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Sparkles, Moon, Sun, Share2, User, Trophy } from 'lucide-react';
+import { useEffect } from 'react';
+import { LayoutGrid, Moon, Share2, Sun, User } from 'lucide-react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { useUserStore } from '@/stores/useUserStore';
 
+const navItems = [
+  { href: '/tools', label: '工具' },
+  { href: '/scenes', label: '场景' },
+  { href: '/leaderboard', label: '排行' },
+];
+
 export default function Navbar() {
-    const { theme, toggleTheme } = useUserStore();
-    const [scrolled, setScrolled] = useState(false);
+  const pathname = usePathname();
+  const { theme, toggleTheme } = useUserStore();
 
-    useEffect(() => {
-        const handleScroll = () => {
-            setScrolled(window.scrollY > 10);
-        };
-        window.addEventListener('scroll', handleScroll, { passive: true });
-        return () => window.removeEventListener('scroll', handleScroll);
-    }, []);
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+  }, [theme]);
 
-    const handleShare = async () => {
-        if (navigator.share) {
-            await navigator.share({
-                title: 'AI Tool Hub',
-                text: '发现最佳 AI 工具',
-                url: window.location.href,
-            });
-        } else {
-            await navigator.clipboard.writeText(window.location.href);
-        }
-    };
+  const handleShare = async () => {
+    if (navigator.share) {
+      await navigator.share({
+        title: 'AI Tool Hub',
+        text: '按任务找到合适的 AI 工具',
+        url: window.location.href,
+      });
+      return;
+    }
 
-    return (
-        <nav
-            className={cn(
-                'sticky top-0 z-[1000] h-16 border-b transition-all duration-300',
-                scrolled
-                    ? 'bg-[rgba(15,12,41,0.85)] backdrop-blur-xl border-[rgba(0,212,255,0.15)] shadow-[0_1px_20px_rgba(0,212,255,0.05)]'
-                    : 'bg-transparent backdrop-blur-xl border-[rgba(255,255,255,0.05)]',
-            )}
-        >
-            <div className="flex items-center justify-between h-full px-4 sm:px-6 max-w-[1200px] mx-auto">
-                {/* Brand */}
-                <Link href="/" className="flex items-center gap-2.5 no-underline group">
-                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[var(--neon-blue)] to-[var(--neon-purple)] flex items-center justify-center text-white text-sm transition-transform duration-150 group-hover:scale-110 group-hover:-rotate-1">
-                        <Sparkles className="w-4 h-4" />
-                    </div>
-                    <span className="text-lg font-bold text-[var(--text-primary)] tracking-tight hidden sm:inline">
-                        AI Tool Hub
-                    </span>
-                </Link>
+    await navigator.clipboard.writeText(window.location.href);
+  };
 
-                {/* Actions */}
-                <div className="flex items-center gap-1.5">
-                    <button
-                        onClick={toggleTheme}
-                        className="w-9 h-9 rounded-full border border-[var(--glass-border)] bg-[var(--glass-bg)] flex items-center justify-center text-[var(--text-secondary)] cursor-pointer transition-all duration-150 hover:border-[rgba(0,212,255,0.3)] hover:text-[var(--text-primary)]"
-                        aria-label="切换主题"
-                    >
-                        {theme === 'dark' ? (
-                            <Sun className="w-4 h-4" />
-                        ) : (
-                            <Moon className="w-4 h-4" />
-                        )}
-                    </button>
+  return (
+    <nav className="sticky top-0 z-[1000] h-16 border-b border-[var(--line)] bg-[var(--surface)]" aria-label="主导航">
+      <div className="mx-auto flex h-full max-w-7xl items-center justify-between px-4 sm:px-6">
+        <Link href="/" className="flex min-h-11 items-center gap-2.5 no-underline">
+          <span className="flex h-9 w-9 items-center justify-center rounded-md bg-[var(--ink)] text-[var(--surface)]">
+            <LayoutGrid className="h-[18px] w-[18px]" aria-hidden="true" />
+          </span>
+          <span className="text-base font-semibold text-[var(--ink)] sm:text-lg">AI Tool Hub</span>
+        </Link>
 
-                    <Link
-                    href="/user"
-                    className="w-9 h-9 rounded-full border border-[var(--glass-border)] bg-[var(--glass-bg)] flex items-center justify-center text-[var(--text-secondary)] cursor-pointer transition-all duration-150 hover:border-[rgba(0,212,255,0.3)] hover:text-[var(--text-primary)]"
-                    aria-label="我的工具箱"
-                >
-                    <User className="w-4 h-4" />
-                </Link>
-                <Link
-                    href="/leaderboard"
-                    className="w-9 h-9 rounded-full border border-[var(--glass-border)] bg-[var(--glass-bg)] flex items-center justify-center text-[var(--text-secondary)] cursor-pointer transition-all duration-150 hover:border-[rgba(0,212,255,0.3)] hover:text-[var(--text-primary)]"
-                    aria-label="排行榜"
-                >
-                    <Trophy className="w-4 h-4" />
-                </Link>
+        <div className="hidden h-full items-center gap-7 md:flex">
+          {navItems.map((item) => {
+            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  'relative flex h-full items-center text-sm font-medium transition-colors duration-150',
+                  active ? 'text-[var(--accent)]' : 'text-[var(--muted)] hover:text-[var(--ink)]'
+                )}
+              >
+                {item.label}
+                {active ? <span className="absolute inset-x-0 bottom-0 h-0.5 bg-[var(--accent)]" /> : null}
+              </Link>
+            );
+          })}
+        </div>
 
-                <button
-                        onClick={handleShare}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--text-secondary)] text-xs cursor-pointer transition-all duration-150 hover:border-[rgba(0,212,255,0.3)] hover:text-[var(--text-primary)] hover:bg-[rgba(0,212,255,0.05)] whitespace-nowrap"
-                    >
-                        <Share2 className="w-3.5 h-3.5 text-[var(--neon-blue)]" />
-                        <span className="hidden sm:inline">分享</span>
-                    </button>
-                </div>
-            </div>
-        </nav>
-    );
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="flex h-11 w-11 items-center justify-center rounded-md text-[var(--muted)] transition-colors duration-150 hover:bg-[var(--surface-subtle)] hover:text-[var(--ink)]"
+            aria-label={theme === 'dark' ? '切换到亮色主题' : '切换到暗色主题'}
+            title={theme === 'dark' ? '切换到亮色主题' : '切换到暗色主题'}
+          >
+            {theme === 'dark' ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
+          </button>
+          <button
+            type="button"
+            onClick={handleShare}
+            className="hidden h-11 w-11 items-center justify-center rounded-md text-[var(--muted)] transition-colors duration-150 hover:bg-[var(--surface-subtle)] hover:text-[var(--ink)] sm:flex"
+            aria-label="分享当前页面"
+            title="分享"
+          >
+            <Share2 className="h-[18px] w-[18px]" />
+          </button>
+          <Link
+            href="/user"
+            className="flex h-11 w-11 items-center justify-center rounded-md text-[var(--muted)] transition-colors duration-150 hover:bg-[var(--surface-subtle)] hover:text-[var(--ink)]"
+            aria-label="我的工具箱"
+            title="我的工具箱"
+          >
+            <User className="h-[18px] w-[18px]" />
+          </Link>
+        </div>
+      </div>
+    </nav>
+  );
 }

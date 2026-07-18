@@ -1,6 +1,6 @@
 'use client';
 
-import { Home, LayoutGrid, Heart, Trophy } from 'lucide-react';
+import { Heart, Home, LayoutGrid, Trophy } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -16,24 +16,23 @@ export default function BottomNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-[100] border-t border-white/10 bg-gray-950/90 backdrop-blur-xl pb-[env(safe-area-inset-bottom,8px)] md:hidden">
-      <div className="flex justify-around max-w-[500px] mx-auto pt-2">
+    <nav className="fixed inset-x-0 bottom-0 z-[100] border-t border-[var(--line)] bg-[var(--surface)] pb-[env(safe-area-inset-bottom,0px)] md:hidden" aria-label="移动端导航">
+      <div className="mx-auto grid max-w-[500px] grid-cols-4 px-2 py-1">
         {navItems.map((item) => {
           const Icon = item.icon;
-          const isActive = pathname === item.href;
+          const active = pathname === item.href;
           return (
             <Link
               key={item.href}
               href={item.href}
               className={cn(
-                'flex flex-col items-center gap-0.5 py-1.5 px-4 rounded-lg transition-colors duration-150',
-                isActive
-                  ? 'text-blue-400'
-                  : 'text-white/30 hover:text-white/60'
+                'flex min-h-14 flex-col items-center justify-center gap-0.5 rounded-md text-[11px] transition-colors duration-150',
+                active ? 'text-[var(--accent)]' : 'text-[var(--muted-subtle)] hover:text-[var(--ink)]'
               )}
+              aria-current={active ? 'page' : undefined}
             >
-              <Icon className={cn('w-5 h-5 transition-transform duration-150', isActive && 'scale-110')} />
-              <span className="text-[10px]">{item.label}</span>
+              <Icon className="h-5 w-5" aria-hidden="true" />
+              <span>{item.label}</span>
             </Link>
           );
         })}
