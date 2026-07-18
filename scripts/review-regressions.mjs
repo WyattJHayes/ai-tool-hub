@@ -96,6 +96,11 @@ requireMatch(
   /location\s+\^~\s+\/love\/\s*{[\s\S]*?alias\s+\/var\/www\/html\/love\/\s*;/,
   `${nginxConfigPath} must preserve the /love static site`
 );
+requireMatch(
+  nginxConfig,
+  /location\s*=\s*\/reset-domain-cache\s*{[\s\S]*?add_header\s+Clear-Site-Data\s+['"]?['"]cache['"]['"]?\s+always\s*;[\s\S]*?add_header\s+Cache-Control\s+['"]no-store['"]\s+always\s*;[\s\S]*?return\s+302\s+https:\/\/weihub\.cloud\/\?domain-cache-reset=1\s*;/,
+  `${nginxConfigPath} must provide a cache-only recovery route for legacy permanent redirects`
+);
 
 for (const forbidden of [
   /listen\s+[^;]*\bdefault_server\b/i,
