@@ -13,16 +13,16 @@ import { generateTagsHtml, generateStatusBadgeHtml, RATING_LABELS } from './rend
 function openTool(id, url, event) {
     event.stopPropagation();
 
-    if (url.startsWith("#")) {
+    if (url.startsWith('#')) {
         recordToolClick(id);
-        if (url === "#research" && typeof window.showResearchPage === "function") {
+        if (url === '#research' && typeof window.showResearchPage === 'function') {
             window.showResearchPage();
         }
         return;
     }
 
     if (!isValidUrl(url)) {
-        showToast("无效的工具链接");
+        showToast('无效的工具链接');
         return;
     }
 

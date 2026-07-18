@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 // In-memory fallback
-const toolRatings = new Map<number, { scores: number[]; avg: number; count: number; reviews: { score: number; tags: string[]; comment: string }[] }>();
+type Review = { score: number; tags: string[]; comment: string };
+const toolRatings = new Map<number, Map<string, Review>>();
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
@@ -29,13 +30,15 @@ export async function GET(req: NextRequest) {
 
   const data = toolRatings.get(toolId);
   if (!data) return NextResponse.json({ tool_id: toolId, avg_rating: 0, rating_count: 0, reviews: [] });
-  return NextResponse.json({ tool_id: toolId, avg_rating: data.avg, rating_count: data.count, reviews: data.reviews });
+  const reviews = Array.from(data.values());
+  const avg = Number((reviews.reduce((sum, review) => sum + review.score, 0) / reviews.length).toFixed(2));
+  return NextResponse.json({ tool_id: toolId, avg_rating: avg, rating_count: reviews.length, reviews: reviews.slice(-10).reverse() });
 }
 
 export async function POST(req: NextRequest) {
   try {
     const { tool_id, score, tags, comment } = await req.json();
-    if (!tool_id || !score || score < 1 || score > 5) {
+    if (!Number.isInteger(tool_id) || tool_id <= 0 || !Number.isInteger(score) || score < 1 || score > 5) {
       return NextResponse.json({ error: 'tool_id and score (1-5) required' }, { status: 400 });
     }
 
@@ -48,31 +51,36 @@ export async function POST(req: NextRequest) {
           process.env.NEXT_PUBLIC_SUPABASE_URL!,
           process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
         );
-        const { data: { user } } = await supabase.auth.getUser(authHeader.slice(7));
+        const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.slice(7));
+        if (authError || !user) return NextResponse.json({ error: 'Invalid authentication' }, { status: 401 });
         if (user) {
-          await supabase.from('ratings').upsert({
+          const { error: writeError } = await supabase.from('ratings').upsert({
             user_id: user.id,
             tool_id: tool_id,
             score,
             tags: tags || [],
             comment: comment || '',
           }, { onConflict: 'user_id,tool_id' });
+          if (writeError) return NextResponse.json({ error: 'Failed to save rating' }, { status: 502 });
 
           // Fetch updated aggregate
           const { data: tool } = await supabase.from('tools').select('avg_rating, rating_count').eq('id', tool_id).maybeSingle();
           return NextResponse.json({ ok: true, avg_rating: tool?.avg_rating || score, rating_count: tool?.rating_count || 1 });
         }
-      } catch { /* fallback */ }
+      } catch {
+        return NextResponse.json({ error: 'Authentication service unavailable' }, { status: 503 });
+      }
     }
 
     // Fallback: in-memory
-    if (!toolRatings.has(tool_id)) toolRatings.set(tool_id, { scores: [], avg: 0, count: 0, reviews: [] });
+    const sessionId = req.headers.get('x-session-id');
+    if (!sessionId) return NextResponse.json({ error: 'x-session-id required' }, { status: 400 });
+    if (!toolRatings.has(tool_id)) toolRatings.set(tool_id, new Map());
     const data = toolRatings.get(tool_id)!;
-    data.scores.push(score);
-    data.count = data.scores.length;
-    data.avg = Number((data.scores.reduce((a, b) => a + b, 0) / data.count).toFixed(2));
-    if (tags || comment) data.reviews.push({ score, tags: tags || [], comment: comment || '' });
-    return NextResponse.json({ ok: true, avg_rating: data.avg, rating_count: data.count });
+    data.set(sessionId, { score, tags: Array.isArray(tags) ? tags.slice(0, 10) : [], comment: typeof comment === 'string' ? comment.slice(0, 50) : '' });
+    const reviews = Array.from(data.values());
+    const avg = Number((reviews.reduce((sum, review) => sum + review.score, 0) / reviews.length).toFixed(2));
+    return NextResponse.json({ ok: true, avg_rating: avg, rating_count: reviews.length });
   } catch {
     return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
   }

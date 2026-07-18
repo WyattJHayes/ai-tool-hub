@@ -30,7 +30,8 @@ const mockUi = {
     applyFiltersAndSort: jest.fn(),
     toggleAdvancedFilters: jest.fn(),
     clearAllFilters: jest.fn(),
-    toggleAdvancedFilter: jest.fn()
+    toggleAdvancedFilter: jest.fn(),
+    setupStickySearch: jest.fn()
 };
 
 const mockTool = {
@@ -58,7 +59,6 @@ const mockUtils = {
     loadAnnouncement: jest.fn(),
     closeAnnouncement: jest.fn(),
     checkForUpdate: jest.fn(),
-    closeUpdateModal: jest.fn(),
     registerServiceWorker: jest.fn(),
     closeThemeModal: jest.fn(),
     setTheme: jest.fn(),
@@ -270,15 +270,6 @@ describe('action handlers', () => {
             document.body.removeChild(el);
         });
 
-        test('should call closeUpdateModal', () => {
-            const el = document.createElement('button');
-            el.dataset.action = 'close-update-modal';
-            document.body.appendChild(el);
-            el.dispatchEvent(createClickEvent(el));
-            expect(mockUtils.closeUpdateModal).toHaveBeenCalled();
-            document.body.removeChild(el);
-        });
-
         test('should call closeThemeModal', () => {
             const el = document.createElement('button');
             el.dataset.action = 'close-theme-modal';
@@ -393,7 +384,7 @@ describe('action handlers', () => {
             expect(mockUi.setupSearch).toHaveBeenCalled();
             expect(mockUtils.setupKeyboardShortcuts).toHaveBeenCalled();
             expect(mockUtils.setupPullToRefresh).toHaveBeenCalled();
-            expect(mockUtils.checkForUpdate).toHaveBeenCalled();
+            expect(mockUtils.checkForUpdate).not.toHaveBeenCalled();
             expect(mockUtils.loadAnnouncement).toHaveBeenCalled();
             expect(mockUi.loadSavedFilters).toHaveBeenCalled();
             expect(mockUtils.registerServiceWorker).toHaveBeenCalled();
@@ -456,7 +447,6 @@ describe('action handlers', () => {
             expect(window.closeToolDetail).toBe(mockTool.closeToolDetail);
             expect(window.closeShareModal).toBe(mockShare.closeShareModal);
             expect(window.closeThemeModal).toBe(mockUtils.closeThemeModal);
-            expect(window.closeUpdateModal).toBe(mockUtils.closeUpdateModal);
         });
     });
 

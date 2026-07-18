@@ -2,7 +2,7 @@
  * AI Resume Optimizer - Professional Edition
  * 基于求职方舟/AI简历姬最佳实践重构
  * 后端API驱动 - DeepSeek大模型由服务端调用
- * 
+ *
  * 核心特性：
  * 1. 后端AI大模型驱动（DeepSeek-V3，服务端代理）
  * 2. 3档智能优化级别（轻度/中度/深度）
@@ -25,7 +25,7 @@ class AIOptimizer {
         this.currentMode = 'general';
         this.atsLevel = 'deep';
         this.selectedJob = '';
-        
+
         this.optimizationLevels = {
             light: {
                 name: '轻度优化',
@@ -52,7 +52,7 @@ class AIOptimizer {
                 features: ['STAR法则重构', '个人品牌重塑', '技能矩阵优化', '差异化亮点', '终极ATS优化']
             }
         };
-        
+
         this.currentLevel = 'medium';
         this._initTemplateDropdown();
         this._setupCloseHandlers();
@@ -184,7 +184,7 @@ class AIOptimizer {
                 </label>
                 <div class="space-y-3">
                     ${Object.entries(this.optimizationLevels).map(([level, config]) => `
-                        <div 
+                        <div
                             class="level-card ${this.currentLevel === level ? `active-${config.color}` : ''}"
                             onclick="aiOptimizer.selectLevel('${level}')"
                             style="cursor: pointer; padding: 16px; border-radius: 12px; border: 2px solid ${this.currentLevel === level ? this._getColor(config.color) : '#374151'}; background: ${this.currentLevel === level ? this._getBgColor(config.color) : '#1f2937'}; transition: all 0.3s;"
@@ -226,13 +226,13 @@ class AIOptimizer {
     // 选择优化级别
     selectLevel(level) {
         if (!this.optimizationLevels[level]) return;
-        
+
         this.currentLevel = level;
         this._renderOptimizationLevels();
-        
+
         const config = this.optimizationLevels[level];
         showNotification(`已选择：${config.name} - ${config.description}`, 'success');
-        
+
         localStorage.setItem('optimization_level', level);
     }
 
@@ -240,7 +240,7 @@ class AIOptimizer {
     _updateStatus() {
         const statusEl = document.getElementById('apiStatus');
         if (!statusEl) return;
-        
+
         statusEl.classList.remove('hidden');
         statusEl.className = 'text-xs text-green-400';
         statusEl.innerHTML = `<i class="fas fa-check-circle mr-1"></i>✨ 智能引擎就绪（免费使用）`;
@@ -295,7 +295,7 @@ const resumeData = window.store ? window.store.getState() : {};
             }
             this._displayResult(result);
             showNotification(`✨ ${this.optimizationLevels[this.currentLevel].name}完成！`, 'success');
-            
+
         } catch (error) {
             const msg = error.message || '未知错误';
             const userMsg = msg.includes('does not support') || msg.includes('Cannot read')
@@ -339,7 +339,7 @@ const resumeData = window.store ? window.store.getState() : {};
         await this._simulateProcessing(1000);
 
         const optimizedData = JSON.parse(JSON.stringify(resumeData));
-        
+
         // 1. 个人简介润色
         if (optimizedData.profile.summary) {
             optimizedData.profile.summary = this._polishText(optimizedData.profile.summary);
@@ -403,13 +403,13 @@ const resumeData = window.store ? window.store.getState() : {};
 
         // 1. JD分析
         const jdAnalysis = this._analyzeJD(jobDescription);
-        
+
         // 2. 简历分析
         const resumeAnalysis = this._analyzeResume(resumeData);
-        
+
         // 3. 关键词匹配
         const keywordMatch = this._matchKeywords(jdAnalysis.keywords, resumeAnalysis.skills);
-        
+
         // 4. 生成优化内容
         const optimizedData = this._generateMediumOptimized(resumeData, jdAnalysis, keywordMatch);
 
@@ -455,13 +455,13 @@ const resumeData = window.store ? window.store.getState() : {};
 
         // 1. 深度JD分析
         const jdAnalysis = this._analyzeJD(jobDescription);
-        
+
         // 2. 全面简历诊断
         const diagnosis = this._diagnoseResume(resumeData, jdAnalysis);
-        
+
         // 3. STAR法则重构
         const starExperiences = this._applySTAR(resumeData.experience || [], jdAnalysis);
-        
+
         // 4. 生成深度优化版本
         const optimizedData = this._generateDeepOptimized(resumeData, diagnosis, starExperiences, jdAnalysis);
 
@@ -485,7 +485,7 @@ const resumeData = window.store ? window.store.getState() : {};
     // 分析JD
     _analyzeJD(jd) {
         const text = jd.toLowerCase();
-        
+
         // 技能库
         const skillDB = {
             frontend: ['react', 'vue', 'angular', 'javascript', 'typescript',
@@ -558,11 +558,11 @@ const resumeData = window.store ? window.store.getState() : {};
     // 关键词匹配
     _matchKeywords(jdKeywords, resumeSkills) {
         const resumeLower = resumeSkills.map(s => s.toLowerCase());
-        
-        const matched = jdKeywords.filter(kw => 
+
+        const matched = jdKeywords.filter(kw =>
             resumeLower.some(rs => rs.includes(kw.toLowerCase()) || kw.toLowerCase().includes(rs))
         );
-        
+
         const missing = jdKeywords.filter(kw => !matched.includes(kw));
         const matchRate = jdKeywords.length > 0 ? Math.round((matched.length / jdKeywords.length) * 100) : 0;
 
@@ -578,7 +578,7 @@ const resumeData = window.store ? window.store.getState() : {};
     _diagnoseResume(data, jdAnalysis) {
         const analysis = this._analyzeResume(data);
         const hasJd = jdAnalysis && jdAnalysis.keywords && jdAnalysis.keywords.length > 0;
-        
+
         // 完整性评分 (40% without JD, 40% with JD)
         let completeness = 0;
         if (analysis.hasSummary) completeness += 25;
@@ -691,7 +691,7 @@ const resumeData = window.store ? window.store.getState() : {};
     _applySTAR(experiences, jdAnalysis) {
         return experiences.map(exp => {
             const desc = exp.description || '';
-            
+
             return {
                 situation: `在${exp.company || '某公司'}任职期间`,
                 task: `面对${jdAnalysis.jobType}领域的挑战性任务`,
@@ -704,13 +704,13 @@ const resumeData = window.store ? window.store.getState() : {};
     // 提取行动
     _extractActions(desc) {
         if (!desc) return '主导并完成了核心项目的开发和优化工作';
-        
+
         const actions = [];
         const patterns = [
             /(.{0,20})(?:主导|负责|完成|开发|设计)(.{0,30})/g,
             /(.{0,20})(?:优化|改进|提升|实现)(.{0,30})/g
         ];
-        
+
         patterns.forEach(pattern => {
             let match;
             while ((match = pattern.exec(desc)) !== null) {
@@ -812,7 +812,7 @@ ${star.result}`
         if (resumeData.profile) {
             const p = resumeData.profile;
             text += `# 个人简历\n\n`;
-            
+
             if (p.name) text += `## 基本信息\n\n`;
             if (p.name) text += `- **姓名**: ${p.name}\n`;
             if (p.email) text += `- **邮箱**: ${p.email}\n`;
@@ -879,7 +879,7 @@ ${star.result}`
 
     _hasQuantifiableAchievements(data) {
         if (!data.experience) return false;
-        return data.experience.some(exp => 
+        return data.experience.some(exp =>
             /\d+%|\d+倍|\d+万|\d+人/.test(exp.description || '')
         );
     }
@@ -897,7 +897,7 @@ ${star.result}`
 
     _extractChanges(original, optimized) {
         const changes = [];
-        
+
         // 对比摘要
         if (original.profile?.summary !== optimized.profile?.summary) {
             changes.push({

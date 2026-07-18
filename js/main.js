@@ -2,7 +2,7 @@ import { loadTools } from './app.js';
 import { renderTools, filterCategory, loadSavedFilters, clearSearch, setupSearch, setCurrentSort, applyFiltersAndSort, toggleAdvancedFilters, clearAllFilters, toggleAdvancedFilter, setupStickySearch } from './ui.js';
 import { openTool, toggleFavorite, showToolDetail, closeToolDetail, rateTool } from './tool.js';
 import { showShareModal, closeShareModal, shareToWeChat, shareToQQ, copyShareLink, generateShareImage } from './share.js';
-import { setupKeyboardShortcuts, setupPullToRefresh, toggleTheme, showToast, loadAnnouncement, closeAnnouncement, checkForUpdate, closeUpdateModal, registerServiceWorker, closeThemeModal, setTheme, loadSavedTheme } from './utils.js';
+import { setupKeyboardShortcuts, setupPullToRefresh, toggleTheme, showToast, loadAnnouncement, closeAnnouncement, registerServiceWorker, closeThemeModal, setTheme, loadSavedTheme } from './utils.js';
 import state, { exportUserData, importUserData } from './state.js';
 import { initEffects } from './effects.js';
 
@@ -98,10 +98,6 @@ const actionHandlers = {
     'show-all-tools': () => showAllTools(),
     'close-tool-detail': () => closeToolDetail(),
     'close-share-modal': (e) => closeShareModal(e),
-    'close-update-modal': () => {
-        closeUpdateModal();
-        window.open('https://github.com/a895411690/ai-tool-hub/releases', '_blank');
-    },
     'close-theme-modal': (e) => closeThemeModal(e),
     'clear-all-filters': () => { clearAllFilters(); clearSearch(); },
     'clear-search': () => clearSearch(),
@@ -115,7 +111,7 @@ const actionHandlers = {
     'generate-share-image': () => generateShareImage(),
     'share-tool': () => showShareModal(),
     'show-research': () => showToast('研究功能即将上线'),
-    'show-prompts': () => showToast("提示词功能即将上线"),
+    'show-prompts': () => showToast('提示词功能即将上线'),
     'toggle-user-menu': () => { const menu = document.getElementById('userMenu'); if (menu) menu.classList.toggle('show'); },
     'show-profile': () => showToast('个人中心功能即将上线'),
     'sync-data': () => showToast('同步功能即将上线'),
@@ -133,6 +129,20 @@ const actionHandlers = {
         document.getElementById('mainSearch')?.focus();
     },
 };
+
+Object.assign(window, {
+    showToolDetail,
+    closeAnnouncement,
+    closeToolDetail,
+    closeShareModal,
+    closeThemeModal,
+    showPromptsPage: () => showToast('提示词功能即将上线'),
+    toggleUserMenu: () => actionHandlers['toggle-user-menu'](),
+    showProfile: () => showToast('个人中心功能即将上线'),
+    syncData: () => showToast('同步功能即将上线'),
+    exportData: () => exportFavorites(),
+    loginWithGitHub: () => showToast('GitHub OAuth 需后端服务器支持，当前为前端演示模式')
+});
 
 document.addEventListener('click', function globalClickHandler(e) {
     const path = e.composedPath ? e.composedPath() : [e.target];
@@ -166,6 +176,7 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast('出现错误，请刷新页面重试');
     });
     window.addEventListener('unhandledrejection', (e) => {
+        // eslint-disable-next-line no-console -- preserve diagnostics for uncaught async failures
         console.warn('Unhandled promise rejection:', e.reason);
     });
     loadSavedTheme();
@@ -181,7 +192,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     setupPullToRefresh();
-    checkForUpdate();
     loadAnnouncement();
     loadSavedFilters();
     registerServiceWorker();

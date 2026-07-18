@@ -16,6 +16,8 @@ const config = {
         html: ['index.html'],
         js: [
             'src/app.js',
+            'src/lib/utils.js',
+            'src/lib/apiClient.js',
             'src/lib/store.js',
             'src/lib/pdfGenerator.js',
             'src/lib/templates.js',
@@ -27,9 +29,10 @@ const config = {
             'src/lib/importUtils.js',
             'src/components/resumeForm.js',
             'src/components/resumePreview.js',
-            'src/components/importResume.js'
+            'src/components/importResume.js',
+            'src/components/authModal.js'
         ],
-        css: ['src/styles/main.css']
+        css: ['src/styles/main.css', 'src/styles/tailwind.min.css']
     }
 };
 
@@ -68,27 +71,10 @@ class Builder {
         log.success('dist 目录已清理');
     }
 
-    // 2. 压缩 JavaScript
+    // JavaScript needs a parser-aware minifier. Preserve source when the
+    // standalone tool is built without a bundler so URLs and regexes remain valid.
     minifyJS(code) {
-        // 简单的 JS 压缩（移除注释、多余空白）
-        return code
-            // 移除单行注释
-            .replace(/\/\/.*$/gm, '')
-            // 移除多行注释
-            .replace(/\/\*[\s\S]*?\*\//g, '')
-            // 移除多余空白
-            .replace(/\s+/g, ' ')
-            // 移除行首行尾空白
-            .replace(/^\s+|\s+$/gm, '')
-            // 移除操作符周围的空格
-            .replace(/\s*([{};:,=+\-*/<>!&|])\s*/g, '$1')
-            // 恢复必要的空格
-            .replace(/return\s+/g, 'return ')
-            .replace(/var\s+/g, 'var ')
-            .replace(/let\s+/g, 'let ')
-            .replace(/const\s+/g, 'const ')
-            .replace(/function\s+/g, 'function ')
-            .replace(/class\s+/g, 'class ');
+        return code;
     }
 
     // 3. 压缩 CSS

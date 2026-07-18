@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Star, Send } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { submitRating } from '@/lib/api';
+import { useUserStore } from '@/stores/useUserStore';
 
 const RATING_TAGS = [
   '上手快', '功能强', '价格贵', '中文友好', 'API好用',
@@ -23,6 +23,8 @@ export function RatingWidget({ toolId, currentRating = 0, onRated }: RatingWidge
   const [comment, setComment] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const setRating = useUserStore((state) => state.setRating);
 
   const displayScore = hoverScore || score;
 
@@ -35,10 +37,18 @@ export function RatingWidget({ toolId, currentRating = 0, onRated }: RatingWidge
   const handleSubmit = async () => {
     if (score === 0) return;
     setSubmitting(true);
-    await submitRating(toolId, score, selectedTags, comment);
-    setSubmitting(false);
-    setSubmitted(true);
-    onRated?.(score);
+    setError('');
+    try {
+      const saved = await setRating(toolId, score, selectedTags, comment);
+      if (!saved) {
+        setError('评价提交失败，请稍后重试');
+        return;
+      }
+      setSubmitted(true);
+      onRated?.(score);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (submitted) {
@@ -112,6 +122,7 @@ export function RatingWidget({ toolId, currentRating = 0, onRated }: RatingWidge
           </div>
 
           {/* Submit */}
+          {error && <p className="text-center text-xs text-red-400">{error}</p>}
           <button
             onClick={handleSubmit}
             disabled={submitting}

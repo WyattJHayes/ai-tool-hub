@@ -33,11 +33,11 @@ router.post('/optimize', authMiddleware, async (req, res) => {
         return res.status(400).json({ error: '中度和深度优化需要提供目标职位描述（JD）' });
     }
 
-    const quota = quotaService.checkQuota(req.user.id);
-    if (quota.remaining <= 0) {
+    const reservation = quotaService.tryConsumeQuota(req.user.id);
+    if (!reservation.allowed) {
         return res.status(429).json({
             error: '今日优化次数已用完',
-            quota
+            quota: reservation.quota
         });
     }
 
@@ -53,16 +53,19 @@ router.post('/optimize', authMiddleware, async (req, res) => {
     req.setTimeout(SSE_TIMEOUT);
     res.setTimeout(SSE_TIMEOUT);
 
-    let quotaConsumed = false;
+    let quotaCommitted = false;
+    let quotaReleased = false;
+    const releaseQuota = () => {
+        if (quotaCommitted || quotaReleased) return;
+        quotaReleased = true;
+        quotaService.refundUsage(req.user.id);
+    };
     const connectionStart = Date.now();
     let timeoutHandle = setTimeout(() => {
         if (!res.writableEnded && !res.destroyed) {
-            if (!quotaConsumed) {
-                sendSSE('error', { message: '连接超时，配额未扣除，请稍后重试' });
-            } else {
-                sendSSE('error', { message: '连接超时，请稍后重试' });
-            }
-            logger.warn(`SSE timeout: user=${req.user.id}, duration=${Date.now() - connectionStart}ms, quotaConsumed=${quotaConsumed}`);
+            releaseQuota();
+            sendSSE('error', { message: '连接超时，配额未扣除，请稍后重试' });
+            logger.warn(`SSE timeout: user=${req.user.id}, duration=${Date.now() - connectionStart}ms, quotaCommitted=${quotaCommitted}`);
             res.end();
         }
     }, SSE_TIMEOUT);
@@ -76,10 +79,18 @@ router.post('/optimize', authMiddleware, async (req, res) => {
     };
 
     let aborted = false;
-    req.on('close', () => {
+    req.on('aborted', () => {
         aborted = true;
         clearTimeout(timeoutHandle);
+        releaseQuota();
         logger.info(`Client disconnected: user=${req.user.id}, duration=${Date.now() - connectionStart}ms`);
+    });
+    res.on('close', () => {
+        if (!res.writableEnded) {
+            aborted = true;
+            clearTimeout(timeoutHandle);
+            releaseQuota();
+        }
     });
 
     try {
@@ -93,19 +104,21 @@ router.post('/optimize', authMiddleware, async (req, res) => {
             } else if (event.type === 'token') {
                 sendSSE('token', event.data);
             } else if (event.type === 'done') {
-                quotaConsumed = true;
-                const newQuota = quotaService.incrementUsage(req.user.id);
+                quotaCommitted = true;
                 sendSSE('done', {
                     ...event.data,
-                    quotaRemaining: newQuota.remaining
+                    quotaRemaining: reservation.quota.remaining
                 });
                 logger.info(`Resume optimize completed: user=${req.user.id}, level=${level}, duration=${Date.now() - connectionStart}ms`);
             }
         }
     } catch (error) {
+        releaseQuota();
         logger.error(`Resume optimize error: user=${req.user.id}`, error);
         sendSSE('error', { message: error.message || 'AI优化服务暂时不可用，请稍后重试' });
     }
+
+    if (!quotaCommitted) releaseQuota();
 
     clearTimeout(timeoutHandle);
 
@@ -125,20 +138,20 @@ router.post('/parse', authMiddleware, async (req, res) => {
         return res.status(400).json({ error: `文本过长，最多支持${MAX_RESUME_LENGTH}个字符` });
     }
 
-    const quota = quotaService.checkQuota(req.user.id);
-    if (quota.remaining <= 0) {
+    const reservation = quotaService.tryConsumeQuota(req.user.id);
+    if (!reservation.allowed) {
         return res.status(429).json({
             error: '今日使用次数已用完',
-            quota
+            quota: reservation.quota
         });
     }
 
     try {
         const result = await llmService.parseResumeText(text);
-        quotaService.incrementUsage(req.user.id);
         logger.info(`Resume parsed: user=${req.user.id}, textLength=${text.length}`);
         res.json(result);
     } catch (error) {
+        quotaService.refundUsage(req.user.id);
         logger.error(`Resume parse error: user=${req.user.id}`, error);
         if (error.message && (error.message.includes('not configured') || error.message.includes('Insufficient'))) {
             return res.status(503).json({ error: error.message, fallback: true });
@@ -158,20 +171,20 @@ router.post('/analyze-jd', authMiddleware, async (req, res) => {
         return res.status(400).json({ error: `JD文本过长，最多支持${MAX_JD_LENGTH}个字符` });
     }
 
-    const quota = quotaService.checkQuota(req.user.id);
-    if (quota.remaining <= 0) {
+    const reservation = quotaService.tryConsumeQuota(req.user.id);
+    if (!reservation.allowed) {
         return res.status(429).json({
             error: '今日使用次数已用完',
-            quota
+            quota: reservation.quota
         });
     }
 
     try {
         const result = await llmService.analyzeJD(jdText);
-        quotaService.incrementUsage(req.user.id);
         logger.info(`JD analyzed: user=${req.user.id}, jdLength=${jdText.length}`);
         res.json(result);
     } catch (error) {
+        quotaService.refundUsage(req.user.id);
         logger.error(`JD analyze error: user=${req.user.id}`, error);
         res.status(500).json({ error: 'JD分析失败，请稍后重试' });
     }

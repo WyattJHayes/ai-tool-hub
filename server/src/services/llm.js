@@ -217,10 +217,12 @@ export class LLMService {
 
             let fullContent = '';
             const decoder = new TextDecoder();
+            let buffer = '';
 
             for await (const chunk of response) {
-                const text = decoder.decode(chunk, { stream: true });
-                const lines = text.split('\n');
+                buffer += decoder.decode(chunk, { stream: true });
+                const lines = buffer.split(/\r?\n/);
+                buffer = lines.pop() || '';
 
                 for (const line of lines) {
                     if (!line.startsWith('data: ')) continue;
@@ -236,6 +238,23 @@ export class LLMService {
                         }
                     } catch {
                         // skip malformed JSON
+                    }
+                }
+            }
+
+            buffer += decoder.decode();
+            if (buffer.startsWith('data: ')) {
+                const data = buffer.substring(6).trim();
+                if (data && data !== '[DONE]') {
+                    try {
+                        const parsed = JSON.parse(data);
+                        const content = parsed.choices?.[0]?.delta?.content || '';
+                        if (content) {
+                            fullContent += content;
+                            yield { type: 'token', data: { content } };
+                        }
+                    } catch {
+                        // Ignore a final malformed provider frame.
                     }
                 }
             }

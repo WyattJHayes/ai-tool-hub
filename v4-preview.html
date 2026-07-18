@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>weihub.cloud v4 preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" />
+<style>
+  :root {
+    --bg-base:       #0F1014;
+    --bg-surface:    #1C1F23;
+    --bg-surface-2:  #282A30;
+    --bg-overlay:    #32343A;
+    --border-subtle: rgba(255,255,255,0.06);
+    --border-strong: rgba(255,255,255,0.12);
+    --text-primary:  rgba(255,255,255,0.92);
+    --text-secondary:rgba(255,255,255,0.66);
+    --text-tertiary: rgba(255,255,255,0.44);
+    --text-quaternary:rgba(255,255,255,0.26);
+    --accent-blue:   #00D4FF;
+    --accent-purple: #A855F7;
+    --accent-green:  #2EED88;
+    --accent-orange: #FF9428;
+    --accent-red:    #FF5858;
+    --radius-4: 4px; --radius-8: 8px; --radius-12: 12px; --radius-16: 16px; --radius-24: 24px;
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;
+    --font-display: 'Space Grotesk', 'Inter', 'PingFang SC', sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--text-primary);
+    background: var(--bg-base);
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    pointer-events: none;
+    background:
+      repeating-linear-gradient(0deg, transparent 0, transparent 59px, rgba(255,255,255,0.018) 59px, rgba(255,255,255,0.018) 60px),
+      repeating-linear-gradient(90deg, transparent 0, transparent 59px, rgba(255,255,255,0.018) 59px, rgba(255,255,255,0.018) 60px);
+    z-index: 0;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  }
+  a { color: var(--accent-blue); text-decoration: none; transition: color 0.15s; }
+  a:hover { color: var(--accent-purple); }
+  ::selection { background: rgba(0,212,255,0.22); color: var(--text-primary); }
+
+  .page { position: relative; z-index: 1; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+
+  .t-display { font-family: var(--font-display); font-weight: 700; font-size: 56px; line-height: 1.14; letter-spacing: -0.02em; }
+  .t-h2      { font-weight: 700; font-size: 28px; line-height: 1.28; letter-spacing: -0.01em; margin: 0; }
+  .t-h3      { font-weight: 600; font-size: 18px; line-height: 1.44; margin: 0; }
+
+  .c-primary   { color: var(--text-primary); }
+  .c-secondary { color: var(--text-secondary); }
+  .c-tertiary  { color: var(--text-tertiary); }
+  .c-blue      { color: var(--accent-blue); }
+  .c-purple    { color: var(--accent-purple); }
+  .c-green     { color: var(--accent-green); }
+  .c-orange    { color: var(--accent-orange); }
+
+  .flex { display: flex; }
+  .flex-col { display: flex; flex-direction: column; }
+  .items-center { align-items: center; }
+  .justify-between { justify-content: space-between; }
+  .grow   { flex-grow: 1; }
+  .gap-2  { gap: 8px; } .gap-3 { gap: 12px; } .gap-4 { gap: 16px; } .gap-6 { gap: 24px; }
+  .grid { display: grid; }
+
+  .tag {
+    display: inline-flex; align-items: center; gap: 4px;
+    height: 22px; padding: 0 8px;
+    border-radius: 4px;
+    font-size: 12px; font-weight: 500; line-height: 1;
+    background: var(--bg-overlay); color: var(--text-secondary);
+    border: 1px solid transparent; white-space: nowrap;
+  }
+  .tag.green   { background: rgba(46,237,136,0.12); color: var(--accent-green); }
+  .tag.orange  { background: rgba(255,148,40,0.14); color: var(--accent-orange); }
+  .tag.purple  { background: rgba(168,85,247,0.14); color: var(--accent-purple); }
+  .tag.blue    { background: rgba(0,212,255,0.12); color: var(--accent-blue); }
+
+  /* ---------- Navbar ---------- */
+  .navbar {
+    height: 64px;
+    background: var(--bg-surface-2);
+    border-bottom: 1px solid var(--border-subtle);
+    position: sticky; top: 0; z-index: 50;
+    backdrop-filter: blur(12px);
+  }
+  .nav-inner {
+    max-width: 1200px; margin: 0 auto;
+    padding: 0 24px; height: 100%;
+    display: flex; align-items: center; gap: 20px;
+  }
+  .logo-icon {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 14px;
+  }
+  .logo-text { font-family: var(--font-display); font-weight: 700; font-size: 18px; color: var(--text-primary); letter-spacing: -0.01em; }
+  .new-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 10px;
+    background: rgba(46,237,136,0.10);
+    color: var(--accent-green);
+    border: 1px solid rgba(46,237,136,0.20);
+    border-radius: 9999px;
+    font-size: 12px; font-weight: 500;
+  }
+  .new-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-green); box-shadow: 0 0 6px var(--accent-green); }
+  .nav-btn {
+    background: transparent; border: 0; color: var(--text-secondary);
+    font-size: 14px; font-weight: 500;
+    padding: 8px 12px; border-radius: 8px;
+    cursor: pointer;
+    display: inline-flex; align-items: center; gap: 8px;
+    transition: background 0.15s, color 0.15s;
+  }
+  .nav-btn:hover { background: var(--bg-overlay); color: var(--text-primary); }
+  .nav-icon-btn {
+    width: 36px; height: 36px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 8px; background: transparent;
+    color: var(--text-secondary); border: 0; cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .nav-icon-btn:hover { background: var(--bg-overlay); color: var(--text-primary); }
+  .user-chip {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 4px 10px 4px 4px;
+    border-radius: 9999px; background: transparent;
+    border: 1px solid var(--border-subtle); cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .user-chip:hover { border-color: var(--border-strong); background: var(--bg-overlay); }
+  .user-chip .avatar {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--bg-overlay);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-tertiary); font-size: 13px;
+  }
+
+  /* ---------- Hero ---------- */
+  .hero { padding: 56px 0 72px; }
+  .hero-grid {
+    display: grid; grid-template-columns: 7fr 5fr;
+    gap: 40px; align-items: center;
+  }
+  .hero-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 12px;
+    background: rgba(46,237,136,0.10);
+    border: 1px solid rgba(46,237,136,0.20);
+    color: var(--accent-green);
+    border-radius: 9999px; font-size: 12px; font-weight: 500;
+    width: fit-content;
+  }
+  .hero-title {
+    margin: 20px 0 14px;
+    font-family: var(--font-display); font-weight: 700;
+    font-size: 56px; line-height: 1.14; letter-spacing: -0.02em;
+    color: var(--text-primary);
+  }
+  .hero-sub { color: var(--text-secondary); font-size: 16px; line-height: 1.55; max-width: 540px; }
+  .search {
+    margin-top: 28px; height: 64px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: 14px;
+    display: flex; align-items: center;
+    padding: 0 8px 0 20px; gap: 12px;
+    transition: border-color 0.18s, box-shadow 0.18s;
+  }
+  .search:focus-within {
+    border-color: rgba(0,212,255,0.55);
+    box-shadow: 0 0 0 6px rgba(0,212,255,0.12);
+  }
+  .search input {
+    flex: 1; background: transparent; border: 0; outline: 0;
+    color: var(--text-primary); font-size: 16px; font-family: var(--font-sans);
+  }
+  .search input::placeholder { color: var(--text-quaternary); }
+  .kbd {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 44px; height: 32px; padding: 0 10px;
+    background: var(--bg-overlay);
+    border: 1px solid rgba(0,212,255,0.45);
+    color: var(--text-secondary);
+    font-family: var(--font-mono); font-size: 12px;
+    border-radius: 6px;
+  }
+  .stat-row {
+    margin-top: 36px;
+    display: flex; gap: 18px;
+    color: var(--text-secondary); font-size: 13px;
+    flex-wrap: wrap;
+  }
+  .stat-row .sep { color: var(--text-quaternary); }
+
+  .hero-right { position: relative; height: 420px; }
+  .preview-card {
+    position: absolute; width: 260px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: 14px; padding: 18px;
+    box-shadow: 0 18px 40px rgba(0,0,0,0.45);
+  }
+  .preview-card .pc-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .preview-card .pc-icon {
+    width: 40px; height: 40px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center; font-size: 18px;
+  }
+  .preview-card .pc-name { font-weight: 600; font-size: 15px; color: var(--text-primary); }
+  .preview-card .pc-cat { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
+  .preview-card .pc-desc { font-size: 13px; color: var(--text-tertiary); line-height: 1.55; }
+  .pc-1 { top: 10px;  right: 60px; transform: rotate(-3deg); }
+  .pc-2 { top: 140px; right: 0;    transform: rotate(2deg); }
+  .pc-3 { top: 270px; right: 80px; transform: rotate(-1deg); }
+
+  /* ---------- Section frame ---------- */
+  .section { padding: 48px 0; }
+  .section-head {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    margin-bottom: 24px;
+  }
+  .section-title { display: flex; align-items: baseline; gap: 10px; }
+  .section-title .count { color: var(--text-tertiary); font-size: 14px; font-weight: 500; }
+  .section-subtitle { color: var(--text-tertiary); font-size: 13px; margin-top: 4px; }
+
+  /* ---------- Categories & Sort ---------- */
+  .cat-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+  .cat-toggle {
+    height: 32px; padding: 0 14px;
+    border-radius: 8px;
+    background: var(--bg-surface); color: var(--text-secondary);
+    border: 1px solid var(--border-subtle);
+    font-size: 13px; font-weight: 500;
+    cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: all 0.15s;
+  }
+  .cat-toggle:hover { color: var(--text-primary); border-color: var(--border-strong); }
+  .cat-toggle.active {
+    background: var(--bg-overlay); color: var(--accent-blue);
+    border-color: rgba(0,212,255,0.45);
+  }
+  .cat-toggle .num { color: inherit; opacity: 0.6; font-size: 12px; }
+
+  .sort-bar {
+    display: flex; align-items: center; gap: 4px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .sort-btn {
+    height: 32px; padding: 0 14px;
+    background: transparent; color: var(--text-secondary);
+    border: 0;
+    font-size: 14px; font-weight: 500;
+    cursor: pointer; border-radius: 8px;
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: all 0.15s;
+  }
+  .sort-btn:hover { color: var(--text-primary); background: var(--bg-overlay); }
+  .sort-btn.active { color: var(--text-primary); font-weight: 600; background: var(--bg-surface-2); }
+
+  /* ---------- Hot Tools ---------- */
+  .tools-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+  .tool-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: 12px; padding: 20px;
+    display: flex; flex-direction: column; gap: 14px;
+    transition: border-color 0.18s, transform 0.18s, box-shadow 0.18s;
+    cursor: pointer; min-height: 200px;
+  }
+  .tool-card:hover {
+    border-color: var(--border-strong);
+    transform: translateY(-1px);
+    box-shadow: 0 8px 18px rgba(0,0,0,0.28);
+  }
+  .tc-head { display: flex; align-items: flex-start; justify-content: space-between; }
+  .tc-icon {
+    width: 40px; height: 40px; border-radius: 10px;
+    background: var(--bg-overlay);
+    display: flex; align-items: center; justify-content: center; font-size: 18px;
+  }
+  .tc-name { font-size: 16px; font-weight: 600; color: var(--text-primary); }
+  .tc-desc {
+    font-size: 13px; color: var(--text-tertiary); line-height: 1.55;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    min-height: 40px;
+  }
+  .tc-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: auto; }
+
+  /* ---------- Stats ---------- */
+  .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .stat-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: 12px; padding: 24px;
+  }
+  .stat-card .num {
+    font-family: var(--font-display); font-weight: 700;
+    font-size: 32px; line-height: 1;
+    color: var(--accent-blue); letter-spacing: -0.02em;
+  }
+  .stat-card .lbl { margin-top: 8px; color: var(--text-secondary); font-size: 14px; }
+
+  .dist-grid {
+    display: grid; grid-template-columns: 6fr 5fr;
+    gap: 24px; margin-top: 32px;
+    padding-top: 32px;
+    border-top: 1px solid var(--border-subtle);
+  }
+  .dist-list { display: flex; flex-direction: column; gap: 12px; }
+  .dist-row {
+    display: grid; grid-template-columns: 88px 1fr 56px;
+    align-items: center; gap: 14px;
+  }
+  .dist-row .lbl { font-size: 14px; color: var(--text-secondary); }
+  .dist-row .bar {
+    height: 8px; background: var(--bg-overlay);
+    border-radius: 4px; overflow: hidden; position: relative;
+  }
+  .dist-row .bar::before {
+    content: ''; position: absolute; inset: 0;
+    width: var(--w, 0%);
+    background: var(--accent-blue); border-radius: 4px; opacity: 0.85;
+  }
+  .dist-row .val { font-size: 12px; color: var(--text-tertiary); text-align: right; font-variant-numeric: tabular-nums; }
+
+  .top-list { display: flex; flex-direction: column; }
+  .top-row {
+    display: grid; grid-template-columns: 32px 32px 1fr auto;
+    align-items: center; gap: 14px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .top-row:last-child { border-bottom: 0; }
+  .top-row .rank {
+    font-family: var(--font-display); font-weight: 700;
+    font-size: 18px; color: var(--accent-orange);
+  }
+  .top-row .ico {
+    width: 32px; height: 32px; border-radius: 8px;
+    background: var(--bg-overlay);
+    display: flex; align-items: center; justify-content: center; font-size: 14px;
+  }
+  .top-row .name { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+  .top-row .clicks { font-size: 12px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+
+  /* ---------- All tools ---------- */
+  .tools-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .tool-row {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: 12px; padding: 16px;
+    display: grid; grid-template-columns: 48px 1fr; gap: 14px; align-items: center;
+    transition: border-color 0.18s, transform 0.18s;
+    cursor: pointer; min-height: 96px;
+  }
+  .tool-row:hover { border-color: var(--border-strong); transform: translateY(-1px); }
+  .tool-row .ico {
+    width: 48px; height: 48px; border-radius: 10px;
+    background: var(--bg-overlay);
+    display: flex; align-items: center; justify-content: center; font-size: 20px;
+  }
+  .tool-row .name { font-size: 15px; font-weight: 600; color: var(--text-primary); margin-bottom: 2px; }
+  .tool-row .meta {
+    font-size: 13px; color: var(--text-tertiary);
+    display: -webkit-box; -webkit-line-clamp:1; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .tool-row .bottom { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+  .tool-row .visits { margin-left: auto; font-size: 12px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+
+  .load-more {
+    margin: 24px auto 0; display: block;
+    height: 40px; padding: 0 20px;
+    background: transparent; color: var(--text-secondary);
+    border: 1px solid var(--border-subtle);
+    border-radius: 9999px; cursor: pointer;
+    font-size: 14px; font-weight: 500;
+    transition: all 0.15s;
+  }
+  .load-more:hover { background: var(--bg-overlay); color: var(--text-primary); border-color: var(--border-strong); }
+
+  /* ---------- Footer ---------- */
+  .footer { background: var(--bg-surface-2); padding: 64px 0 24px; margin-top: 32px; }
+  .footer-grid { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 48px; }
+  .footer h4 { font-size: 14px; font-weight: 600; color: var(--text-primary); margin: 0 0 16px; }
+  .footer ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+  .footer a { color: var(--text-tertiary); font-size: 13px; }
+  .footer a:hover { color: var(--text-primary); }
+  .footer-tagline { color: var(--text-tertiary); font-size: 13px; margin-top: 12px; max-width: 320px; line-height: 1.55; }
+  .footer-social { display: flex; gap: 10px; margin-top: 16px; }
+  .footer-social a {
+    width: 32px; height: 32px; border-radius: 8px;
+    background: var(--bg-overlay);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-secondary);
+  }
+  .footer-social a:hover { color: var(--text-primary); }
+  .footer-bottom {
+    margin-top: 48px; padding-top: 24px;
+    border-top: 1px solid var(--border-subtle);
+    display: flex; align-items: center; justify-content: space-between;
+    color: var(--text-tertiary); font-size: 12px;
+  }
+  .footer-bottom .right { display: flex; gap: 16px; }
+  .footer-bottom .right a { color: var(--text-tertiary); }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 1100px) {
+    .hero-grid { grid-template-columns: 1fr; }
+    .hero-right { display: none; }
+    .tools-grid-4 { grid-template-columns: repeat(2, 1fr); }
+    .tools-grid-3 { grid-template-columns: repeat(2, 1fr); }
+    .stats-row { grid-template-columns: repeat(2, 1fr); }
+    .dist-grid { grid-template-columns: 1fr; }
+    .footer-grid { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 640px) {
+    .hero { padding: 36px 0 48px; }
+    .hero-title { font-size: 32px; line-height: 1.18; }
+    .hero-sub { font-size: 14px; }
+    .search { height: 54px; }
+    .stat-row { margin-top: 24px; font-size: 12px; gap: 12px; }
+    .kbd { display: none; }
+    .tools-grid-4 { grid-template-columns: 1fr; }
+    .tools-grid-3 { grid-template-columns: 1fr; }
+    .stats-row { grid-template-columns: 1fr 1fr; }
+    .footer-grid { grid-template-columns: 1fr; gap: 32px; }
+    .footer-bottom { flex-direction: column; gap: 12px; align-items: flex-start; }
+    .nav-inner { gap: 12px; }
+    .nav-btn span { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- 1. NAVBAR -->
+  <nav class="navbar">
+    <div class="nav-inner">
+      <div class="flex items-center" style="gap:12px;">
+        <div class="logo-icon"><i class="fas fa-robot"></i></div>
+        <span class="logo-text">AI Tool Hub</span>
+      </div>
+      <div class="new-badge">
+        <span class="dot"></span>
+        <span>上新 <strong>3</strong> 款</span>
+      </div>
+      <div class="grow"></div>
+      <button class="nav-btn"><i class="fas fa-microscope"></i><span>深度研究</span></button>
+      <button class="nav-btn"><i class="fas fa-wand-magic-sparkles"></i><span>提示词</span></button>
+      <button class="nav-icon-btn" title="分享"><i class="fas fa-share-alt"></i></button>
+      <button class="nav-icon-btn" title="切换主题"><i class="fas fa-palette"></i></button>
+      <div class="user-chip">
+        <div class="avatar"><i class="fas fa-user-circle"></i></div>
+        <span class="c-secondary" style="font-size:13px;">游客</span>
+        <i class="fas fa-chevron-down c-tertiary" style="font-size:10px;"></i>
+      </div>
+    </div>
+  </nav>
+
+  <!-- 2. HERO -->
+  <section class="hero" id="hero">
+    <div class="container">
+      <div class="hero-grid">
+        <div>
+          <div class="hero-badge">
+            <i class="fas fa-sparkles"></i>
+            <span>本周上新 · DeepSeek V3.2、即梦 2.1、Suno v5</span>
+          </div>
+          <h1 class="hero-title">找到适合你的<br/>AI 工具</h1>
+          <p class="hero-sub">84 款精选工具 · 10 大分类 · 每周持续上新，按场景与价格筛选直达，免费开始。</p>
+          <div class="search">
+            <i class="fas fa-search c-tertiary" style="font-size:18px;"></i>
+            <input type="text" placeholder="搜索工具名、场景或模型… 试试「写代码」「画图」" />
+            <span class="kbd">⌘ K</span>
+          </div>
+          <div class="stat-row">
+            <span><span class="c-blue" style="font-weight:600;">84</span> 优质工具</span>
+            <span class="sep">·</span>
+            <span><span class="c-purple" style="font-weight:600;">10</span> 大分类</span>
+            <span class="sep">·</span>
+            <span><span class="c-green" style="font-weight:600;">本周 +3</span> 上新</span>
+            <span class="sep">·</span>
+            <span>全部免费收录</span>
+          </div>
+        </div>
+        <div class="hero-right">
+          <div class="preview-card pc-1">
+            <div class="pc-head">
+              <div class="pc-icon" style="background:rgba(0,212,255,0.12);color:var(--accent-blue);"><i class="fas fa-pen-nib"></i></div>
+              <div><div class="pc-name">Claude</div><div class="pc-cat">AI 写作</div></div>
+            </div>
+            <div class="pc-desc">长文写作、代码生成与推理，3.5 Sonnet 速度更快。</div>
+          </div>
+          <div class="preview-card pc-2">
+            <div class="pc-head">
+              <div class="pc-icon" style="background:rgba(168,85,247,0.14);color:var(--accent-purple);"><i class="fas fa-paint-brush"></i></div>
+              <div><div class="pc-name">Midjourney</div><div class="pc-cat">AI 绘画</div></div>
+            </div>
+            <div class="pc-desc">高质量图像生成，V6 摄影质感与艺术风格兼备。</div>
+          </div>
+          <div class="preview-card pc-3">
+            <div class="pc-head">
+              <div class="pc-icon" style="background:rgba(255,148,40,0.14);color:var(--accent-orange);"><i class="fas fa-film"></i></div>
+              <div><div class="pc-name">Runway</div><div class="pc-cat">AI 视频</div></div>
+            </div>
+            <div class="pc-desc">Gen-3 文生视频，10 秒电影级镜头，可控运动。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. CATEGORIES + SORT + FILTER -->
+  <section class="section" id="categories">
+    <div class="container">
+      <div class="cat-row">
+        <button class="cat-toggle active">全部 <span class="num">84</span></button>
+        <button class="cat-toggle">AI 写作 <span class="num">12</span></button>
+        <button class="cat-toggle">AI 绘画 <span class="num">8</span></button>
+        <button class="cat-toggle">AI 代码 <span class="num">11</span></button>
+        <button class="cat-toggle">AI 视频 <span class="num">9</span></button>
+        <button class="cat-toggle">AI 语音 <span class="num">8</span></button>
+        <button class="cat-toggle">AI 设计 <span class="num">7</span></button>
+        <button class="cat-toggle">AI 办公 <span class="num">11</span></button>
+        <button class="cat-toggle">AI 音乐 <span class="num">6</span></button>
+        <button class="cat-toggle">AI Agent <span class="num">6</span></button>
+        <button class="cat-toggle">AI 搜索 <span class="num">6</span></button>
+      </div>
+      <div class="sort-bar">
+        <button class="sort-btn active">默认</button>
+        <button class="sort-btn"><i class="fas fa-fire c-orange" style="font-size:11px;"></i> 热门</button>
+        <button class="sort-btn">免费优先</button>
+        <button class="sort-btn">国产</button>
+        <button class="sort-btn">A–Z</button>
+        <div class="grow"></div>
+        <button class="sort-btn"><i class="fas fa-sliders-h"></i> 筛选</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. HOT TOOLS -->
+  <section class="section" id="hot-tools" style="padding-top:24px;">
+    <div class="container">
+      <div class="section-head">
+        <div>
+          <div class="section-title">
+            <h2 class="t-h2 c-primary">热门推荐</h2>
+            <span class="count">8 / 84</span>
+          </div>
+          <p class="section-subtitle">本周点击量 Top 8，按访问次数排序</p>
+        </div>
+        <a href="#" class="c-secondary" style="font-size:14px;">查看全部 <i class="fas fa-arrow-right" style="font-size:11px;"></i></a>
+      </div>
+
+      <div class="tools-grid-4">
+        <article class="tool-card">
+          <div class="tc-head">
+            <div class="tc-icon" style="background:rgba(0,212,255,0.12);color:var(--accent-blue);"><i class="fas fa-comments"></i></div>
+            <span class="tag orange"><i class="fas fa-fire" style="font-size:10px;"></i> 热</span>
+          </div>
+          <div>
+            <div class="tc-name">ChatGPT</div>
+            <div class="tc-desc">最强通用对话模型，GPT-4o 支持多模态推理与代码执行。</div>
+          </div>
+          <div class="tc-tags"><span class="tag green">免费</span><span class="tag">海外</span></div>
+        </article>
+
+        <article class="tool-card">
+          <div class="tc-head">
+            <div class="tc-icon" style="background:rgba(168,85,247,0.14);color:var(--accent-purple);"><i class="fas fa-pen-nib"></i></div>
+          </div>
+          <div>
+            <div class="tc-name">Claude</div>
+            <div class="tc-desc">Anthropic 出品，长文与代码能力突出，推理细致。</div>
+          </div>
+          <div class="tc-tags"><span class="tag green">免费</span><span class="tag">海外</span></div>
+        </article>
+
+        <article class="tool-card">
+          <div class="tc-head">
+            <div class="tc-icon" style="background:rgba(46,237,136,0.14);color:var(--accent-green);"><i class="fas fa-brain"></i></div>
+            <span class="tag green">上新</span>
+          </div>
+          <div>
+            <div class="tc-name">DeepSeek</div>
+            <div class="tc-desc">国产开源推理模型 V3.2，数学与代码逼近 GPT-4o，价格仅 1/30。</div>
+          </div>
+          <div class="tc-tags"><span class="tag green">免费</span><span class="tag">国产</span></div>
+        </article>
+
+        <article class="tool-card">
+          <div class="tc-head">
+            <div class="tc-icon" style="background:rgba(0,212,255,0.12);color:var(--accent-blue);"><i class="fas fa-code"></i></div>
+            <span class="tag purple">Premium</span>
+          </div>
+          <div>
+            <div class="tc-name">Cursor</div>
+            <div class="tc-desc">AI 代码编辑器，深度集成 Claude/GPT，全文件上下文理解。</div>
+          </div>
+          <div class="tc-tags"><span class="tag purple">VIP</span><span class="tag">海外</span></div>
+        </article>
+
+        <article class="tool-card">
+          <div class="tc-head">
+            <div class="tc-icon" style="background:rgba(168,85,247,0.14);color:var(--accent-purple);"><i class="fas fa-paint-brush"></i></div>
+            <span class="tag orange"><i class="fas fa-fire" style="font-size:10px;"></i> 热</span>
+          </div>
+          <div>
+            <div class="tc-name">Midjourney</div>
+            <div class="tc-desc">艺术风格图像生成，V6 摄影质感与精细风格控制。</div>
+          </div>
+          <div class="tc-tags"><span class="tag purple">付费</span><span class="tag">海外</span></div>
+        </article>
+
+        <article class="tool-card">
+          <div class="tc-head">
+            <div class="tc-icon" style="background:rgba(255,148,40,0.14);color:var(--accent-orange);"><i class="fas fa-image"></i></div>
+            <span class="tag green">上新</span>
+          </div>
+          <div>
+            <div class="tc-name">即梦 AI</div>
+            <div class="tc-desc">字节出品，2.1 模型支持图文视频一体化生成。</div>
+          </div>
+          <div class="tc-tags"><span class="tag green">免费</span><span class="tag">国产</span></div>
+        </article>
+
+        <article class="tool-card">
+          <div class="tc-head">
+            <div class="tc-icon" style="background:rgba(46,237,136,0.14);color:var(--accent-green);"><i class="fas fa-music"></i></div>
+          </div>
+          <div>
+            <div class="tc-name">Suno</div>
+            <div class="tc-desc">AI 音乐生成，v5 支持完整歌词、人声与编曲，3 分钟成歌。</div>
+          </div>
+          <div class="tc-tags"><span class="tag green">免费</span><span class="tag">海外</span></div>
+        </article>
+
+        <article class="tool-card">
+          <div class="tc-head">
+            <div class="tc-icon" style="background:rgba(0,212,255,0.12);color:var(--accent-blue);"><i class="fas fa-microphone"></i></div>
+          </div>
+          <div>
+            <div class="tc-name">飞书妙记</div>
+            <div class="tc-desc">会议实时转写，AI 摘要与待办提取，集成飞书生态。</div>
+          </div>
+          <div class="tc-tags"><span class="tag green">免费</span><span class="tag">国产</span></div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. STATS (guest-friendly) -->
+  <section class="section" id="stats">
+    <div class="container">
+      <div class="section-head">
+        <div>
+          <div class="section-title">
+            <h2 class="t-h2 c-primary">平台数据</h2>
+          </div>
+          <p class="section-subtitle">全站热门，无需登录</p>
+        </div>
+      </div>
+
+      <div class="stats-row">
+        <div class="stat-card"><div class="num">84</div><div class="lbl">AI 工具</div></div>
+        <div class="stat-card"><div class="num c-purple">10</div><div class="lbl">收录分类</div></div>
+        <div class="stat-card"><div class="num c-green">24.6K</div><div class="lbl">本周点击</div></div>
+        <div class="stat-card"><div class="num c-orange">+3</div><div class="lbl">本周上新</div></div>
+      </div>
+
+      <div class="dist-grid">
+        <div>
+          <h3 class="t-h3 c-primary" style="margin-bottom:18px;">分类分布</h3>
+          <div class="dist-list">
+            <div class="dist-row"><div class="lbl">AI 写作</div><div class="bar" style="--w:100%"></div><div class="val">12</div></div>
+            <div class="dist-row"><div class="lbl">AI 代码</div><div class="bar" style="--w:92%"></div><div class="val">11</div></div>
+            <div class="dist-row"><div class="lbl">AI 办公</div><div class="bar" style="--w:92%"></div><div class="val">11</div></div>
+            <div class="dist-row"><div class="lbl">AI 视频</div><div class="bar" style="--w:75%"></div><div class="val">9</div></div>
+            <div class="dist-row"><div class="lbl">AI 绘画</div><div class="bar" style="--w:67%"></div><div class="val">8</div></div>
+            <div class="dist-row"><div class="lbl">AI 语音</div><div class="bar" style="--w:67%"></div><div class="val">8</div></div>
+            <div class="dist-row"><div class="lbl">AI 设计</div><div class="bar" style="--w:58%"></div><div class="val">7</div></div>
+            <div class="dist-row"><div class="lbl">AI 音乐</div><div class="bar" style="--w:50%"></div><div class="val">6</div></div>
+            <div class="dist-row"><div class="lbl">AI Agent</div><div class="bar" style="--w:50%"></div><div class="val">6</div></div>
+            <div class="dist-row"><div class="lbl">AI 搜索</div><div class="bar" style="--w:50%"></div><div class="val">6</div></div>
+          </div>
+        </div>
+        <div>
+          <h3 class="t-h3 c-primary" style="margin-bottom:6px;">本周 Top 5</h3>
+          <div class="top-list">
+            <div class="top-row"><div class="rank">01</div><div class="ico" style="background:rgba(0,212,255,0.12);color:var(--accent-blue);"><i class="fas fa-comments"></i></div><div class="name">ChatGPT</div><div class="clicks">6.8K</div></div>
+            <div class="top-row"><div class="rank">02</div><div class="ico" style="background:rgba(46,237,136,0.14);color:var(--accent-green);"><i class="fas fa-brain"></i></div><div class="name">DeepSeek</div><div class="clicks">4.2K</div></div>
+            <div class="top-row"><div class="rank">03</div><div class="ico" style="background:rgba(168,85,247,0.14);color:var(--accent-purple);"><i class="fas fa-pen-nib"></i></div><div class="name">Claude</div><div class="clicks">3.5K</div></div>
+            <div class="top-row"><div class="rank">04</div><div class="ico" style="background:rgba(168,85,247,0.14);color:var(--accent-purple);"><i class="fas fa-paint-brush"></i></div><div class="name">Midjourney</div><div class="clicks">2.9K</div></div>
+            <div class="top-row"><div class="rank">05</div><div class="ico" style="background:rgba(0,212,255,0.12);color:var(--accent-blue);"><i class="fas fa-code"></i></div><div class="name">Cursor</div><div class="clicks">2.4K</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6. ALL TOOLS -->
+  <section class="section" id="all-tools">
+    <div class="container">
+      <div class="section-head">
+        <div>
+          <div class="section-title">
+            <h2 class="t-h2 c-primary">全部工具</h2>
+            <span class="count">84 款</span>
+          </div>
+          <p class="section-subtitle">按默认排序，显示前 9 款</p>
+        </div>
+      </div>
+
+      <div class="tools-grid-3">
+        <article class="tool-row">
+          <div class="ico" style="background:rgba(0,212,255,0.12);color:var(--accent-blue);"><i class="fas fa-comments"></i></div>
+          <div>
+            <div class="name">ChatGPT</div>
+            <div class="meta">通用对话、代码、推理 · GPT-4o</div>
+            <div class="bottom"><span class="tag green">免费</span><span class="tag">海外</span><span class="visits">6.8K 访问</span></div>
+          </div>
+        </article>
+        <article class="tool-row">
+          <div class="ico" style="background:rgba(168,85,247,0.14);color:var(--accent-purple);"><i class="fas fa-pen-nib"></i></div>
+          <div>
+            <div class="name">Claude</div>
+            <div class="meta">长文写作 · 代码 · 推理</div>
+            <div class="bottom"><span class="tag green">免费</span><span class="tag">海外</span><span class="visits">3.5K 访问</span></div>
+          </div>
+        </article>
+        <article class="tool-row">
+          <div class="ico" style="background:rgba(46,237,136,0.14);color:var(--accent-green);"><i class="fas fa-brain"></i></div>
+          <div>
+            <div class="name">DeepSeek</div>
+            <div class="meta">国产推理 · V3.2 · 开源</div>
+            <div class="bottom"><span class="tag green">免费</span><span class="tag">国产</span><span class="visits">4.2K 访问</span></div>
+          </div>
+        </article>
+        <article class="tool-row">
+          <div class="ico" style="background:rgba(0,212,255,0.12);color:var(--accent-blue);"><i class="fas fa-code"></i></div>
+          <div>
+            <div class="name">Cursor</div>
+            <div class="meta">AI 代码编辑器 · 全文件上下文</div>
+            <div class="bottom"><span class="tag purple">VIP</span><span class="tag">海外</span><span class="visits">2.4K 访问</span></div>
+          </div>
+        </article>
+        <article class="tool-row">
+          <div class="ico" style="background:rgba(168,85,247,0.14);color:var(--accent-purple);"><i class="fas fa-paint-brush"></i></div>
+          <div>
+            <div class="name">Midjourney</div>
+            <div class="meta">艺术图像生成 · V6</div>
+            <div class="bottom"><span class="tag purple">付费</span><span class="tag">海外</span><span class="visits">2.9K 访问</span></div>
+          </div>
+        </article>
+        <article class="tool-row">
+          <div class="ico" style="background:rgba(255,148,40,0.14);color:var(--accent-orange);"><i class="fas fa-image"></i></div>
+          <div>
+            <div class="name">即梦 AI</div>
+            <div class="meta">字节 · 图文视频一体化 · 2.1</div>
+            <div class="bottom"><span class="tag green">免费</span><span class="tag">国产</span><span class="visits">1.8K 访问</span></div>
+          </div>
+        </article>
+        <article class="tool-row">
+          <div class="ico" style="background:rgba(46,237,136,0.14);color:var(--accent-green);"><i class="fas fa-music"></i></div>
+          <div>
+            <div class="name">Suno</div>
+            <div class="meta">AI 音乐生成 · v5</div>
+            <div class="bottom"><span class="tag green">免费</span><span class="tag">海外</span><span class="visits">1.5K 访问</span></div>
+          </div>
+        </article>
+        <article class="tool-row">
+          <div class="ico" style="background:rgba(0,212,255,0.12);color:var(--accent-blue);"><i class="fas fa-microphone"></i></div>
+          <div>
+            <div class="name">飞书妙记</div>
+            <div class="meta">会议转写 · AI 摘要</div>
+            <div class="bottom"><span class="tag green">免费</span><span class="tag">国产</span><span class="visits">1.2K 访问</span></div>
+          </div>
+        </article>
+        <article class="tool-row">
+          <div class="ico" style="background:rgba(255,148,40,0.14);color:var(--accent-orange);"><i class="fas fa-film"></i></div>
+          <div>
+            <div class="name">Runway</div>
+            <div class="meta">AI 视频 · Gen-3 · 文生视频</div>
+            <div class="bottom"><span class="tag purple">付费</span><span class="tag">海外</span><span class="visits">980 访问</span></div>
+          </div>
+        </article>
+      </div>
+
+      <button class="load-more">加载更多 75 款工具</button>
+    </div>
+  </section>
+
+  <!-- 7. FOOTER -->
+  <footer class="footer" id="footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div>
+          <div class="flex items-center" style="gap:12px;">
+            <div class="logo-icon"><i class="fas fa-robot"></i></div>
+            <span class="logo-text">AI Tool Hub</span>
+          </div>
+          <p class="footer-tagline">AI 工具导航，让好工具被看见。每周精选 · 持续更新 · 完全免费。</p>
+          <div class="footer-social">
+            <a href="#" aria-label="GitHub"><i class="fab fa-github"></i></a>
+            <a href="#" aria-label="微博"><i class="fab fa-weibo"></i></a>
+            <a href="#" aria-label="Twitter"><i class="fab fa-twitter"></i></a>
+          </div>
+        </div>
+        <div>
+          <h4>工具分类</h4>
+          <ul>
+            <li><a href="#">AI 写作</a></li>
+            <li><a href="#">AI 绘画</a></li>
+            <li><a href="#">AI 视频</a></li>
+            <li><a href="#">AI 代码</a></li>
+            <li><a href="#">AI 办公</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>资源</h4>
+          <ul>
+            <li><a href="#">本周上新</a></li>
+            <li><a href="#">热度排行</a></li>
+            <li><a href="#">使用文章</a></li>
+            <li><a href="#">提交工具</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>关于</h4>
+          <ul>
+            <li><a href="#">关于我们</a></li>
+            <li><a href="#">联系方式</a></li>
+            <li><a href="#">隐私政策</a></li>
+            <li><a href="#">服务条款</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <div>© 2026 weihub.cloud · ICP 备 12345678 号</div>
+        <div class="right">
+          <a href="#">主题切换</a>
+          <a href="#">简体中文</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+</div>
+<script>
+  document.querySelectorAll('.cat-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.cat-toggle').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+  document.querySelectorAll('.sort-bar .sort-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.querySelector('.fa-sliders-h')) return;
+      document.querySelectorAll('.sort-bar .sort-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+</script>
+</body>
+</html>

@@ -33,7 +33,8 @@ const mockQuotaService = {
     register: jest.fn(),
     verifyPassword: jest.fn(),
     checkQuota: jest.fn(() => ({ used: 0, remaining: 10, total: 10 })),
-    getUserById: jest.fn()
+    getUserById: jest.fn(),
+    getMembership: jest.fn(() => ({ plan: 'free', status: 'active' }))
 };
 
 jest.unstable_mockModule('../services/quota.js', () => ({
@@ -57,6 +58,7 @@ beforeAll(async () => {
     app = express();
     app.use(express.json());
     app.use('/api/v1/auth', authRoutes);
+    app.use((req, res) => res.status(404).json({ error: 'not found' }));
 });
 
 beforeEach(() => {
@@ -257,5 +259,16 @@ describe('GET /api/v1/auth/me', () => {
 
         expect(res.status).toBe(500);
         expect(res.body.error).toContain('获取用户信息失败');
+    });
+});
+
+describe('POST /api/v1/auth/logout', () => {
+    test('clears the HttpOnly authentication cookie', async () => {
+        const res = await request(app)
+            .post('/api/v1/auth/logout');
+
+        expect(res.status).toBe(200);
+        expect(res.body.ok).toBe(true);
+        expect(res.headers['set-cookie'][0]).toContain('auth_token=;');
     });
 });

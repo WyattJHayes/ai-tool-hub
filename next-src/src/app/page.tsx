@@ -12,6 +12,7 @@ import { useToolStore } from '@/stores/useToolStore';
 import { getToolSlug } from '@/lib/tools-data';
 import type { Scene } from '@/types/tool';
 import SceneCard from '@/components/scenes/SceneCard';
+import { ToolIcon } from '@/lib/icon-map';
 
 const scenes: Scene[] = [
   { id: 'ppt', name: 'PPT 制作', icon: '', description: 'AI 辅助生成专业演示文稿', toolIds: [] },
@@ -92,7 +93,7 @@ export default function Home() {
                     )}
                   >
                     <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-2xl">
-                      {tool.icon}
+                      <ToolIcon name={tool.icon} className="h-6 w-6 text-violet-300" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">

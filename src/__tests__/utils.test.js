@@ -573,49 +573,6 @@ describe('loadAnnouncement / closeAnnouncement', () => {
 });
 
 // ---------------------------------------------------------------------------
-// checkForUpdate / closeUpdateModal
-// ---------------------------------------------------------------------------
-
-describe('checkForUpdate / closeUpdateModal', () => {
-    let checkForUpdate, closeUpdateModal;
-
-    beforeAll(async () => {
-        const mod = await import('../../js/utils.js');
-        checkForUpdate = mod.checkForUpdate;
-        closeUpdateModal = mod.closeUpdateModal;
-    });
-
-    beforeEach(() => {
-        localStorage.clear();
-        document.body.innerHTML = '<div id="updateModal"></div>';
-    });
-
-    test('should show update modal on first visit', () => {
-        checkForUpdate();
-        expect(document.getElementById('updateModal').classList.contains('active')).toBe(true);
-        expect(localStorage.getItem('ai-tool-hub-v2-5-shown')).toBe('true');
-    });
-
-    test('should not show on subsequent visits', () => {
-        localStorage.setItem('ai-tool-hub-v2-5-shown', 'true');
-        checkForUpdate();
-        expect(document.getElementById('updateModal').classList.contains('active')).toBe(false);
-    });
-
-    test('closeUpdateModal should remove active', () => {
-        document.getElementById('updateModal').classList.add('active');
-        closeUpdateModal();
-        expect(document.getElementById('updateModal').classList.contains('active')).toBe(false);
-    });
-
-    test('should not throw when modal missing', () => {
-        document.body.innerHTML = '';
-        expect(() => checkForUpdate()).not.toThrow();
-        expect(() => closeUpdateModal()).not.toThrow();
-    });
-});
-
-// ---------------------------------------------------------------------------
 // registerServiceWorker
 // ---------------------------------------------------------------------------
 

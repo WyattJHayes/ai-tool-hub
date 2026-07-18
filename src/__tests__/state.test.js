@@ -402,9 +402,9 @@ describe('data export and import', () => {
         });
 
         importUserData(testData);
-        // Import overwrites existing keys; 1 had 10, import has 5 -> becomes 5
+        // Import keeps the higher local click count when the import has an older value.
         // 3 had 0, import has 20 -> becomes 20
-        expect(getToolClickCount(1)).toBe(5);
+        expect(getToolClickCount(1)).toBe(10);
         expect(getToolClickCount(3)).toBe(20);
     });
 });

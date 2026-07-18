@@ -7,8 +7,6 @@ const MAX_MAP_SIZE = 10000;
 
 export function rateLimitMiddleware(req, res, next) {
     const ip = req.ip || req.connection.remoteAddress;
-    // Also key by authenticated user ID when available for secondary limiting
-    const userId = req.user?.id;
     const now = Date.now();
 
     // ── IP-based rate limiting ──
@@ -38,19 +36,23 @@ export function rateLimitMiddleware(req, res, next) {
 
     recentIpRequests.push(now);
 
-    // ── Per-user secondary limiting (applied after auth middleware) ──
-    if (userId) {
-        const userKey = `user:${userId}`;
-        const userRequests = requestsPerMinute.get(userKey) || [];
-        const recentUserRequests = userRequests.filter(t => now - t < WINDOW_MS);
-        if (recentUserRequests.length >= MAX_REQUESTS) {
-            logger.warn(`[${req.requestId}] User rate limit exceeded: user=${userId}`);
-            return res.status(429).json({ error: '请求过于频繁，请稍后再试' });
-        }
-        recentUserRequests.push(now);
-        requestsPerMinute.set(userKey, recentUserRequests);
-    }
+    next();
+}
 
+export function userRateLimitMiddleware(req, res, next) {
+    const userId = req.user?.id;
+    if (!userId) return next();
+
+    const now = Date.now();
+    const userKey = `user:${userId}`;
+    const userRequests = requestsPerMinute.get(userKey) || [];
+    const recentUserRequests = userRequests.filter(t => now - t < WINDOW_MS);
+    if (recentUserRequests.length >= MAX_REQUESTS) {
+        logger.warn(`[${req.requestId}] User rate limit exceeded: user=${userId}`);
+        return res.status(429).json({ error: '请求过于频繁，请稍后再试' });
+    }
+    recentUserRequests.push(now);
+    requestsPerMinute.set(userKey, recentUserRequests);
     next();
 }
 

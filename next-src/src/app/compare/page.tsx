@@ -19,6 +19,7 @@ import { useToolStore } from '@/stores/useToolStore';
 import { getCategoryNames, getRelatedTools } from '@/lib/tools-data';
 import { ToolCard } from '@/components/tools/ToolCard';
 import type { Tool } from '@/types/tool';
+import { ToolIcon } from '@/lib/icon-map';
 
 const COMPARE_ROWS = [
   { key: 'category', label: '分类' },
@@ -184,7 +185,7 @@ export default function ComparePage() {
                 <X className="h-3.5 w-3.5" />
               </button>
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500/20 to-purple-500/20 text-2xl">
-                {tool.icon}
+                <ToolIcon name={tool.icon} className="h-8 w-8 text-white/70" />
               </div>
               <h2 className="text-center font-semibold">{tool.name}</h2>
               <p className="text-center text-xs text-white/40 line-clamp-2">{tool.desc}</p>
@@ -330,7 +331,7 @@ export default function ComparePage() {
                   }}
                   className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-white/5"
                 >
-                  <span className="text-lg">{tool.icon}</span>
+                  <ToolIcon name={tool.icon} className="h-5 w-5 text-white/60" />
                   <div>
                     <p className="text-sm font-medium text-white/90">{tool.name}</p>
                     <p className="text-xs text-white/40">{tool.desc}</p>

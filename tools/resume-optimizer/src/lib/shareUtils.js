@@ -28,7 +28,7 @@ class ShareUtils {
         const name = resumeData.profile?.name || '匿名用户';
         const title = resumeData.profile?.title || '求职者';
         const skills = resumeData.skills?.slice(0, 3).join('、') || '专业技能';
-        
+
         return `${name} 使用AI简历优化工具创建的${title}简历，擅长${skills}。快来优化你的简历吧！`;
     }
 
@@ -45,7 +45,7 @@ class ShareUtils {
         }
 
         const linkedinUrl = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(this.shareData.url)}&title=${encodeURIComponent(this.shareData.title)}&summary=${encodeURIComponent(this.shareData.description)}`;
-        
+
         this.openShareWindow(linkedinUrl, 'LinkedIn分享', 600, 400);
         this.logShareEvent('linkedin');
     }
@@ -97,7 +97,7 @@ class ShareUtils {
         }
 
         const twitterUrl = `https://twitter.com/intent/tweet?url=${encodeURIComponent(this.shareData.url)}&text=${encodeURIComponent(this.shareData.description)}&hashtags=AI简历优化,求职工具`;
-        
+
         this.openShareWindow(twitterUrl, 'Twitter分享', 600, 400);
         this.logShareEvent('twitter');
     }
@@ -109,7 +109,7 @@ class ShareUtils {
         }
 
         const shareText = `${this.shareData.title}\n${this.shareData.description}\n\n${this.shareData.url}`;
-        
+
         navigator.clipboard.writeText(shareText)
             .then(() => {
                 showNotification('分享链接已复制到剪贴板', 'success');
@@ -134,7 +134,7 @@ class ShareUtils {
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
-            
+
             showNotification('PDF已生成，可以分享给他人', 'success');
             this.logShareEvent('pdf_download');
         }).catch(error => {
@@ -153,7 +153,7 @@ class ShareUtils {
     openShareWindow(url, title, width = 600, height = 400) {
         const left = (screen.width - width) / 2;
         const top = (screen.height - height) / 2;
-        
+
         window.open(url, title, `width=${width},height=${height},top=${top},left=${left},toolbar=0,location=0,menubar=0,resizable=1,scrollbars=1`);
     }
 
@@ -171,11 +171,11 @@ class ShareUtils {
     getShareStats() {
         const shareLog = JSON.parse(localStorage.getItem('shareLogs') || '[]');
         const stats = {};
-        
+
         shareLog.forEach(log => {
             stats[log.platform] = (stats[log.platform] || 0) + 1;
         });
-        
+
         return {
             totalShares: shareLog.length,
             platformStats: stats,

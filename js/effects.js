@@ -10,7 +10,16 @@ function initParticles() {
     canvas.id = 'particleCanvas';
     document.body.insertBefore(canvas, document.body.firstChild);
 
+    if (typeof window.CanvasRenderingContext2D === 'undefined') {
+        canvas.remove();
+        return () => {};
+    }
+
     const ctx = canvas.getContext('2d');
+    if (!ctx) {
+        canvas.remove();
+        return () => {};
+    }
     let particles = [];
     let animId;
 
@@ -75,7 +84,7 @@ function initCursorGlow() {
 }
 
 export function initEffects() {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
     initParticles();
     initCursorGlow();

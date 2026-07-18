@@ -1,16 +1,29 @@
+/* global __APP_VERSION__ */
+
 // Import functions
 import { showToast, escapeHtml } from './utils.js';
 import state, { updateData } from './state.js';
-import { renderCategories, renderHotTools, renderStatisticsDashboard, renderTools, loadSavedFilters } from './ui.js';
+import { renderCategories, renderHotTools, renderStatisticsDashboard, renderTools } from './ui.js';
 import { setupCard3DEffect, setupStatsAnimations } from './renderer.js';
+
+function getToolsDataUrl() {
+    const baseUrl = import.meta.env?.BASE_URL || './';
+    const version = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev';
+    return `${baseUrl}tools.json?v=${encodeURIComponent(version)}`;
+}
 
 // Load Tools
 async function loadTools() {
     try {
-        const response = await fetch('tools.json');
+        const response = await fetch(getToolsDataUrl());
 
         if (!response.ok) {
             throw new Error(`网络请求失败: ${response.status}`);
+        }
+
+        const contentType = response.headers?.get?.('content-type') || '';
+        if (contentType.includes('text/html')) {
+            throw new Error('工具数据响应格式不正确');
         }
         
         const data = await response.json();
@@ -53,7 +66,7 @@ async function loadTools() {
         }
 
         // Notify dependent modules that tools are ready
-                // Hide skeletons, show real grids
+        // Hide skeletons, show real grids
         const hotSkel = document.getElementById('hotSkeleton');
         if (hotSkel) hotSkel.style.display = 'none';
         const hotGrid = document.getElementById('hotToolsGrid');

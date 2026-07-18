@@ -31,7 +31,9 @@ jest.unstable_mockModule('../config.js', () => ({
 
 const mockQuotaService = {
     checkQuota: jest.fn(() => ({ used: 0, remaining: 10, total: 10 })),
-    incrementUsage: jest.fn(() => ({ used: 1, remaining: 9, total: 10 }))
+    incrementUsage: jest.fn(() => ({ used: 1, remaining: 9, total: 10 })),
+    tryConsumeQuota: jest.fn(),
+    refundUsage: jest.fn()
 };
 
 jest.unstable_mockModule('../services/quota.js', () => ({
@@ -69,6 +71,10 @@ beforeEach(() => {
     jest.clearAllMocks();
     mockQuotaService.checkQuota.mockReturnValue({ used: 0, remaining: 10, total: 10 });
     mockQuotaService.incrementUsage.mockReturnValue({ used: 1, remaining: 9, total: 10 });
+    mockQuotaService.tryConsumeQuota.mockImplementation(() => ({
+        allowed: true,
+        quota: mockQuotaService.incrementUsage()
+    }));
 });
 
 // ---------------------------------------------------------------------------
@@ -119,7 +125,10 @@ describe('POST /api/v1/resume/parse', () => {
     });
 
     test('should return 429 when quota exhausted', async () => {
-        mockQuotaService.checkQuota.mockReturnValue({ used: 10, remaining: 0, total: 10 });
+        mockQuotaService.tryConsumeQuota.mockReturnValue({
+            allowed: false,
+            quota: { used: 10, remaining: 0, total: 10 }
+        });
 
         const res = await request(app)
             .post('/api/v1/resume/parse')
@@ -149,6 +158,29 @@ describe('POST /api/v1/resume/parse', () => {
 
         expect(res.status).toBe(500);
         expect(res.body.error).toContain('解析失败');
+        expect(mockQuotaService.refundUsage).toHaveBeenCalledWith(1);
+    });
+
+    test('should allow only one concurrent request to consume the final quota', async () => {
+        let remaining = 1;
+        mockQuotaService.tryConsumeQuota.mockImplementation(() => {
+            if (remaining === 0) {
+                return { allowed: false, quota: { used: 1, remaining: 0, total: 1 } };
+            }
+            remaining -= 1;
+            return { allowed: true, quota: { used: 1, remaining: 0, total: 1 } };
+        });
+        mockLlmService.parseResumeText.mockImplementation(async () => {
+            await new Promise(resolve => setTimeout(resolve, 10));
+            return { profile: { name: 'Allowed' } };
+        });
+
+        const requests = [1, 2].map(() => request(app)
+            .post('/api/v1/resume/parse')
+            .send({ text: 'This is a resume with enough text to pass validation...' }));
+        const responses = await Promise.all(requests);
+
+        expect(responses.map(response => response.status).sort()).toEqual([200, 429]);
     });
 });
 
@@ -190,7 +222,10 @@ describe('POST /api/v1/resume/analyze-jd', () => {
     });
 
     test('should return 429 when quota exhausted', async () => {
-        mockQuotaService.checkQuota.mockReturnValue({ used: 10, remaining: 0, total: 10 });
+        mockQuotaService.tryConsumeQuota.mockReturnValue({
+            allowed: false,
+            quota: { used: 10, remaining: 0, total: 10 }
+        });
 
         const res = await request(app)
             .post('/api/v1/resume/analyze-jd')
@@ -209,5 +244,6 @@ describe('POST /api/v1/resume/analyze-jd', () => {
 
         expect(res.status).toBe(500);
         expect(res.body.error).toContain('分析失败');
+        expect(mockQuotaService.refundUsage).toHaveBeenCalledWith(1);
     });
 });

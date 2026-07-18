@@ -1,4 +1,5 @@
 import { Sparkles } from 'lucide-react';
+import Image from 'next/image';
 
 export default function Footer() {
     return (
@@ -55,7 +56,7 @@ export default function Footer() {
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 text-[var(--text-tertiary)] transition-colors duration-150 hover:text-[var(--text-secondary)]"
                         >
-                            <img src="/beian-icon.png" alt="公安备案" className="h-3.5 w-3.5" />
+                            <Image src="/beian-icon.png" alt="公安备案" width={14} height={14} />
                             沪公网安备31011502405714号
                         </a>
                     </div>

@@ -164,7 +164,7 @@ function getTemplateById(templateId) {
  */
 function applyTemplate(templateId, currentData = {}) {
     const template = getTemplateById(templateId);
-    
+
     return {
         ...currentData,
         template: templateId,

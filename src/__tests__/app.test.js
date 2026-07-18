@@ -11,7 +11,13 @@ const mockEscapeHtml = jest.fn(s => s);
 
 jest.unstable_mockModule('../../js/utils.js', () => ({
     showToast: mockShowToast,
-    escapeHtml: mockEscapeHtml
+    escapeHtml: mockEscapeHtml,
+    escapeAttr: mockEscapeHtml
+}));
+
+jest.unstable_mockModule('../../js/renderer.js', () => ({
+    setupCard3DEffect: jest.fn(),
+    setupStatsAnimations: jest.fn()
 }));
 
 // Mock state module
@@ -27,7 +33,8 @@ const mockUpdateData = jest.fn((tools, categories) => {
 
 jest.unstable_mockModule('../../js/state.js', () => ({
     default: mockState,
-    updateData: mockUpdateData
+    updateData: mockUpdateData,
+    PLATFORM_ICONS: { web: 'fa-globe', mobile: 'fa-mobile-alt', desktop: 'fa-desktop', local: 'fa-server' }
 }));
 
 // ui.js is dynamically imported inside loadTools, so we mock it
@@ -90,7 +97,7 @@ describe('loadTools success path', () => {
     test('should fetch tools.json and update state', async () => {
         await loadTools();
 
-        expect(global.fetch).toHaveBeenCalledWith('tools.json');
+        expect(global.fetch).toHaveBeenCalledWith('./tools.json?v=dev');
         expect(mockUpdateData).toHaveBeenCalledWith(
             expect.arrayContaining([expect.objectContaining({ id: 1 })]),
             expect.arrayContaining([expect.objectContaining({ id: 'writing' })])
@@ -162,6 +169,20 @@ describe('loadTools error handling', () => {
         await loadTools();
 
         expect(mockShowToast).toHaveBeenCalledWith(expect.stringContaining('数据结构不正确'));
+    });
+
+    test('should reject an HTML fallback before attempting JSON parsing', async () => {
+        const parseJson = jest.fn().mockRejectedValue(new SyntaxError("Unexpected token '<'"));
+        global.fetch.mockResolvedValue({
+            ok: true,
+            headers: { get: () => 'text/html; charset=utf-8' },
+            json: parseJson
+        });
+
+        await loadTools();
+
+        expect(mockShowToast).toHaveBeenCalledWith('加载失败: 工具数据响应格式不正确');
+        expect(parseJson).not.toHaveBeenCalled();
     });
 
     test('should show error UI with retry button on failure', async () => {

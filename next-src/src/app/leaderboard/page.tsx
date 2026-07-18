@@ -7,6 +7,7 @@ import { ArrowLeft, Trophy, TrendingUp, Eye, BarChart3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToolStore } from '@/stores/useToolStore';
 import { getToolSlug } from '@/lib/tools-data';
+import { ToolIcon } from '@/lib/icon-map';
 
 export default function LeaderboardPage() {
   const { tools, clickStats, loadData, dataLoaded } = useToolStore();
@@ -105,7 +106,7 @@ export default function LeaderboardPage() {
 
                 {/* Icon */}
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/5 text-xl">
-                  {tool.icon}
+                  <ToolIcon name={tool.icon} className="h-5 w-5 text-white/60" />
                 </div>
 
                 {/* Info */}

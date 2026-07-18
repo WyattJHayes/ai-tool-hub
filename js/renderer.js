@@ -14,10 +14,10 @@ function renderCategories() {
     container.setAttribute('aria-label', '工具分类');
 
     const buttons = state.categories.map(cat =>
-        `<button class="category-btn px-5 py-2 rounded-full border text-sm font-medium transition-all" data-category="${escapeAttr(cat.id)}" data-action="filter-category" aria-label="查看${escapeHtml(cat.name)}分类的工具" tabindex="0"><i class="fas ${escapeAttr(cat.icon || "fa-folder")}"></i> ${escapeHtml(cat.name)}</button>`
+        `<button class="category-btn px-5 py-2 rounded-full border text-sm font-medium transition-all" data-category="${escapeAttr(cat.id)}" data-action="filter-category" aria-label="查看${escapeHtml(cat.name)}分类的工具" tabindex="0"><i class="fas ${escapeAttr(cat.icon || 'fa-folder')}" aria-hidden="true"></i><span>${escapeHtml(cat.name)}</span></button>`
     ).join('');
 
-    container.innerHTML = '<button class="category-btn active px-5 py-2 rounded-full border text-sm font-medium transition-all" data-category="all" data-action="filter-category" aria-label="查看全部工具" tabindex="0"><i class="fas fa-th-large"></i> 全部</button>' + buttons;
+    container.innerHTML = '<button class="category-btn active px-5 py-2 rounded-full border text-sm font-medium transition-all" data-category="all" data-action="filter-category" aria-label="查看全部工具" tabindex="0"><i class="fas fa-th-large" aria-hidden="true"></i><span>全部</span></button>' + buttons;
 }
 
 /**
@@ -422,4 +422,3 @@ function setupStatsAnimations() {
 }
 
 export { setupCard3DEffect, setupStatsAnimations, animateCountUp };
-

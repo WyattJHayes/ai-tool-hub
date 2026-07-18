@@ -746,6 +746,31 @@ describe('streamOptimize', () => {
         expect(doneEvent.data.optimizedData).toBeDefined();
         expect(doneEvent.data.optimizedData.profile.name).toBe('Alice');
     });
+
+    test('should preserve an SSE data line split across network chunks', async () => {
+        const jsonPayload = JSON.stringify({
+            profile: { name: 'Chunked Alice' },
+            skills: ['React'],
+            experience: [],
+            education: []
+        });
+        const sseLine = `data: ${JSON.stringify({ choices: [{ delta: { content: jsonPayload } }] })}\n`;
+        const responseBody = [sseLine.slice(0, 19), sseLine.slice(19, 47), sseLine.slice(47), 'data: [DONE]\n'];
+        global.fetch.mockResolvedValue({
+            ok: true,
+            status: 200,
+            body: createMockStream(responseBody),
+            json: async () => ({})
+        });
+
+        const events = [];
+        for await (const event of svc.streamOptimize('light', 'Some resume', null)) {
+            events.push(event);
+        }
+
+        const doneEvent = events.at(-1);
+        expect(doneEvent.data.optimizedData.profile.name).toBe('Chunked Alice');
+    });
 });
 
 // ---------------------------------------------------------------------------

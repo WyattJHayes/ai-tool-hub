@@ -27,7 +27,8 @@ jest.unstable_mockModule('../../js/state.js', () => ({
     setToolRating: mockSetToolRating,
     getToolRating: jest.fn(() => 3),
     isFavorite: jest.fn(() => false),
-    getCategoryName: jest.fn(() => 'AI聊天')
+    getCategoryName: jest.fn(() => 'AI聊天'),
+    PLATFORM_ICONS: { web: 'fa-globe', mobile: 'fa-mobile-alt', desktop: 'fa-desktop', local: 'fa-server' }
 }));
 
 jest.unstable_mockModule('../../js/ui.js', () => ({

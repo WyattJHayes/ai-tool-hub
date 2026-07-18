@@ -83,5 +83,5 @@ export function getToolIcon(iconName: string): LucideIcon {
 
 export function ToolIcon({ name, className }: { name: string; className?: string }) {
   const Icon = getToolIcon(name);
-  return <Icon className={className} />;
+  return React.createElement(Icon, { className });
 }

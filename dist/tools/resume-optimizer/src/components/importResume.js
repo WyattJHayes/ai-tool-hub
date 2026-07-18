@@ -26,7 +26,7 @@ class ImportResume {
         this.render();
         this.attachEventListeners();
         this.isActive = true;
-        
+
         return true;
     }
 
@@ -81,7 +81,7 @@ class ImportResume {
                         <h4 class="progress-title">正在解析简历...</h4>
                         <div class="progress-percent" id="progressPercent">0%</div>
                     </div>
-                    
+
                     <div class="progress-bar-container">
                         <div class="progress-bar" id="progressBar"></div>
                     </div>
@@ -669,7 +669,7 @@ class ImportResume {
         uploadZone.addEventListener('drop', (e) => {
             e.preventDefault();
             uploadZone.classList.remove('dragover');
-            
+
             if (e.dataTransfer.files.length > 0) {
                 this.handleFileSelect(e.dataTransfer.files[0]);
             }
@@ -707,7 +707,7 @@ class ImportResume {
         if (!file) return;
 
         this.currentFile = file;
-        
+
         // 验证文件
         if (!importUtils.isFileSupported(file)) {
             this.showError('不支持的文件格式', `请上传支持的文件格式: ${importUtils.supportedFormats.join(', ')}`);
@@ -723,7 +723,7 @@ class ImportResume {
         const startImportBtn = document.getElementById('startImportBtn');
         startImportBtn.disabled = false;
         startImportBtn.innerHTML = `<i class="fas fa-upload mr-2"></i>导入 ${escapeHtml(file.name)}`;
-        
+
         // 显示文件信息
         const uploadZone = document.getElementById('uploadZone');
         uploadZone.innerHTML = `
@@ -749,11 +749,11 @@ class ImportResume {
         try {
             // 更新进度
             this.updateProgress(10, '正在读取文件...');
-            
+
             // 解析文件
             this.updateProgress(30, '正在解析内容...');
             const result = await importUtils.parseResumeFile(this.currentFile);
-            
+
             if (result.success) {
                 // 检查解析出的数据是否有效
                 const data = result.data;
@@ -771,7 +771,7 @@ class ImportResume {
 
                 this.updateProgress(80, '正在处理数据...');
                 this.parsedData = result.data;
-                
+
                 // 显示结果
                 setTimeout(() => {
                     this.updateProgress(100, '解析完成');
@@ -832,7 +832,7 @@ class ImportResume {
         document.getElementById('progressSection').classList.remove('hidden');
         document.getElementById('previewSection').classList.add('hidden');
         document.getElementById('errorSection').classList.add('hidden');
-        
+
         // 重置进度
         this.updateProgress(0, '准备解析...');
     }
@@ -855,7 +855,7 @@ class ImportResume {
      */
     updatePreviewData(result) {
         const data = result.data;
-        
+
         // 文件信息
         document.getElementById('previewFileName').textContent = result.fileName;
         document.getElementById('previewFileType').textContent = result.fileType.toUpperCase();
@@ -917,14 +917,14 @@ class ImportResume {
         if (data.skills && data.skills.length > 0) {
             const skillTags = document.createElement('div');
             skillTags.className = 'skill-tags';
-            
+
             data.skills.forEach(skill => {
                 const tag = document.createElement('span');
                 tag.className = 'skill-tag';
                 tag.textContent = skill;
                 skillTags.appendChild(tag);
             });
-            
+
             skillsPreview.appendChild(skillTags);
         } else {
             skillsPreview.innerHTML = '<div class="text-gray-500 text-sm">未识别到技能</div>';
@@ -976,7 +976,7 @@ class ImportResume {
         this.showUploadSection();
         this.currentFile = null;
         this.parsedData = null;
-        
+
         // 重置UI
         const uploadZone = document.getElementById('uploadZone');
         uploadZone.innerHTML = `

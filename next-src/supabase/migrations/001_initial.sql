@@ -101,12 +101,14 @@ CREATE TABLE click_logs (
 ALTER TABLE favorites ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ratings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE click_logs ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Users can view own favorites" ON favorites FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Users can insert own favorites" ON favorites FOR INSERT WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Users can delete own favorites" ON favorites FOR DELETE USING (auth.uid() = user_id);
 CREATE POLICY "Anyone can view ratings" ON ratings FOR SELECT USING (true);
 CREATE POLICY "Users can insert own ratings" ON ratings FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can update own ratings" ON ratings FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Users can view own profile" ON profiles FOR SELECT USING (auth.uid() = id);
 CREATE POLICY "Users can update own profile" ON profiles FOR UPDATE USING (auth.uid() = id);
 
@@ -115,10 +117,10 @@ CREATE OR REPLACE FUNCTION update_tool_rating()
 RETURNS TRIGGER AS $$
 BEGIN
     UPDATE tools SET
-        avg_rating = (SELECT COALESCE(AVG(score), 0) FROM ratings WHERE tool_id = NEW.tool_id),
-        rating_count = (SELECT COUNT(*) FROM ratings WHERE tool_id = NEW.tool_id),
+        avg_rating = (SELECT COALESCE(AVG(score), 0) FROM ratings WHERE tool_id = COALESCE(NEW.tool_id, OLD.tool_id)),
+        rating_count = (SELECT COUNT(*) FROM ratings WHERE tool_id = COALESCE(NEW.tool_id, OLD.tool_id)),
         updated_at = now()
-    WHERE id = NEW.tool_id;
+    WHERE id = COALESCE(NEW.tool_id, OLD.tool_id);
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -150,6 +152,7 @@ CREATE POLICY "Public read tools" ON tools FOR SELECT USING (true);
 CREATE POLICY "Public read categories" ON categories FOR SELECT USING (true);
 CREATE POLICY "Public read scenes" ON scenes FOR SELECT USING (true);
 CREATE POLICY "Public read click_logs" ON click_logs FOR SELECT USING (true);
+CREATE POLICY "Public insert click_logs" ON click_logs FOR INSERT WITH CHECK (true);
 
 -- 自动创建 profile
 CREATE OR REPLACE FUNCTION handle_new_user()

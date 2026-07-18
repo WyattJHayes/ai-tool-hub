@@ -4,6 +4,15 @@
 import { jest } from '@jest/globals';
 import jwt from 'jsonwebtoken';
 
+jest.unstable_mockModule('../utils/logger.js', () => ({
+    default: {
+        debug: jest.fn(),
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn()
+    }
+}));
+
 // Set env before config module resolves
 process.env.JWT_SECRET = 'test-jwt-secret-for-auth-middleware-tests';
 process.env.JWT_ISSUER = 'test-issuer';
@@ -145,6 +154,21 @@ describe('authMiddleware — with valid token', () => {
         expect(next).toHaveBeenCalled();
         expect(req.user.id).toBe(1);
         expect(req.user.email).toBe('header@example.com');
+    });
+
+    test('should enforce a per-user limit after authentication', () => {
+        const token = generateToken({ id: 9999, email: 'limited@example.com' });
+        let last;
+
+        for (let index = 0; index <= 30; index++) {
+            last = mockReqRes();
+            last.req.ip = `10.0.0.${index + 1}`;
+            last.req.headers.authorization = `Bearer ${token}`;
+            authMiddleware(last.req, last.res, last.next);
+        }
+
+        expect(last.res.status).toHaveBeenCalledWith(429);
+        expect(last.next).not.toHaveBeenCalled();
     });
 });
 

@@ -8,7 +8,13 @@ const mockShowToast = jest.fn();
 const mockEscapeHtml = jest.fn(s => s);
 jest.unstable_mockModule('../../js/utils.js', () => ({
     showToast: mockShowToast,
-    escapeHtml: mockEscapeHtml
+    escapeHtml: mockEscapeHtml,
+    escapeAttr: mockEscapeHtml
+}));
+
+jest.unstable_mockModule('../../js/renderer.js', () => ({
+    setupCard3DEffect: jest.fn(),
+    setupStatsAnimations: jest.fn()
 }));
 
 const mockState = { tools: [], categories: [] };
@@ -18,7 +24,8 @@ const mockUpdateData = jest.fn((tools, cats) => {
 });
 jest.unstable_mockModule('../../js/state.js', () => ({
     default: mockState,
-    updateData: mockUpdateData
+    updateData: mockUpdateData,
+    PLATFORM_ICONS: { web: 'fa-globe', mobile: 'fa-mobile-alt', desktop: 'fa-desktop', local: 'fa-server' }
 }));
 
 jest.unstable_mockModule('../../js/ui.js', () => ({

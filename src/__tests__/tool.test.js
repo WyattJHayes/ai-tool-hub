@@ -18,7 +18,8 @@ jest.unstable_mockModule('../../js/state.js', () => ({
     recordToolClick: jest.fn(),
     getToolClickCount: jest.fn(() => 5),
     setToolRating: jest.fn(),
-    getToolRating: jest.fn(() => 0)
+    getToolRating: jest.fn(() => 0),
+    PLATFORM_ICONS: { web: 'fa-globe', mobile: 'fa-mobile-alt', desktop: 'fa-desktop', local: 'fa-server' }
 }));
 
 jest.unstable_mockModule('../../js/ui.js', () => ({
@@ -70,7 +71,7 @@ describe('openTool', () => {
         expect(event.stopPropagation).toHaveBeenCalled();
         expect(isValidUrl).toHaveBeenCalledWith('https://example.com');
         expect(recordToolClick).toHaveBeenCalledWith(1);
-        expect(window.open).toHaveBeenCalledWith('https://example.com', '_blank');
+        expect(window.open).toHaveBeenCalledWith('https://example.com', '_blank', 'noopener,noreferrer');
         expect(showToast).not.toHaveBeenCalled();
     });
 

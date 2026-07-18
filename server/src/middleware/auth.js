@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import config from '../config.js';
+import { userRateLimitMiddleware } from './rateLimit.js';
 
 export function authMiddleware(req, res, next) {
     let token = null;
@@ -18,19 +19,21 @@ export function authMiddleware(req, res, next) {
         return res.status(401).json({ error: '未登录，请先登录' });
     }
 
+    let decoded;
     try {
-        const decoded = jwt.verify(token, config.JWT_SECRET, {
+        decoded = jwt.verify(token, config.JWT_SECRET, {
             issuer: config.JWT_ISSUER,
             audience: config.JWT_AUDIENCE
         });
-        req.user = decoded;
-        next();
     } catch (err) {
         if (err.name === 'TokenExpiredError') {
             return res.status(401).json({ error: '登录已过期，请重新登录' });
         }
         return res.status(401).json({ error: '无效的认证信息' });
     }
+
+    req.user = decoded;
+    return userRateLimitMiddleware(req, res, next);
 }
 
 export function generateToken(user) {

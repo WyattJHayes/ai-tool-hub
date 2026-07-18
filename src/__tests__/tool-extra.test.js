@@ -43,7 +43,8 @@ jest.unstable_mockModule('../../js/state.js', () => ({
     getCategoryName: jest.fn((id) => {
         const cat = mockState.categories.find(c => c.id === id);
         return cat ? cat.name : '';
-    })
+    }),
+    PLATFORM_ICONS: { web: 'fa-globe', mobile: 'fa-mobile-alt', desktop: 'fa-desktop', local: 'fa-server' }
 }));
 
 jest.unstable_mockModule('../../js/ui.js', () => ({

@@ -167,7 +167,7 @@ describe('QuotaService', () => {
                 await svc.flush();
 
                 const saved = JSON.parse(readFileSync(dataPath, 'utf8'));
-                const today = new Date().toISOString().split('T')[0];
+                const today = svc._todayKey();
                 const key = `${result.user.id}_${today}`;
                 expect(saved.usage[key]).toBe(2);
             });
@@ -206,6 +206,41 @@ describe('QuotaService', () => {
 
                 // Reads should still return immediately (non-blocking)
                 expect(svc.checkQuota(result.user.id).used).toBe(2);
+            });
+        });
+    });
+
+    describe('quota reservation', () => {
+        test('allows exactly the configured number of reservations', () => {
+            withTempService((svc) => {
+                const { user } = svc.register('reserve@test.com', 'pw123456');
+
+                const results = Array.from({ length: 6 }, () => svc.tryConsumeQuota(user.id));
+
+                expect(results.slice(0, 5).every(result => result.allowed)).toBe(true);
+                expect(results[5]).toMatchObject({
+                    allowed: false,
+                    quota: { used: 5, remaining: 0, total: 5 }
+                });
+            });
+        });
+
+        test('restores a reserved use when processing fails', () => {
+            withTempService((svc) => {
+                const { user } = svc.register('refund@test.com', 'pw123456');
+
+                expect(svc.tryConsumeQuota(user.id).quota.remaining).toBe(4);
+                const quota = svc.refundUsage(user.id);
+
+                expect(quota).toMatchObject({ used: 0, remaining: 5, total: 5 });
+            });
+        });
+
+        test('uses the local calendar date for usage keys', () => {
+            withTempService((svc) => {
+                const localDate = new Date(2026, 0, 2, 0, 30);
+
+                expect(svc._todayKey(localDate)).toBe('2026-01-02');
             });
         });
     });

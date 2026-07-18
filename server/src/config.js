@@ -11,7 +11,7 @@ const config = {
     DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY || '',
     DEEPSEEK_BASE_URL: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1',
     DEEPSEEK_MODEL: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
-    DAILY_QUOTA: parseInt(process.env.DAILY_QUOTA, 10) || 1,
+    DAILY_QUOTA: parseInt(process.env.DAILY_QUOTA, 10) || 10,
 
     // ===== 会员体系 =====
     MEMBERSHIP_PLANS: {

@@ -1,7 +1,6 @@
 // Import state from centralized state module (no circular dependency!)
 import state, { addToSearchHistory } from './state.js';
 import { escapeHtml, escapeAttr, SEARCH_DEBOUNCE_TIME, showToast } from './utils.js';
-import { generateTagsHtml, generatePlatformBadgesHtml, generateStatusBadgeHtml } from './renderer.js';
 
 /**
  * Filter/Sort functions

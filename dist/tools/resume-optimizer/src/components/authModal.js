@@ -128,9 +128,9 @@ class AuthModal {
                     </div>
                     <div>
                         <label class="block text-xs text-gray-400 mb-1">密码</label>
-                        <input type="password" id="authPassword" required minlength="6"
+                        <input type="password" id="authPassword" required minlength="8"
                             class="w-full bg-gray-800 border border-gray-600 rounded-lg p-2.5 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
-                            placeholder="至少6位">
+                            placeholder="至少8位">
                     </div>
                     <button type="submit" id="authSubmitBtn"
                         class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-sm font-medium transition-colors text-white">

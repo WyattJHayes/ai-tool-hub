@@ -41,14 +41,14 @@ export default function Navbar() {
         >
             <div className="flex items-center justify-between h-full px-4 sm:px-6 max-w-[1200px] mx-auto">
                 {/* Brand */}
-                <a href="/" className="flex items-center gap-2.5 no-underline group">
+                <Link href="/" className="flex items-center gap-2.5 no-underline group">
                     <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[var(--neon-blue)] to-[var(--neon-purple)] flex items-center justify-center text-white text-sm transition-transform duration-150 group-hover:scale-110 group-hover:-rotate-1">
                         <Sparkles className="w-4 h-4" />
                     </div>
                     <span className="text-lg font-bold text-[var(--text-primary)] tracking-tight hidden sm:inline">
                         AI Tool Hub
                     </span>
-                </a>
+                </Link>
 
                 {/* Actions */}
                 <div className="flex items-center gap-1.5">

@@ -1,7 +1,7 @@
 'use client';
 
 
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft, User, Heart, Star, Settings, LogIn,
@@ -14,38 +14,70 @@ import { useCompareStore } from '@/stores/useCompareStore';
 import { getToolSlug, getRelatedTools } from '@/lib/tools-data';
 import { AuthModal } from '@/components/auth/AuthModal';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { ToolIcon } from '@/lib/icon-map';
+
+const COMPARE_HISTORY_KEY = 'ai-tool-hub-compare-history';
+const COMPARE_HISTORY_EVENT = 'ai-tool-hub-compare-history-change';
+
+function subscribeCompareHistory(onStoreChange: () => void) {
+  window.addEventListener('storage', onStoreChange);
+  window.addEventListener(COMPARE_HISTORY_EVENT, onStoreChange);
+  return () => {
+    window.removeEventListener('storage', onStoreChange);
+    window.removeEventListener(COMPARE_HISTORY_EVENT, onStoreChange);
+  };
+}
+
+function getCompareHistorySnapshot() {
+  return localStorage.getItem(COMPARE_HISTORY_KEY) || '[]';
+}
+
+function parseCompareHistory(snapshot: string): number[][] {
+  try {
+    const parsed = JSON.parse(snapshot);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 
 export default function UserPage() {
   const { favorites, ratings, toggleFavorite, isLoggedIn, logout } = useUserStore();
   const { tools, loadData, dataLoaded } = useToolStore();
   const { selectedTools } = useCompareStore();
   const [showAuth, setShowAuth] = useState(false);
-  const [compareHistory, setCompareHistory] = useState<number[][]>([]);
   const [activeTab, setActiveTab] = useState<'favorites' | 'ratings' | 'compare-history' | 'settings'>('favorites');
+  const compareHistorySnapshot = useSyncExternalStore(
+    subscribeCompareHistory,
+    getCompareHistorySnapshot,
+    () => '[]'
+  );
+  const compareHistory = useMemo(
+    () => parseCompareHistory(compareHistorySnapshot),
+    [compareHistorySnapshot]
+  );
 
   useEffect(() => {
     if (!dataLoaded) loadData();
   }, [dataLoaded, loadData]);
 
-  // A-04: Load compare history from localStorage
-  useEffect(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem('ai-tool-hub-compare-history') || '[]');
-      if (Array.isArray(saved)) setCompareHistory(saved);
-    } catch { /* ignore */ }
-  }, []);
-
   // Save current compare selection to history
   useEffect(() => {
-    if (selectedTools.length >= 2) {
-      const ids = selectedTools.map(t => t.id);
-      setCompareHistory(prev => {
-        const updated = [ids, ...prev.filter(h => JSON.stringify(h) !== JSON.stringify(ids))].slice(0, 10);
-        localStorage.setItem('ai-tool-hub-compare-history', JSON.stringify(updated));
-        return updated;
-      });
+    if (selectedTools.length < 2) return;
+
+    const ids = selectedTools.map(t => t.id);
+    const serializedIds = JSON.stringify(ids);
+    const updated = [
+      ids,
+      ...compareHistory.filter(history => JSON.stringify(history) !== serializedIds),
+    ].slice(0, 10);
+    const nextSnapshot = JSON.stringify(updated);
+
+    if (nextSnapshot !== compareHistorySnapshot) {
+      localStorage.setItem(COMPARE_HISTORY_KEY, nextSnapshot);
+      window.dispatchEvent(new Event(COMPARE_HISTORY_EVENT));
     }
-  }, [selectedTools]);
+  }, [selectedTools, compareHistory, compareHistorySnapshot]);
 
   const favoriteTools = tools.filter((t) => favorites.includes(t.id));
   const ratedTools = tools.filter((t) => ratings[t.id] && ratings[t.id] > 0);
@@ -122,7 +154,7 @@ export default function UserPage() {
                   href={'/tools/' + getToolSlug(tool)}
                   className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4 transition-colors hover:bg-white/[0.05]"
                 >
-                  <span className="text-2xl">{tool.icon}</span>
+                  <ToolIcon name={tool.icon} className="h-6 w-6 text-white/60" />
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-white/90">{tool.name}</p>
                     <p className="truncate text-xs text-white/40">{tool.desc}</p>
@@ -165,7 +197,7 @@ export default function UserPage() {
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {favoriteTools.map((tool) => (
                   <div key={tool.id} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4 transition-colors hover:bg-white/[0.05]">
-                    <span className="text-2xl">{tool.icon}</span>
+                    <ToolIcon name={tool.icon} className="h-6 w-6 text-white/60" />
                     <div className="flex-1 min-w-0">
                       <Link href={'/tools/' + getToolSlug(tool)} className="font-medium text-white/90 hover:text-white text-sm">{tool.name}</Link>
                       <p className="truncate text-xs text-white/40">{tool.desc}</p>
@@ -193,7 +225,7 @@ export default function UserPage() {
               <div className="space-y-3">
                 {ratedTools.map((tool) => (
                   <div key={tool.id} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                    <span className="text-2xl">{tool.icon}</span>
+                    <ToolIcon name={tool.icon} className="h-6 w-6 text-white/60" />
                     <div className="flex-1 min-w-0">
                       <Link href={'/tools/' + getToolSlug(tool)} className="font-medium text-white/90 hover:text-white text-sm">{tool.name}</Link>
                     </div>

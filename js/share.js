@@ -29,7 +29,7 @@ function showShareModal() {
 function closeShareModal(event) {
     const modal = document.getElementById('shareModal');
     if (!modal) return;
-    if (!event || event.target === modal || event.target.closest('.modal-close-btn')) {
+    if (!event || event.target === modal || event.target.closest('.modal-close-btn, .share-close-btn')) {
         modal.classList.remove('active');
     }
 }

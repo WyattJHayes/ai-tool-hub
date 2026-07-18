@@ -10,23 +10,8 @@ class ApiClient {
         this.userKey = 'ai_tool_hub_user';
     }
 
-    _getCookie(name) {
-        const cookies = document.cookie.split(';');
-        for (const cookie of cookies) {
-            const [key, value] = cookie.trim().split('=');
-            if (key === name) {
-                return decodeURIComponent(value);
-            }
-        }
-        return null;
-    }
-
     isAuthenticated() {
-        return !!this._getCookie('auth_token');
-    }
-
-    getToken() {
-        return this._getCookie('auth_token');
+        return !!this.getUser();
     }
 
     getUser() {
@@ -76,10 +61,16 @@ class ApiClient {
         return data;
     }
 
-    logout() {
-        localStorage.removeItem(this.userKey);
-        document.cookie = 'auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; Path=/; Secure; SameSite=Strict';
-        this._notifyAuthChange();
+    async logout() {
+        try {
+            await fetch(`${this.baseURL}/auth/logout`, {
+                method: 'POST',
+                credentials: 'include'
+            });
+        } finally {
+            localStorage.removeItem(this.userKey);
+            this._notifyAuthChange();
+        }
     }
 
     async getProfile() {
@@ -270,12 +261,7 @@ class ApiClient {
     }
 
     _getHeaders() {
-        const token = this.getToken();
-        const headers = {};
-        if (token) {
-            headers['Authorization'] = `Bearer ${token}`;
-        }
-        return headers;
+        return {};
     }
 
     // ===== 会员与支付 =====

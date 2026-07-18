@@ -135,9 +135,19 @@ class QuotaService {
         return safeUser;
     }
 
+    _todayKey(date = new Date()) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    _usageKey(userId) {
+        return `${userId}_${this._todayKey()}`;
+    }
+
     checkQuota(userId) {
-        const today = new Date().toISOString().split('T')[0];
-        const key = `${userId}_${today}`;
+        const key = this._usageKey(userId);
         const used = this.data.usage[key] || 0;
 
         const membership = this.getMembership(userId);
@@ -185,8 +195,7 @@ class QuotaService {
 
         // VIP: 无需计数限制
         if (membership && membership.plan === 'vip' && membership.status === 'active') {
-            const today = new Date().toISOString().split('T')[0];
-            const key = `${userId}_${today}`;
+            const key = this._usageKey(userId);
             this.data.usage[key] = (this.data.usage[key] || 0) + 1;
             this._enqueueWrite();
             return this.checkQuota(userId);
@@ -200,9 +209,26 @@ class QuotaService {
         }
 
         // 免费用户：每日配额
-        const today = new Date().toISOString().split('T')[0];
-        const key = `${userId}_${today}`;
+        const key = this._usageKey(userId);
         this.data.usage[key] = (this.data.usage[key] || 0) + 1;
+        this._enqueueWrite();
+        return this.checkQuota(userId);
+    }
+
+    tryConsumeQuota(userId) {
+        const quota = this.checkQuota(userId);
+        if (quota.remaining <= 0) return { allowed: false, quota };
+        return { allowed: true, quota: this.incrementUsage(userId) };
+    }
+
+    refundUsage(userId) {
+        const membership = this.getMembership(userId);
+        if (membership && membership.plan === 'basic' && membership.status === 'active') {
+            membership.usedQuota = Math.max(0, (membership.usedQuota || 0) - 1);
+        } else {
+            const key = this._usageKey(userId);
+            this.data.usage[key] = Math.max(0, (this.data.usage[key] || 0) - 1);
+        }
         this._enqueueWrite();
         return this.checkQuota(userId);
     }

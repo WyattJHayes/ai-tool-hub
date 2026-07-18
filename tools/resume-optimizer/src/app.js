@@ -344,7 +344,7 @@ function setupErrorHandling() {
     window.addEventListener('unhandledrejection', event => {
         showNotification('操作出现错误，请稍后重试', 'error');
     });
-    
+
     window.addEventListener('error', event => {
         if (event.message && event.message.includes('chrome-extension')) {
             return;

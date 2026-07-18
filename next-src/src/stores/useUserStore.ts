@@ -11,7 +11,7 @@ interface UserStore {
 
   toggleFavorite: (toolId: number) => void;
   isFavorite: (toolId: number) => boolean;
-  setRating: (toolId: number, score: number) => void;
+  setRating: (toolId: number, score: number, tags?: string[], comment?: string) => Promise<boolean>;
   getRating: (toolId: number) => number;
   toggleTheme: () => void;
   login: () => void;
@@ -44,10 +44,11 @@ export const useUserStore = create<UserStore>()(
 
       isFavorite: (toolId) => get().favorites.includes(toolId),
 
-      setRating: (toolId, score) => {
+      setRating: async (toolId, score, tags, comment) => {
+        const result = await submitRating(toolId, score, tags, comment);
+        if (!result.ok) return false;
         set({ ratings: { ...get().ratings, [toolId]: score } });
-        // Fire-and-forget API call
-        submitRating(toolId, score).catch(() => {});
+        return true;
       },
 
       getRating: (toolId) => get().ratings[toolId] ?? 0,

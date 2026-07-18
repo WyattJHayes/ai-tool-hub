@@ -1,236 +1,218 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# ============================================================
-# AI Tool Hub - 本地构建 + 腾讯云快速部署工具
-# 
-# 功能:
-#   1. 本地构建项目
-#   2. 一键上传到腾讯云服务器
-#   3. 远程执行部署（可选）
-#
-# 使用方法:
-#   chmod +x quick-deploy.sh
-#   ./quick-deploy.sh [选项]
-#
-# 选项:
-#   build       仅本地构建
-#   upload      构建并上传到服务器
-#   deploy      上传并在远程服务器部署
-#   full        完整流程（build + upload + deploy）
-# ============================================================
+set -euo pipefail
 
-# 切换到项目根目录
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR/../.." || exit 1
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-set -e
+SERVER_HOST="${SERVER_HOST:-root@101.43.35.235}"
+REMOTE_ROOT="${REMOTE_ROOT:-/opt/ai-tool-hub}"
+DGC_ROOT="${DGC_ROOT:-/opt/dramagenai/dramagenai-cloud}"
+COMPOSE_SOURCE="$SCRIPT_DIR/docker-compose.prod.yml"
+NGINX_SOURCE="$SCRIPT_DIR/nginx.conf"
 
-# 颜色定义
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m'
-
-# 配置变量（请修改为你的实际配置）
-SERVER_USER="root"           # 服务器用户名
-SERVER_IP="101.43.35.235"    # 服务器公网IP
-SERVER_PATH="/var/www/html/ai-tool-hub"  # 服务器项目路径（nginx root）
-DOMAIN_NAME="weihub.cloud" # 你的域名
-
-# 显示帮助信息
-show_help() {
-    echo -e "${CYAN}AI Tool Hub 快速部署工具${NC}"
-    echo ""
-    echo "使用方法: ./quick-deploy.sh <命令>"
-    echo ""
-    echo "命令:"
-    echo "  ${GREEN}build${NC}     仅本地构建项目"
-    echo "  ${GREEN}upload${NC}    构建并上传dist目录到服务器"
-    echo "  ${GREEN}deploy${NC}    上传并远程部署"
-    echo "  ${GREEN}full${NC}      完整流程（推荐）"
-    echo "  ${GREEN}status${NC}    查看服务器状态"
-    echo "  ${GREEN}logs${NC}      查看访问日志"
-    echo ""
-    echo "示例:"
-    echo "  ./quick-deploy.sh full"
-    echo ""
+usage() {
+    printf 'Usage: %s {build|upload|deploy|full|status|logs}\n' "$0"
 }
 
-# 构建项目
-do_build() {
-    echo -e "${BLUE}[1/3] 📦 开始本地构建...${NC}"
-    
-    if ! command -v npm &> /dev/null; then
-        echo -e "${RED}❌ 未检测到Node.js，请先安装${NC}"
-        exit 1
-    fi
-    
-    # 清理旧的构建
-    rm -rf dist/
-    
-    # 安装依赖（如果需要）
-    if [ ! -d "node_modules" ]; then
-        echo "   正在安装依赖..."
-        npm install
-    fi
-    
-    # 执行构建
-    echo "   正在构建生产版本..."
-    npm run build
-    
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}✅ 构建成功！生成 dist/ 目录${NC}"
-        ls -lh dist/ | head -5
-    else
-        echo -e "${RED}❌ 构建失败${NC}"
+require_command() {
+    if ! command -v "$1" >/dev/null 2>&1; then
+        printf 'Required command is missing: %s\n' "$1" >&2
         exit 1
     fi
 }
 
-# 上传到服务器
-do_upload() {
-    echo -e "${BLUE}[2/3] 📤 上传文件到服务器...${NC}"
-    
-    # 检查SSH连接
-    if ! ssh -o ConnectTimeout=5 -o BatchMode=yes ${SERVER_USER}@${SERVER_IP} echo "连接成功" &> /dev/null; then
-        echo -e "${RED}❌ 无法连接到服务器 ${SERVER_IP}${NC}"
-        echo "   请检查："
-        echo "   1. 服务器IP是否正确"
-        echo "   2. SSH密钥是否已配置"
-        echo "   3. 服务器是否开机且网络可达"
-        exit 1
-    fi
-    
-    echo "   目标: ${SERVER_USER}@${SERVER_IP}:${SERVER_PATH}/dist/"
-    
-    if command -v rsync &> /dev/null; then
-        rsync -avz --delete \
-            --exclude 'node_modules' \
-            --exclude '.git' \
-            --exclude '*.log' \
-            dist/ ${SERVER_USER}@${SERVER_IP}:${SERVER_PATH}/dist/
-        
-        echo "   同步 tools 目录..."
-        rsync -avz \
-            --exclude 'node_modules' \
-            --exclude '.git' \
-            --exclude '*.log' \
-            --exclude '*.backup' \
-            --exclude 'tests/' \
-            tools/ ${SERVER_USER}@${SERVER_IP}:${SERVER_PATH}/tools/
-    else
-        scp -r dist/* ${SERVER_USER}@${SERVER_IP}:${SERVER_PATH}/dist/
-        scp -r tools/ ${SERVER_USER}@${SERVER_IP}:${SERVER_PATH}/tools/
-    fi
-    
-    echo -e "${GREEN}✅ 上传完成！${NC}"
+build_local() {
+    require_command npm
+    npm --prefix "$PROJECT_ROOT/next-src" ci
+    npm --prefix "$PROJECT_ROOT/next-src" run build
 }
 
-# 远程部署
-do_deploy() {
-    echo -e "${BLUE}[3/3] ⚙️ 远程部署中...${NC}"
-    
-    ssh ${SERVER_USER}@${SERVER_IP} << 'REMOTE_SCRIPT'
-cd /var/www/ai-tool-hub
+upload_sources() {
+    require_command rsync
+    require_command ssh
+    require_command scp
 
-# 备份当前版本（可选）
-if [ -d "dist.bak" ]; then
-    rm -rf dist.bak
-fi
-cp -r dist dist.bak.$(date +%Y%m%d_%H%M%S)
+    ssh "$SERVER_HOST" "install -d -m 0755 '$REMOTE_ROOT/source'"
+    rsync -az --delete \
+        --exclude '.env' \
+        --exclude '.env.*' \
+        --exclude '.next' \
+        --exclude 'node_modules' \
+        "$PROJECT_ROOT/next-src/" "$SERVER_HOST:$REMOTE_ROOT/source/"
+    scp "$COMPOSE_SOURCE" "$SERVER_HOST:$REMOTE_ROOT/docker-compose.yml.new"
+    scp "$NGINX_SOURCE" "$SERVER_HOST:$REMOTE_ROOT/weihub.cloud.conf.new"
+}
 
-echo "✅ 备份完成"
+deploy_remote() {
+    require_command ssh
 
-# 重载Nginx（如果已安装）
-if command -v nginx &> /dev/null; then
-    nginx -t && systemctl reload nginx
-    echo "✅ Nginx重载成功"
-else
-    echo "⚠️ Nginx未安装，请手动配置Web服务器"
+    ssh "$SERVER_HOST" bash -s -- "$REMOTE_ROOT" "$DGC_ROOT" <<'REMOTE_SCRIPT'
+set -euo pipefail
+
+remote_root="$1"
+dgc_root="$2"
+compose_file="$remote_root/docker-compose.yml"
+candidate_compose="$remote_root/docker-compose.yml.new"
+candidate_nginx="$remote_root/weihub.cloud.conf.new"
+nginx_target="$dgc_root/nginx/conf.d/legacy-domain-redirect.conf"
+timestamp="$(date +%Y%m%d%H%M%S)"
+backup_root="$remote_root/backups/$timestamp"
+rollback_image=""
+
+if [ ! -s "$remote_root/.env" ]; then
+    echo "Missing required environment file: $remote_root/.env" >&2
+    exit 1
 fi
 
-echo "🎉 部署完成！"
+if [ ! -s "$candidate_compose" ] || [ ! -s "$candidate_nginx" ]; then
+    echo "Run the upload step before deploy." >&2
+    exit 1
+fi
+
+install -d -m 0700 "$backup_root"
+chmod 0600 "$remote_root/.env"
+cp "$remote_root/.env" "$backup_root/app.env"
+chmod 0600 "$backup_root/app.env"
+
+if docker inspect ai-resume-optimizer >"$backup_root/container-inspect.json" 2>/dev/null; then
+    chmod 0600 "$backup_root/container-inspect.json"
+fi
+if [ -f /etc/systemd/system/ai-resume-optimizer.service ]; then
+    cp /etc/systemd/system/ai-resume-optimizer.service "$backup_root/ai-resume-optimizer.service"
+fi
+cp "$nginx_target" "$backup_root/weihub.cloud.conf"
+cp "$candidate_compose" "$backup_root/docker-compose.yml"
+if [ -s "$compose_file" ]; then
+    cp "$compose_file" "$backup_root/previous-docker-compose.yml"
+fi
+
+install -m 0644 "$candidate_compose" "$compose_file"
+install -m 0644 "$candidate_nginx" "$nginx_target"
+
+cd "$remote_root"
+docker compose --env-file "$remote_root/.env" -f "$compose_file" config -q
+if docker image inspect ai-resume-optimizer:latest >/dev/null 2>&1; then
+    rollback_image="ai-resume-optimizer:rollback-$timestamp"
+    docker tag ai-resume-optimizer:latest "$rollback_image"
+fi
+docker compose --env-file "$remote_root/.env" -f "$compose_file" build
+
+rollback() {
+    cp "$backup_root/weihub.cloud.conf" "$nginx_target"
+    if [ -n "$rollback_image" ]; then
+        docker tag "$rollback_image" ai-resume-optimizer:latest
+        if [ -s "$backup_root/previous-docker-compose.yml" ]; then
+            cp "$backup_root/previous-docker-compose.yml" "$compose_file"
+        fi
+        docker compose --env-file "$remote_root/.env" -f "$compose_file" up -d --force-recreate >/dev/null 2>&1 || true
+    else
+        docker compose --env-file "$remote_root/.env" -f "$compose_file" down >/dev/null 2>&1 || true
+    fi
+    docker exec dgc-nginx nginx -t
+    docker exec dgc-nginx nginx -s reload
+}
+
+if ! docker compose --env-file "$remote_root/.env" -f "$compose_file" up -d --force-recreate; then
+    rollback
+    exit 1
+fi
+
+healthy=false
+for _ in $(seq 1 40); do
+    state="$(docker inspect weihub-app --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' 2>/dev/null || true)"
+    if [ "$state" = healthy ]; then
+        healthy=true
+        break
+    fi
+    if [ "$state" = exited ] || [ "$state" = dead ]; then
+        break
+    fi
+    sleep 3
+done
+
+if [ "$healthy" != true ]; then
+    docker logs --tail 100 weihub-app >&2 || true
+    rollback
+    exit 1
+fi
+
+if [ -n "$(docker port weihub-app)" ]; then
+    echo "weihub-app unexpectedly publishes a host port" >&2
+    rollback
+    exit 1
+fi
+
+if ! docker exec dgc-nginx nginx -t; then
+    rollback
+    exit 1
+fi
+docker exec dgc-nginx nginx -s reload
+
+verify_local_tls() {
+    local host="$1"
+    local url="$2"
+    for _ in $(seq 1 10); do
+        if curl --noproxy '*' --resolve "$host:443:127.0.0.1" --fail --silent --show-error --max-time 10 "$url" >/dev/null; then
+            return 0
+        fi
+        sleep 2
+    done
+    return 1
+}
+
+if ! verify_local_tls weihub.cloud https://weihub.cloud/ \
+    || ! verify_local_tls weihub.cloud https://weihub.cloud/love/ \
+    || ! verify_local_tls dramagenai.cloud https://dramagenai.cloud/; then
+    rollback
+    exit 1
+fi
+
+if systemctl is-enabled --quiet ai-resume-optimizer.service 2>/dev/null; then
+    systemctl disable ai-resume-optimizer.service
+fi
+if systemctl is-active --quiet ai-resume-optimizer.service 2>/dev/null; then
+    systemctl stop ai-resume-optimizer.service
+fi
+if docker inspect ai-resume-optimizer >/dev/null 2>&1; then
+    docker stop ai-resume-optimizer >/dev/null
+    docker rm ai-resume-optimizer >/dev/null
+fi
+
+echo "Deployment completed. Backup: $backup_root"
 REMOTE_SCRIPT
-    
-    echo -e "${GREEN}✅ 部署成功！${NC}"
-    echo ""
-    echo -e "${CYAN}🌐 访问地址:${NC}"
-    echo "   http://${SERVER_IP}"
-    if [ "$DOMAIN_NAME" != "your-domain.com" ]; then
-        echo "   https://${DOMAIN_NAME}"
-    fi
 }
 
-# 查看服务器状态
-do_status() {
-    echo -e "${CYAN}📊 服务器状态检查${NC}\n"
-    
-    ssh ${SERVER_USER}@${SERVER_IP} << 'EOF'
-echo "=== 系统信息 ==="
-uname -a
-uptime
-free -h | head -2
-df -h / | tail -1
-
-echo ""
-echo "=== Nginx状态 ==="
-systemctl is-active nginx || echo "Nginx未运行"
-
-echo ""
-echo "=== 项目目录 ==="
-ls -lh /var/www/ai-tool-hub/dist/ | head -10
-
-echo ""
-echo "=== 最近更新时间 ==="
-stat -c "%y" /var/www/ai-tool-hub/dist/index.html 2>/dev/null || echo "未知"
-EOF
+show_status() {
+    ssh "$SERVER_HOST" "cd '$REMOTE_ROOT' && docker compose --env-file '$REMOTE_ROOT/.env' -f docker-compose.yml ps && docker exec dgc-nginx nginx -t"
 }
 
-# 查看日志
-do_logs() {
-    echo -e "${CYAN}📋 实时访问日志 (Ctrl+C退出)${NC}\n"
-    ssh ${SERVER_USER}@${SERVER_IP} 'tail -f /var/log/nginx/ai-tool-hub-access.log'
+show_logs() {
+    ssh -t "$SERVER_HOST" "cd '$REMOTE_ROOT' && docker compose --env-file '$REMOTE_ROOT/.env' -f docker-compose.yml logs --tail 200 -f web"
 }
 
-# 主程序
-case "$1" in
+case "${1:-}" in
     build)
-        do_build
+        build_local
         ;;
     upload)
-        do_build
-        do_upload
+        upload_sources
         ;;
     deploy)
-        do_upload
-        do_deploy
+        deploy_remote
         ;;
     full)
-        echo -e "${BLUE}=====================================================${NC}"
-        echo -e "${BLUE}  🚀 AI Tool Hub 完整部署流程${NC}"
-        echo -e "${BLUE}=====================================================${NC}"
-        echo ""
-        
-        do_build
-        echo ""
-        do_upload
-        echo ""
-        do_deploy
-        
-        echo ""
-        echo -e "${GREEN}=====================================================${NC}"
-        echo -e "${GREEN}  ✨ 全部完成！网站已上线运行${NC}"
-        echo -e "${GREEN}=====================================================${NC}"
+        upload_sources
+        deploy_remote
         ;;
     status)
-        do_status
+        show_status
         ;;
     logs)
-        do_logs
+        show_logs
         ;;
     *)
-        show_help
+        usage
+        exit 1
         ;;
 esac

@@ -1,5 +1,5 @@
-// Service Worker for AI Tool Hub v6.1.0
-const CACHE_NAME = 'ai-tool-hub-v6.1.0';
+// Service Worker for AI Tool Hub v6.4.1
+const CACHE_NAME = 'ai-tool-hub-v6.4.1';
 
 const PRECACHE_URLS = [
   './',
@@ -7,6 +7,11 @@ const PRECACHE_URLS = [
 ];
 
 const MAX_CACHE_ENTRIES = 200;
+
+function isJsonResponse(response) {
+  const contentType = response?.headers?.get?.('content-type') || '';
+  return response?.status === 200 && contentType.includes('application/json');
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -49,9 +54,15 @@ self.addEventListener('fetch', (event) => {
   if (event.request.url.includes('tools.json')) {
     event.respondWith(
       caches.open(CACHE_NAME).then((cache) =>
-        cache.match(event.request).then((cached) => {
+        cache.match(event.request).then(async (matched) => {
+          let cached = matched;
+          if (cached && !isJsonResponse(cached)) {
+            await cache.delete(event.request);
+            cached = null;
+          }
+
           const fetchPromise = fetch(event.request).then((net) => {
-            if (net && net.status === 200) {
+            if (isJsonResponse(net)) {
               const cloned = net.clone();
               cache.put(event.request, cloned);
             }

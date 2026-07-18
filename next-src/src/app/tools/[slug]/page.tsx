@@ -1,7 +1,7 @@
 'use client';
 
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -15,7 +15,7 @@ import { useToolStore } from '@/stores/useToolStore';
 import { useUserStore } from '@/stores/useUserStore';
 import { getToolSlug, getRelatedTools, getCategoryNames } from '@/lib/tools-data';
 import { ToolCard } from '@/components/tools/ToolCard';
-import type { Tool } from '@/types/tool';
+import { ToolIcon } from '@/lib/icon-map';
 
 
 const difficultyColors: Record<string, string> = {
@@ -34,26 +34,26 @@ export default function ToolDetailPage() {
   const params = useParams();
   const slug = params.slug as string;
   const { tools, categories, isLoading, loadData, dataLoaded } = useToolStore();
-  const { isFavorite, toggleFavorite } = useUserStore();
-  const [tool, setTool] = useState<Tool | null>(null);
-  const [relatedTools, setRelatedTools] = useState<Tool[]>([]);
+  const { isFavorite, toggleFavorite, getRating } = useUserStore();
   const [ratingData, setRatingData] = useState<{ avg_rating: number; rating_count: number; reviews: { score: number; tags: string[]; comment: string }[] }>({ avg_rating: 0, rating_count: 0, reviews: [] });
+  const tool = useMemo(
+    () => tools.find((candidate) => getToolSlug(candidate) === slug) || null,
+    [tools, slug]
+  );
+  const relatedTools = useMemo(
+    () => tool ? getRelatedTools(tools, tool, 6) : [],
+    [tools, tool]
+  );
 
   useEffect(() => {
     if (!dataLoaded) loadData();
   }, [dataLoaded, loadData]);
 
   useEffect(() => {
-    if (tools.length === 0) return;
-    const found = tools.find((t) => getToolSlug(t) === slug);
-    if (found) {
-      setTool(found);
-      setRelatedTools(getRelatedTools(tools, found, 6));
-      trackClick(found.id, getToolSlug(found), 'detail');
-      // Fetch rating aggregation
-      getRatings(found.id).then(setRatingData).catch(() => {});
-    }
-  }, [tools, slug]);
+    if (!tool) return;
+    trackClick(tool.id, getToolSlug(tool), 'detail');
+    getRatings(tool.id).then(setRatingData).catch(() => {});
+  }, [tool]);
 
   if (!tool && !isLoading) {
     return (
@@ -127,7 +127,7 @@ export default function ToolDetailPage() {
           <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
             {/* Icon */}
             <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500/20 to-purple-500/20 text-4xl">
-              {tool.icon}
+              <ToolIcon name={tool.icon} className="h-10 w-10 text-blue-300" />
             </div>
 
             <div className="flex-1 min-w-0">
@@ -261,7 +261,7 @@ export default function ToolDetailPage() {
         {/* Rating */}
         <div className="mt-8">
           <h3 className="mb-4 text-lg font-semibold">评价</h3>
-          <RatingWidget toolId={tool.id} currentRating={0} />
+          <RatingWidget toolId={tool.id} currentRating={getRating(tool.id)} />
         </div>
 
 

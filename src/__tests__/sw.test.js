@@ -27,12 +27,16 @@ let claimCalled;
 let swCode;
 
 function makeResponse(status = 200, body = 'ok', overrides = {}) {
+    const contentType = overrides.contentType || 'application/json';
     return {
         url: 'https://weihub.cloud/',
         status,
         ok: status === 200,
         type: 'basic',
         body,
+        headers: {
+            get: jest.fn((name) => name.toLowerCase() === 'content-type' ? contentType : null)
+        },
         clone() {
             return makeResponse(status, body, overrides);
         },
@@ -192,7 +196,7 @@ describe('install event', () => {
         const promise = capturedWaitUntil;
         await promise;
 
-        expect(global.caches.open).toHaveBeenCalledWith('ai-tool-hub-v6.0.0');
+        expect(global.caches.open).toHaveBeenCalledWith('ai-tool-hub-v6.4.1');
         expect(mockCache.addAll).toHaveBeenCalledWith(['./', './index.html']);
         expect(skipWaitingCalled).toBe(true);
     });
@@ -235,7 +239,7 @@ describe('activate event', () => {
 
         await capturedWaitUntil;
 
-        expect(global.caches.delete).not.toHaveBeenCalledWith('ai-tool-hub-v6.0.0');
+        expect(global.caches.delete).not.toHaveBeenCalledWith('ai-tool-hub-v6.4.1');
     });
 });
 
@@ -374,6 +378,29 @@ describe('fetch event — tools.json stale-while-revalidate', () => {
         const response = await capturedRespondWith;
         expect(response).toBeDefined();
         expect(response.status).toBe(200);
+    });
+
+    test('should discard a cached HTML fallback and return fresh JSON', async () => {
+        const requestUrl = 'https://weihub.cloud/tools.json?v=dev';
+        const cachedHtml = cloneableResponse(200, '<!DOCTYPE html>', {
+            url: requestUrl,
+            contentType: 'text/html'
+        });
+        const freshJson = cloneableResponse(200, '{"tools":[],"categories":[]}', {
+            url: requestUrl,
+            contentType: 'application/json'
+        });
+        cacheStore.set(requestUrl, cachedHtml);
+        global.fetch.mockResolvedValue(freshJson);
+
+        const handler = eventListeners['fetch'];
+        const req = makeRequest(requestUrl);
+        const event = makeEvent({ request: req });
+        handler(event);
+
+        const response = await capturedRespondWith;
+        expect(response).toBe(freshJson);
+        expect(mockCache.delete).toHaveBeenCalledWith(req);
     });
 });
 

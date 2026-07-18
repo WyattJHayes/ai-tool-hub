@@ -25,7 +25,7 @@ router.get('/plans', (req, res) => {
         })),
         paymentMethods: [
             { id: 'alipay', name: '支付宝', enabled: !!config.ALIPAY_APP_ID },
-            { id: 'wechat', name: '微信支付', enabled: !!config.WECHAT_MCH_ID },
+            { id: 'wechat', name: '微信支付', enabled: false },
         ],
     });
 });
@@ -64,12 +64,13 @@ router.post('/order', authMiddleware, (req, res) => {
             return res.status(400).json({ error: '无效的支付方式，可选: alipay, wechat' });
         }
 
+        if (paymentMethod === 'wechat') {
+            return res.status(501).json({ error: '微信支付服务端统一下单尚未接入' });
+        }
+
         // 检查支付渠道是否可用
         if (paymentMethod === 'alipay' && !config.ALIPAY_APP_ID) {
             return res.status(400).json({ error: '支付宝支付暂未开通' });
-        }
-        if (paymentMethod === 'wechat' && !config.WECHAT_MCH_ID) {
-            return res.status(400).json({ error: '微信支付暂未开通' });
         }
 
         // 检查是否已是同等级或更高等级会员

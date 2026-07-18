@@ -342,6 +342,7 @@ export function checkStorageQuota() {
 
     const FOUR_MB = 4 * 1024 * 1024;
     if (totalSize > FOUR_MB) {
+        // eslint-disable-next-line no-console -- storage cleanup should remain observable in production
         console.warn(`[StorageQuota] localStorage 使用量约 ${(totalSize / 1024 / 1024).toFixed(2)}MB，已超过 4MB 阈值，正在清理搜索历史...`);
         localStorage.removeItem('ai-tool-hub-search-history');
         state.searchHistory = [];

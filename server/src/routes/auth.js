@@ -172,6 +172,16 @@ router.post('/login', async (req, res) => {
     }
 });
 
+router.post('/logout', (req, res) => {
+    res.clearCookie('auth_token', {
+        httpOnly: true,
+        secure: config.NODE_ENV === 'production',
+        sameSite: 'strict',
+        path: '/'
+    });
+    res.json({ ok: true });
+});
+
 router.get('/me', authMiddleware, (req, res) => {
     try {
         const user = quotaService.getUserById(req.user.id);

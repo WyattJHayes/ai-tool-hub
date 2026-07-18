@@ -2,6 +2,10 @@ import { withSentryConfig } from '@sentry/nextjs';
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'standalone',
+  turbopack: {
+    root: process.cwd(),
+  },
   async headers() {
     return [
       {
@@ -15,7 +19,7 @@ const nextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob: https:",
               "font-src 'self' data:",
-              "connect-src 'self' https://sentry.io https://*.sentry.io https://api.openai.com",
+              "connect-src 'self' https://sentry.io https://*.sentry.io https://api.openai.com https://*.supabase.co wss://*.supabase.co",
               "frame-src 'none'",
               "object-src 'none'",
             ].join('; '),

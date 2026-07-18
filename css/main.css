@@ -27,6 +27,181 @@
   --ease: cubic-bezier(0.645, 0.045, 0.355, 1);
 }
 
+/* ── UI layout repair overrides (v6.4) ── */
+#particleCanvas {
+  position: fixed;
+  inset: 0;
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.cursor-glow {
+  position: fixed;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.navbar,
+main,
+.footer,
+.bottom-nav,
+.toast,
+.loading-state {
+  position: relative;
+  z-index: 1;
+}
+
+.navbar {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+}
+
+.hero {
+  min-height: clamp(480px, calc(100vh - var(--nav-height) - 48px), 600px);
+  padding: 48px 24px 40px;
+  align-items: center;
+}
+
+.hero-title {
+  font-size: clamp(34px, 4.4vw, 50px);
+}
+
+.hero-subtitle {
+  margin-bottom: 28px;
+}
+
+.hero-search-wrapper {
+  margin-bottom: 22px;
+}
+
+.hero-search-wrapper:has(.search-suggestions.show),
+.hero-search-wrapper:has(.search-history.show) {
+  margin-bottom: 176px;
+}
+
+.search-suggestions,
+.search-history {
+  background: rgba(20, 18, 42, 0.96);
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.hero-stats {
+  position: relative;
+  z-index: 1;
+}
+
+.hero-content:has(.search-suggestions.show) .hero-stats,
+.hero-content:has(.search-history.show) .hero-stats {
+  display: none;
+}
+
+.category-filter {
+  max-width: 100%;
+}
+
+@media (max-width: 768px) {
+  .navbar-inner {
+    gap: 8px;
+    overflow: hidden;
+    padding: 0 16px;
+  }
+
+  .navbar-brand {
+    flex-shrink: 0;
+    min-width: max-content;
+  }
+
+  .navbar-brand-text {
+    white-space: nowrap;
+  }
+
+  .navbar-actions {
+    flex: 1;
+    justify-content: flex-end;
+    min-width: 0;
+  }
+
+  .navbar-actions .navbar-btn,
+  .navbar-actions [data-action="show-share-modal"] {
+    display: none;
+  }
+
+  .navbar-user-name {
+    max-width: 42px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .navbar-user-btn {
+    max-width: 92px;
+    padding-right: 10px;
+  }
+
+  .hero {
+    min-height: 620px;
+    padding: 48px 16px 36px;
+  }
+
+  .hero-badge {
+    margin-bottom: 18px;
+  }
+
+  .hero-title {
+    font-size: 34px !important;
+  }
+
+  .hero-subtitle {
+    font-size: 15px;
+    margin-bottom: 24px;
+  }
+
+  .hero-search-wrapper:has(.search-suggestions.show),
+  .hero-search-wrapper:has(.search-history.show) {
+    margin-bottom: 172px;
+  }
+
+  .category-filter {
+    margin-left: 0;
+    margin-right: 0;
+    padding-bottom: 8px;
+  }
+
+  .category-btn.active {
+    transform: none;
+  }
+
+  .bottom-nav {
+    position: fixed;
+    z-index: 1000;
+  }
+}
+
+@media (max-width: 480px) {
+  html,
+  body {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .container {
+    width: 100%;
+  }
+
+  .hero-search-input {
+    font-size: 15px;
+    padding-left: 46px;
+    padding-right: 76px;
+  }
+}
+
 html:not(.dark) {
   --bg-dark: #f8f9fa;
   --bg-mid: #f0f1f3;
@@ -49,6 +224,7 @@ html:not(.dark) {
   --brand-warning: #d97706;
   --brand-danger: #dc2626;
   --glass-border: #e2e8f0;
+}
 
 *, *::before, *::after { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
@@ -660,9 +836,6 @@ html:not(.dark) .modal-content, html:not(.dark) .modal-panel { background: rgba(
 .theme-option-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
 .theme-option-id { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
 
-.update-icon { font-size: 44px; color: var(--neon-blue); margin-bottom: 16px; }
-.update-title { font-size: 18px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px; }
-.update-desc { font-size: 13px; color: var(--text-tertiary); margin-bottom: 20px; }
 
 .empty-state { text-align: center; padding: 80px 20px; position: relative; z-index: 1; }
 .empty-state-icon { font-size: 56px; margin-bottom: 20px; opacity: 0.5; }
@@ -1046,4 +1219,159 @@ html:not(.dark) .category-filter::after {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
 
+/* ── Final UI layout repair overrides (v6.4) ── */
+#particleCanvas {
+  position: fixed;
+  inset: 0;
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.cursor-glow {
+  position: fixed;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.navbar,
+main,
+.footer,
+.bottom-nav,
+.toast,
+.loading-state {
+  position: relative;
+  z-index: 1;
+}
+
+.navbar {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+}
+
+.navbar-btn-icon,
+.navbar-user-btn {
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-round);
+  background: var(--glass-bg);
+  color: var(--text-secondary);
+  font-family: var(--font);
+}
+
+.navbar-btn-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.hero {
+  align-items: center;
+  padding: 48px 24px 40px;
+}
+
+.hero-title {
+  font-size: clamp(34px, 4.4vw, 50px);
+}
+
+.hero-subtitle {
+  margin-bottom: 28px;
+}
+
+.hero-search-wrapper {
+  margin-bottom: 22px;
+}
+
+.hero-search-wrapper:has(.search-suggestions.show),
+.hero-search-wrapper:has(.search-history.show) {
+  margin-bottom: 176px;
+}
+
+.search-suggestions,
+.search-history {
+  background: rgba(20, 18, 42, 0.96);
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.hero-content:has(.search-suggestions.show) .hero-stats,
+.hero-content:has(.search-history.show) .hero-stats {
+  display: none;
+}
+
+.category-filter {
+  max-width: 100%;
+}
+
+@media (min-width: 769px) {
+  .hero {
+    min-height: min(600px, calc(100vh - var(--nav-height) - 48px));
+    padding-top: 44px;
+    padding-bottom: 36px;
+  }
+}
+
+@media (max-width: 768px) {
+  .hero {
+    min-height: 620px;
+    padding: 48px 16px 36px;
+  }
+
+  .hero-badge {
+    margin-bottom: 18px;
+  }
+
+  .hero-title {
+    font-size: 34px !important;
+  }
+
+  .hero-subtitle {
+    font-size: 15px;
+    margin-bottom: 24px;
+  }
+
+  .hero-search-wrapper:has(.search-suggestions.show),
+  .hero-search-wrapper:has(.search-history.show) {
+    margin-bottom: 172px;
+  }
+
+  .hero-search-kbd {
+    display: none;
+  }
+
+  .hero-search-input {
+    padding-right: 46px;
+  }
+
+  .category-filter {
+    margin-left: 0;
+    margin-right: 0;
+    padding-bottom: 8px;
+  }
+
+  .category-btn.active {
+    transform: none;
+  }
+
+  .bottom-nav {
+    position: fixed;
+    z-index: 1000;
+  }
+}
+
+@media (max-width: 480px) {
+  html,
+  body {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .hero-title {
+    font-size: 32px !important;
+  }
 }

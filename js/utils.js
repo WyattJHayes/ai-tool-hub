@@ -16,7 +16,7 @@ const SEARCH_DEBOUNCE_TIME = 300;
  * // returns: '&lt;script&gt;alert("xss")&lt;/script&gt;'
  */
 function escapeHtml(text) {
-    if (text == null) return ''; if (typeof text !== 'string') text = String(text);
+    if (typeof text !== 'string') return '';
     return text
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
@@ -34,7 +34,7 @@ function escapeHtml(text) {
  * // returns: 'value&quot;with&#39;quotes'
  */
 function escapeAttr(text) {
-    if (text == null) return ''; if (typeof text !== 'string') text = String(text);
+    if (typeof text !== 'string') return '';
     return text.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
@@ -50,7 +50,7 @@ function setupKeyboardShortcuts(callbacks = {}) {
     document.addEventListener('keydown', (e) => {
         const searchInput = document.getElementById('mainSearch');
 
-        if (e.key === '/') {
+        if (e.key === '/' || e.key.toLowerCase() === 's') {
             const active = document.activeElement;
             const isEditing = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable);
             if (searchInput && !isEditing) {
@@ -112,9 +112,6 @@ if (isDarkMode) {
     document.documentElement.classList.remove('dark');
 }
 
-/** Current theme name for display */
-let currentTheme = isDarkMode ? 'dark' : 'light';
-
 /**
  * Toggle between light and dark themes (quick switch)
  * Opens theme modal for full selection
@@ -166,7 +163,6 @@ function setTheme(mode) {
         isDarkMode = false;
         document.documentElement.classList.remove('dark');
     }
-    currentTheme = mode;
     localStorage.setItem('ai-tool-hub-theme', mode);
     localStorage.setItem('ai-tool-hub-dark-mode', isDarkMode ? 'true' : 'false');
     updateThemeIcon();
@@ -287,26 +283,6 @@ function closeAnnouncement() {
 }
 
 /**
- * Check if update notification should be shown
- * Shows update modal on first visit after version update
- */
-function checkForUpdate() {
-    if (!localStorage.getItem('ai-tool-hub-v2-5-shown')) {
-        const modal = document.getElementById('updateModal');
-        if (modal) modal.classList.add('active');
-        localStorage.setItem('ai-tool-hub-v2-5-shown', 'true');
-    }
-}
-
-/**
- * Close the update modal dialog
- */
-function closeUpdateModal() {
-    const modal = document.getElementById('updateModal');
-    if (modal) modal.classList.remove('active');
-}
-
-/**
  * Validate URL security - only allow http/https protocols
  * Prevents javascript: protocol injection attacks
  * @param {string} url - URL to validate
@@ -327,9 +303,27 @@ function isValidUrl(url) {
  * Enables offline caching and improved performance
  */
 function registerServiceWorker() {
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('sw.js').catch(err => console.warn('SW registration failed:', err));
+    if (!('serviceWorker' in navigator)) return;
+
+    const isLocalDevHost = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
+    if (isLocalDevHost) {
+        if (typeof navigator.serviceWorker.getRegistrations === 'function') {
+            navigator.serviceWorker.getRegistrations()
+                .then(registrations => registrations.forEach(registration => registration.unregister()))
+                .then(() => caches?.keys?.())
+                .then(keys => keys && Promise.all(keys.map(key => caches.delete(key))))
+                .catch(err => {
+                    // eslint-disable-next-line no-console -- service worker cleanup failures need diagnostics
+                    console.warn('SW cleanup failed:', err);
+                });
+            return;
+        }
     }
+
+    navigator.serviceWorker.register('sw.js').catch(err => {
+        // eslint-disable-next-line no-console -- service worker registration failures need diagnostics
+        console.warn('SW registration failed:', err);
+    });
 }
 // Export functions, constants, and utilities
 export { 
@@ -343,8 +337,6 @@ export {
     showToast, 
     loadAnnouncement, 
     closeAnnouncement, 
-    checkForUpdate, 
-    closeUpdateModal, 
     registerServiceWorker,
     escapeHtml,
     escapeAttr,
@@ -353,5 +345,3 @@ export {
     TOAST_DISPLAY_TIME,
     SEARCH_DEBOUNCE_TIME,
 };
-
-

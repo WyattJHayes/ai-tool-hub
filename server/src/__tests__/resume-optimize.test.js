@@ -31,7 +31,9 @@ jest.unstable_mockModule('../config.js', () => ({
 
 const mockQuotaService = {
     checkQuota: jest.fn(() => ({ used: 0, remaining: 10, total: 10 })),
-    incrementUsage: jest.fn(() => ({ used: 1, remaining: 9, total: 10 }))
+    incrementUsage: jest.fn(() => ({ used: 1, remaining: 9, total: 10 })),
+    tryConsumeQuota: jest.fn(),
+    refundUsage: jest.fn()
 };
 
 jest.unstable_mockModule('../services/quota.js', () => ({
@@ -68,6 +70,10 @@ beforeEach(() => {
     jest.clearAllMocks();
     mockQuotaService.checkQuota.mockReturnValue({ used: 0, remaining: 10, total: 10 });
     mockQuotaService.incrementUsage.mockReturnValue({ used: 1, remaining: 9, total: 10 });
+    mockQuotaService.tryConsumeQuota.mockReturnValue({
+        allowed: true,
+        quota: { used: 1, remaining: 9, total: 10 }
+    });
 });
 
 // ---------------------------------------------------------------------------
@@ -116,7 +122,10 @@ describe('POST /api/v1/resume/optimize — validation', () => {
     });
 
     test('returns 429 on quota exhaustion', async () => {
-        mockQuotaService.checkQuota.mockReturnValue({ used: 10, remaining: 0, total: 10 });
+        mockQuotaService.tryConsumeQuota.mockReturnValue({
+            allowed: false,
+            quota: { used: 10, remaining: 0, total: 10 }
+        });
         const res = await request(app)
             .post('/api/v1/resume/optimize').send({ level: 'light', resumeText: 'x' });
         expect(res.status).toBe(429);
@@ -150,13 +159,13 @@ describe('POST /api/v1/resume/optimize — SSE', () => {
         expect(res.status).toBe(200);
     });
 
-    test('incrementUsage not called on error', async () => {
+    test('refunds reserved quota on error', async () => {
         mockStreamOptimize.mockReturnValue((async function* () {
             throw new Error('LLM error');
         })());
 
         await request(app)
             .post('/api/v1/resume/optimize').send({ level: 'light', resumeText: 'My resume' });
-        expect(mockQuotaService.incrementUsage).not.toHaveBeenCalled();
+        expect(mockQuotaService.refundUsage).toHaveBeenCalledWith(1);
     });
 });

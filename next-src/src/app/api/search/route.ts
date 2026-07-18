@@ -100,7 +100,10 @@ export async function GET(req: NextRequest) {
     total,
     page,
     limit,
-    results: paged.map(({ _score, ...rest }) => rest),
+    results: paged.map(({ _score, ...rest }) => {
+      void _score;
+      return rest;
+    }),
     facets: { categories: categoryFacets, price: priceFacets },
   });
 }
