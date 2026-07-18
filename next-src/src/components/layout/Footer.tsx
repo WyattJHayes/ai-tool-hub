@@ -1,5 +1,4 @@
 import { LayoutGrid } from 'lucide-react';
-import Image from 'next/image';
 import Link from 'next/link';
 
 export default function Footer() {
@@ -29,7 +28,7 @@ export default function Footer() {
           <div className="flex flex-wrap items-center gap-4">
             <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-[var(--muted)]">沪ICP备2026013388号</a>
             <a href="https://beian.mps.gov.cn/#/query/webSearch?code=31011502405714" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 transition-colors hover:text-[var(--muted)]">
-              <Image src="/beian-icon.png" alt="" width={14} height={14} style={{ width: 'auto', height: 14 }} />
+              <span className="h-3.5 w-3.5 shrink-0 bg-contain bg-center bg-no-repeat" style={{ backgroundImage: "url('/beian-icon.png')" }} aria-hidden="true" />
               沪公网安备31011502405714号
             </a>
           </div>

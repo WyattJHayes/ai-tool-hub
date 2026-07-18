@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 const read = (relativePath) =>
   readFileSync(new URL(`../${relativePath}`, import.meta.url), 'utf8');
@@ -25,7 +25,8 @@ test('ships a light default viewport and quiet directory navigation', () => {
   assert.match(navbar, /label: '排行'/);
   assert.doesNotMatch(navbar, /bg-gradient|backdrop-blur|rounded-full/);
   assert.match(layout, /data-scroll-behavior="smooth"/);
-  assert.match(footer, /width: 'auto', height: 14/);
+  assert.match(footer, /backgroundImage: "url\('\/beian-icon\.png'\)"/);
+  assert.doesNotMatch(footer, /next\/image/);
   assert.doesNotMatch(layout, /发现最佳/);
 });
 
@@ -48,6 +49,7 @@ test('uses flat comparison-oriented tool cards and tab-like filters', () => {
   assert.match(card, /tool\.updateTime/);
   assert.match(card, /tool\.platforms/);
   assert.match(card, /aria-label=\{isFavorite \? `取消收藏/);
+  assert.match(card, /className="mt-3 min-h-11 flex flex-1"/);
   assert.doesNotMatch(categories, /rounded-full|bg-gradient|shadow-\[/);
   assert.match(categories, /border-b-2/);
   assert.doesNotMatch(search, /backdrop-blur|rounded-2xl|shadow-\[0_0/);
@@ -81,4 +83,12 @@ test('keeps account, ranking, comparison, and modal surfaces neutral', () => {
   for (const surface of remainingSurfaces) {
     assert.doesNotMatch(read(surface), forbidden, surface);
   }
+});
+
+test('does not retain dormant particle effects or legacy error styling', () => {
+  const particlePath = new URL('../src/components/effects/ParticleBackground.tsx', import.meta.url);
+  const errorBoundary = read('src/components/common/ErrorBoundary.tsx');
+
+  assert.equal(existsSync(particlePath), false);
+  assert.doesNotMatch(errorBoundary, /rounded-2xl|text-white\/|border-red-500\/|bg-white\//);
 });

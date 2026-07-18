@@ -81,7 +81,7 @@ export function ToolCard({ tool }: ToolCardProps) {
         </label>
       </div>
 
-      <Link href={`/tools/${slug}`} className="mt-3 flex-1">
+      <Link href={`/tools/${slug}`} className="mt-3 min-h-11 flex flex-1">
         <p className="line-clamp-2 text-sm leading-6 text-[var(--muted)]">{tool.desc}</p>
       </Link>
 
