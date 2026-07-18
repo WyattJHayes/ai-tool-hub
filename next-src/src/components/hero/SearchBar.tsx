@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Search, X, Command, Clock, ArrowRight } from 'lucide-react';
 import { useToolStore } from '@/stores/useToolStore';
 import { ToolIcon } from '@/lib/icon-map';
 import { cn } from '@/lib/utils';
+import { getSearchSuggestions } from '@/lib/search-suggestions.mjs';
 
 export function SearchBar() {
   const [value, setValue] = useState('');
@@ -17,15 +18,10 @@ export function SearchBar() {
   const searchHistory = useToolStore((s) => s.searchHistory);
   const tools = useToolStore((s) => s.tools);
 
-  const suggestions = value
-    ? tools
-        .filter(
-          (t) =>
-            t.name.toLowerCase().includes(value.toLowerCase()) ||
-            t.desc.toLowerCase().includes(value.toLowerCase())
-        )
-        .slice(0, 6)
-    : [];
+  const suggestions = useMemo(
+    () => getSearchSuggestions(tools, value),
+    [tools, value]
+  );
 
   // Debounced search
   const handleChange = useCallback(
@@ -96,7 +92,9 @@ export function SearchBar() {
 
         {value && (
           <button
+            type="button"
             onClick={handleClear}
+            aria-label="清除搜索"
             className="mr-3 flex h-8 w-8 items-center justify-center rounded-lg text-white/40 transition-colors hover:bg-white/10 hover:text-white"
           >
             <X className="h-4 w-4" />
@@ -104,7 +102,7 @@ export function SearchBar() {
         )}
 
         {!value && (
-          <div className="mr-5 flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs text-white/30">
+          <div className="mr-5 hidden items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs text-white/30 sm:flex">
             <Command className="h-3 w-3" />
             <span>K</span>
           </div>
@@ -128,7 +126,9 @@ export function SearchBar() {
               </div>
               {searchHistory.map((term) => (
                 <button
+                  type="button"
                   key={term}
+                  aria-label={`再次搜索 ${term}`}
                   onMouseDown={() => {
                     handleChange(term);
                     inputRef.current?.blur();
@@ -145,7 +145,9 @@ export function SearchBar() {
           {/* Tool suggestions */}
           {showSuggestions && suggestions.map((tool) => (
             <button
+              type="button"
               key={tool.id}
+              aria-label={`搜索 ${tool.name}`}
               onMouseDown={() => {
                 handleChange(tool.name);
                 addSearchHistory(tool.name);
