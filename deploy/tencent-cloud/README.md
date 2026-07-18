@@ -51,6 +51,16 @@ deploy/tencent-cloud/quick-deploy.sh status
 deploy/tencent-cloud/quick-deploy.sh logs
 ```
 
+Confirm the exact Git revision running in production:
+
+```bash
+ssh root@101.43.35.235 \
+  "docker inspect -f '{{ index .Config.Labels \"org.opencontainers.image.revision\" }}' weihub-app"
+```
+
+Deployments reject uncommitted or untracked files under `next-src` so this
+revision always identifies the source used to build the image.
+
 Override the default target when needed:
 
 ```bash

@@ -28,10 +28,28 @@ build_local() {
     npm --prefix "$PROJECT_ROOT/next-src" run build
 }
 
+get_source_revision() {
+    require_command git
+
+    if ! git -C "$PROJECT_ROOT" diff --quiet HEAD -- next-src; then
+        echo "Refusing to deploy uncommitted next-src changes." >&2
+        exit 1
+    fi
+    if [ -n "$(git -C "$PROJECT_ROOT" ls-files --others --exclude-standard -- next-src)" ]; then
+        echo "Refusing to deploy untracked next-src files." >&2
+        exit 1
+    fi
+
+    git -C "$PROJECT_ROOT" rev-parse HEAD
+}
+
 upload_sources() {
+    local source_revision
+
     require_command rsync
     require_command ssh
     require_command scp
+    source_revision="$(get_source_revision)"
 
     ssh "$SERVER_HOST" "install -d -m 0755 '$REMOTE_ROOT/source'"
     rsync -az --delete \
@@ -42,6 +60,8 @@ upload_sources() {
         "$PROJECT_ROOT/next-src/" "$SERVER_HOST:$REMOTE_ROOT/source/"
     scp "$COMPOSE_SOURCE" "$SERVER_HOST:$REMOTE_ROOT/docker-compose.yml.new"
     scp "$NGINX_SOURCE" "$SERVER_HOST:$REMOTE_ROOT/weihub.cloud.conf.new"
+    printf '%s\n' "$source_revision" \
+        | ssh "$SERVER_HOST" "install -m 0644 /dev/stdin '$REMOTE_ROOT/source-revision.new'"
 }
 
 deploy_remote() {
@@ -55,6 +75,7 @@ dgc_root="$2"
 compose_file="$remote_root/docker-compose.yml"
 candidate_compose="$remote_root/docker-compose.yml.new"
 candidate_nginx="$remote_root/weihub.cloud.conf.new"
+candidate_revision="$remote_root/source-revision.new"
 nginx_target="$dgc_root/nginx/conf.d/legacy-domain-redirect.conf"
 timestamp="$(date +%Y%m%d%H%M%S)"
 backup_root="$remote_root/backups/$timestamp"
@@ -67,10 +88,17 @@ if [ ! -s "$remote_root/.env" ]; then
     exit 1
 fi
 
-if [ ! -s "$candidate_compose" ] || [ ! -s "$candidate_nginx" ]; then
+if [ ! -s "$candidate_compose" ] || [ ! -s "$candidate_nginx" ] || [ ! -s "$candidate_revision" ]; then
     echo "Run the upload step before deploy." >&2
     exit 1
 fi
+
+git_sha="$(tr -d '\r\n' < "$candidate_revision")"
+if [[ ! "$git_sha" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "Invalid source revision: $git_sha" >&2
+    exit 1
+fi
+export GIT_SHA="$git_sha"
 
 install -d -m 0700 "$backup_root"
 chmod 0600 "$remote_root/.env"
@@ -85,6 +113,7 @@ if [ -f /etc/systemd/system/ai-resume-optimizer.service ]; then
 fi
 cp "$nginx_target" "$backup_root/weihub.cloud.conf"
 cp "$candidate_compose" "$backup_root/docker-compose.yml"
+cp "$candidate_revision" "$backup_root/source-revision"
 if [ -s "$compose_file" ]; then
     cp "$compose_file" "$backup_root/previous-docker-compose.yml"
 fi
@@ -169,6 +198,13 @@ if [ -n "$(docker port weihub-app)" ]; then
     exit 1
 fi
 
+running_revision="$(docker inspect weihub-app --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
+if [ "$running_revision" != "$git_sha" ]; then
+    echo "Running image revision $running_revision does not match candidate $git_sha" >&2
+    rollback
+    exit 1
+fi
+
 if ! docker exec dgc-nginx nginx -t; then
     rollback
     exit 1
@@ -210,8 +246,9 @@ if docker container inspect ai-resume-optimizer >/dev/null 2>&1; then
     docker rm ai-resume-optimizer >/dev/null
 fi
 prune_deployment_history
+install -m 0644 "$candidate_revision" "$remote_root/source-revision"
 
-echo "Deployment completed. Backup: $backup_root"
+echo "Deployment completed. Revision: $git_sha. Backup: $backup_root"
 REMOTE_SCRIPT
 }
 
