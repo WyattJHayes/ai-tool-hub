@@ -29,7 +29,7 @@ export default function Footer() {
           <div className="flex flex-wrap items-center gap-4">
             <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-[var(--muted)]">沪ICP备2026013388号</a>
             <a href="https://beian.mps.gov.cn/#/query/webSearch?code=31011502405714" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 transition-colors hover:text-[var(--muted)]">
-              <Image src="/beian-icon.png" alt="" width={14} height={14} style={{ width: 14, height: 14 }} />
+              <Image src="/beian-icon.png" alt="" width={14} height={14} style={{ width: 'auto', height: 14 }} />
               沪公网安备31011502405714号
             </a>
           </div>

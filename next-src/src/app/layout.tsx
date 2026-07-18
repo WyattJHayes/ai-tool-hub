@@ -8,15 +8,15 @@ import CompareBar from '@/components/compare/CompareBar';
 import BottomNav from '@/components/layout/BottomNav';
 
 export const metadata: Metadata = {
-  title: 'AI Tool Hub - 发现最佳 AI 工具',
-  description: '探索和发现最佳 AI 工具，提升你的工作效率。涵盖 ChatGPT、Midjourney、Stable Diffusion 等热门 AI 工具的导航与推荐。',
+  title: 'AI Tool Hub - 按任务查找和比较 AI 工具',
+  description: '按写作、设计、研究和开发任务查找、筛选和比较 AI 工具。',
   manifest: '/manifest.json',
   icons: {
     icon: '/favicon.svg',
   },
   openGraph: {
-    title: 'AI Tool Hub - 发现最佳 AI 工具',
-    description: '探索和发现最佳 AI 工具，提升你的工作效率。',
+    title: 'AI Tool Hub - 按任务查找和比较 AI 工具',
+    description: '按写作、设计、研究和开发任务查找、筛选和比较 AI 工具。',
     url: 'https://weihub.cloud',
     siteName: 'AI Tool Hub',
     locale: 'zh_CN',
@@ -24,8 +24,8 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'AI Tool Hub - 发现最佳 AI 工具',
-    description: '探索和发现最佳 AI 工具，提升你的工作效率。',
+    title: 'AI Tool Hub - 按任务查找和比较 AI 工具',
+    description: '按写作、设计、研究和开发任务查找、筛选和比较 AI 工具。',
   },
   alternates: {
     canonical: 'https://weihub.cloud',
@@ -44,7 +44,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN" suppressHydrationWarning>
+    <html lang="zh-CN" suppressHydrationWarning data-scroll-behavior="smooth">
       <body className="min-h-screen">
         <Navbar />
         <AuthProvider>

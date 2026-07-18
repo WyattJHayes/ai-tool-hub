@@ -16,6 +16,7 @@ test('uses the neutral editorial color system without animated grid decoration',
 test('ships a light default viewport and quiet directory navigation', () => {
   const layout = read('src/app/layout.tsx');
   const navbar = read('src/components/layout/Navbar.tsx');
+  const footer = read('src/components/layout/Footer.tsx');
 
   assert.match(layout, /themeColor:\s*'#f6f7f4'/);
   assert.doesNotMatch(layout, /className="dark"|bg-gray-950|text-white/);
@@ -23,6 +24,9 @@ test('ships a light default viewport and quiet directory navigation', () => {
   assert.match(navbar, /label: '场景'/);
   assert.match(navbar, /label: '排行'/);
   assert.doesNotMatch(navbar, /bg-gradient|backdrop-blur|rounded-full/);
+  assert.match(layout, /data-scroll-behavior="smooth"/);
+  assert.match(footer, /width: 'auto', height: 14/);
+  assert.doesNotMatch(layout, /发现最佳/);
 });
 
 test('puts task search and real curated tools ahead of scene browsing', () => {
