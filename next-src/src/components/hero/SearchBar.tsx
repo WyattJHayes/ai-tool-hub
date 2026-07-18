@@ -2,13 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, Clock, Command, Search, X } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
 import { useToolStore } from '@/stores/useToolStore';
 import { ToolIcon } from '@/lib/icon-map';
 import { cn } from '@/lib/utils';
 import { getSearchSuggestions } from '@/lib/search-suggestions.mjs';
 
 export function SearchBar() {
-  const [value, setValue] = useState('');
+  const pathname = usePathname();
+  const router = useRouter();
+  const storedSearchTerm = useToolStore((state) => state.searchTerm);
+  const [value, setValue] = useState(storedSearchTerm);
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
@@ -23,6 +27,10 @@ export function SearchBar() {
     [tools, value]
   );
 
+  const openResultsPage = useCallback(() => {
+    if (pathname !== '/tools') router.push('/tools');
+  }, [pathname, router]);
+
   const handleChange = useCallback((nextValue: string) => {
     setValue(nextValue);
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -34,9 +42,10 @@ export function SearchBar() {
     if (term) {
       setSearchTerm(term);
       addSearchHistory(term);
+      openResultsPage();
     }
     inputRef.current?.blur();
-  }, [value, setSearchTerm, addSearchHistory]);
+  }, [value, setSearchTerm, addSearchHistory, openResultsPage]);
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
@@ -128,7 +137,9 @@ export function SearchBar() {
                   key={term}
                   onMouseDown={() => {
                     handleChange(term);
+                    setSearchTerm(term);
                     addSearchHistory(term);
+                    openResultsPage();
                     inputRef.current?.blur();
                   }}
                   className="flex min-h-12 w-full items-center justify-between px-4 text-left text-sm text-[var(--muted)] transition-colors hover:bg-[var(--surface-subtle)] hover:text-[var(--ink)]"
@@ -151,6 +162,7 @@ export function SearchBar() {
                 handleChange(tool.name);
                 setSearchTerm(tool.name);
                 addSearchHistory(tool.name);
+                openResultsPage();
                 inputRef.current?.blur();
               }}
               className="flex min-h-[60px] w-full items-center gap-3 border-b border-[var(--line)] px-4 text-left last:border-b-0 hover:bg-[var(--surface-subtle)]"

@@ -1,30 +1,33 @@
 'use client';
 
-
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import {
-  ArrowLeft, Presentation, Code, Video, Palette, PenTool, Music, Search, Bot,
-} from 'lucide-react';
+import { ArrowLeft, Bot, Code, Music, Palette, PenTool, Presentation, Search, Video } from 'lucide-react';
 import { useToolStore } from '@/stores/useToolStore';
 import { ToolCard } from '@/components/tools/ToolCard';
 import type { Tool } from '@/types/tool';
 
 const sceneIcons: Record<string, React.ElementType> = {
-  presentation: Presentation, code: Code, video: Video, palette: Palette,
-  'pen-tool': PenTool, music: Music, search: Search, bot: Bot,
+  presentation: Presentation,
+  code: Code,
+  video: Video,
+  palette: Palette,
+  'pen-tool': PenTool,
+  music: Music,
+  search: Search,
+  bot: Bot,
 };
 
 const sceneMeta: Record<string, { name: string; icon: string; desc: string }> = {
-  ppt: { name: '我要做PPT', icon: 'presentation', desc: '用 AI 快速生成精美演示文稿' },
-  coding: { name: '我要写代码', icon: 'code', desc: 'AI 辅助编程，提升开发效率' },
-  video: { name: '我要做短视频', icon: 'video', desc: 'AI 视频生成与编辑工具' },
-  drawing: { name: '我要画图', icon: 'palette', desc: 'AI 绘画与图像生成' },
-  copywriting: { name: '我要写文案', icon: 'pen-tool', desc: 'AI 文案写作与优化' },
-  music: { name: '我要做音乐', icon: 'music', desc: 'AI 音乐创作与编曲' },
-  research: { name: '我要做调研', icon: 'search', desc: 'AI 搜索与深度研究' },
-  agent: { name: '我要建AI应用', icon: 'bot', desc: 'AI 智能体与应用构建平台' },
+  ppt: { name: '制作 PPT', icon: 'presentation', desc: '生成演示结构、内容和视觉稿' },
+  coding: { name: '编写代码', icon: 'code', desc: '辅助开发、调试和代码审查' },
+  video: { name: '制作视频', icon: 'video', desc: '生成视频、字幕和配音' },
+  drawing: { name: '图像设计', icon: 'palette', desc: '生成图像、素材与设计方案' },
+  copywriting: { name: '撰写文案', icon: 'pen-tool', desc: '起草、改写和润色内容' },
+  music: { name: '制作音乐', icon: 'music', desc: '生成音乐、音效与声音素材' },
+  research: { name: '搜索调研', icon: 'search', desc: '查找资料并整理关键结论' },
+  agent: { name: '构建 AI 应用', icon: 'bot', desc: '搭建智能体、工作流和应用' },
 };
 
 export default function SceneDetailPage() {
@@ -41,65 +44,43 @@ export default function SceneDetailPage() {
   useEffect(() => {
     if (tools.length === 0) return;
     fetch('/data/scenes.json')
-      .then((res) => res.json())
+      .then((response) => response.json())
       .then((data) => {
-        const scene = data.scenes?.find((s: { id: string }) => s.id === slug);
-        if (scene) {
-          const matched = scene.toolIds
-            .map((id: number) => tools.find((t: Tool) => t.id === id))
-            .filter(Boolean) as Tool[];
-          setSceneTools(matched);
-        }
+        const scene = data.scenes?.find((candidate: { id: string }) => candidate.id === slug);
+        if (!scene) return;
+        setSceneTools(scene.toolIds.map((id: number) => tools.find((tool) => tool.id === id)).filter(Boolean) as Tool[]);
       })
-      .catch(console.error);
+      .catch(() => {});
   }, [tools, slug]);
 
   const Icon = sceneIcons[meta.icon] || Bot;
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
-      {/* Header */}
-      <div className="sticky top-0 z-50 border-b border-white/10 bg-gray-950/90 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl items-center gap-4 px-6 py-4">
-          <Link
-            href="/scenes"
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 text-white/50 transition-colors hover:bg-white/5 hover:text-white"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500/20 to-blue-500/20">
-              <Icon className="h-5 w-5 text-violet-400" />
-            </div>
-            <div>
-              <h1 className="text-lg font-semibold">{meta.name}</h1>
-              <p className="text-xs text-white/40">{meta.desc}</p>
-            </div>
+    <main className="min-h-screen bg-[var(--page)] text-[var(--ink)]">
+      <header className="border-b border-[var(--line)] bg-[var(--surface)]">
+        <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-6 sm:px-6">
+          <Link href="/scenes" className="flex h-11 w-11 items-center justify-center rounded-md text-[var(--muted)] hover:bg-[var(--surface-subtle)] hover:text-[var(--ink)]" aria-label="返回场景列表"><ArrowLeft className="h-4 w-4" /></Link>
+          <span className="flex h-11 w-11 items-center justify-center rounded-md bg-[var(--accent-soft)] text-[var(--accent)]"><Icon className="h-5 w-5" /></span>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-xl font-semibold sm:text-2xl">{meta.name}</h1>
+            <p className="text-sm text-[var(--muted)]">{meta.desc}</p>
           </div>
-          <div className="flex-1" />
-          <span className="rounded-full bg-white/5 px-3 py-1 text-sm text-white/50">
-            {sceneTools.length} 款工具
-          </span>
+          <span className="shrink-0 text-sm text-[var(--muted)]">{sceneTools.length} 款工具</span>
         </div>
-      </div>
+      </header>
 
-      {/* Tool grid */}
-      <div className="mx-auto max-w-7xl px-6 py-8">
+      <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
         {sceneTools.length === 0 && !isLoading ? (
-          <div className="flex flex-col items-center justify-center gap-4 py-20 text-center">
-            <p className="text-lg text-white/50">该场景暂无工具推荐</p>
-            <Link href="/scenes" className="text-sm text-violet-400 hover:underline">
-              返回场景列表
-            </Link>
+          <div className="rounded-lg border border-dashed border-[var(--line-strong)] bg-[var(--surface)] px-6 py-16 text-center">
+            <p className="text-base text-[var(--muted)]">该场景暂无工具推荐</p>
+            <Link href="/scenes" className="mt-3 inline-flex min-h-11 items-center text-sm font-medium text-[var(--accent)]">返回场景列表</Link>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {sceneTools.map((tool) => (
-              <ToolCard key={tool.id} tool={tool} />
-            ))}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {sceneTools.map((tool) => <ToolCard key={tool.id} tool={tool} />)}
           </div>
         )}
-      </div>
-    </div>
+      </section>
+    </main>
   );
 }

@@ -47,4 +47,19 @@ test('uses flat comparison-oriented tool cards and tab-like filters', () => {
   assert.doesNotMatch(categories, /rounded-full|bg-gradient|shadow-\[/);
   assert.match(categories, /border-b-2/);
   assert.doesNotMatch(search, /backdrop-blur|rounded-2xl|shadow-\[0_0/);
+  assert.match(search, /usePathname/);
+  assert.match(search, /router\.push\('\/tools'\)/);
+});
+
+test('keeps tool detail and scene routes in the same editorial system', () => {
+  const secondaryRoutes = [
+    'src/app/tools/[slug]/page.tsx',
+    'src/app/scenes/page.tsx',
+    'src/app/scenes/[slug]/page.tsx',
+  ];
+  const forbidden = /bg-gray-950|bg-gradient|backdrop-blur|text-white\/|border-white\/|rounded-2xl|violet|purple|cyan/i;
+
+  for (const route of secondaryRoutes) {
+    assert.doesNotMatch(read(route), forbidden, route);
+  }
 });

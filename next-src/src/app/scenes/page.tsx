@@ -1,13 +1,8 @@
 'use client';
 
-
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import {
-  Presentation, Code, Video, Palette, PenTool, Music, Search, Bot,
-  ArrowRight, Layers,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { ArrowRight, Bot, Code, Music, Palette, PenTool, Presentation, Search, Video } from 'lucide-react';
 import { useToolStore } from '@/stores/useToolStore';
 
 const sceneIcons: Record<string, React.ElementType> = {
@@ -29,29 +24,20 @@ interface SceneWithCount {
   toolCount: number;
 }
 
-const gradients = [
-  'from-violet-500/20 to-blue-500/20',
-  'from-cyan-500/20 to-emerald-500/20',
-  'from-rose-500/20 to-orange-500/20',
-  'from-pink-500/20 to-purple-500/20',
-  'from-amber-500/20 to-yellow-500/20',
-  'from-indigo-500/20 to-blue-500/20',
-  'from-teal-500/20 to-green-500/20',
-  'from-fuchsia-500/20 to-pink-500/20',
+const initialScenes: SceneWithCount[] = [
+  { id: 'ppt', name: '制作 PPT', icon: 'presentation', description: '生成演示结构、内容和视觉稿', toolCount: 0 },
+  { id: 'coding', name: '编写代码', icon: 'code', description: '辅助开发、调试和代码审查', toolCount: 0 },
+  { id: 'video', name: '制作视频', icon: 'video', description: '生成视频、字幕和配音', toolCount: 0 },
+  { id: 'drawing', name: '图像设计', icon: 'palette', description: '生成图像、素材与设计方案', toolCount: 0 },
+  { id: 'copywriting', name: '撰写文案', icon: 'pen-tool', description: '起草、改写和润色内容', toolCount: 0 },
+  { id: 'music', name: '制作音乐', icon: 'music', description: '生成音乐、音效与声音素材', toolCount: 0 },
+  { id: 'research', name: '搜索调研', icon: 'search', description: '查找资料并整理关键结论', toolCount: 0 },
+  { id: 'agent', name: '构建 AI 应用', icon: 'bot', description: '搭建智能体、工作流和应用', toolCount: 0 },
 ];
 
 export default function ScenesPage() {
   const { loadData, dataLoaded } = useToolStore();
-  const [scenes, setScenes] = useState<SceneWithCount[]>([
-    { id: 'ppt', name: '我要做PPT', icon: 'presentation', description: '用 AI 快速生成精美演示文稿', toolCount: 0 },
-    { id: 'coding', name: '我要写代码', icon: 'code', description: 'AI 辅助编程，提升开发效率', toolCount: 0 },
-    { id: 'video', name: '我要做短视频', icon: 'video', description: 'AI 视频生成与编辑工具', toolCount: 0 },
-    { id: 'drawing', name: '我要画图', icon: 'palette', description: 'AI 绘画与图像生成', toolCount: 0 },
-    { id: 'copywriting', name: '我要写文案', icon: 'pen-tool', description: 'AI 文案写作与优化', toolCount: 0 },
-    { id: 'music', name: '我要做音乐', icon: 'music', description: 'AI 音乐创作与编曲', toolCount: 0 },
-    { id: 'research', name: '我要做调研', icon: 'search', description: 'AI 搜索与深度研究', toolCount: 0 },
-    { id: 'agent', name: '我要建AI应用', icon: 'bot', description: 'AI 智能体与应用构建平台', toolCount: 0 },
-  ]);
+  const [scenes, setScenes] = useState(initialScenes);
 
   useEffect(() => {
     if (!dataLoaded) loadData();
@@ -59,87 +45,42 @@ export default function ScenesPage() {
 
   useEffect(() => {
     fetch('/data/scenes.json')
-      .then((res) => res.json())
+      .then((response) => response.json())
       .then((data) => {
-        setScenes(prev =>
-          prev.map(s => {
-            const found = data.scenes?.find((d: { id: string; toolIds: number[] }) => d.id === s.id);
-            return found ? { ...s, toolCount: found.toolIds.length } : s;
-          })
-        );
+        setScenes((current) => current.map((scene) => {
+          const matched = data.scenes?.find((candidate: { id: string; toolIds: number[] }) => candidate.id === scene.id);
+          return matched ? { ...scene, toolCount: matched.toolIds.length } : scene;
+        }));
       })
-      .catch(console.error);
+      .catch(() => {});
   }, []);
 
   return (
-    <div className="relative min-h-screen bg-gray-950 text-white"><div className="relative z-10">
-        {/* Hero */}
-        <section className="flex flex-col items-center justify-center px-6 pt-24 pb-12 text-center">
-          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-sm text-white/60 backdrop-blur-sm">
-            <Layers className="h-4 w-4 text-cyan-400" />
-            <span>按场景找工具</span>
-          </div>
-          <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
-            <span className="bg-gradient-to-r from-cyan-400 to-violet-400 bg-clip-text text-transparent">
-              你想做什么？
-            </span>
-          </h1>
-          <p className="mt-4 max-w-xl text-lg text-white/50">
-            选择你的使用场景，我们为你推荐最合适的 AI 工具
-          </p>
-        </section>
+    <main className="min-h-screen bg-[var(--page)] text-[var(--ink)]">
+      <header className="border-b border-[var(--line)] bg-[var(--surface)]">
+        <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 sm:py-12">
+          <h1 className="text-3xl font-semibold sm:text-4xl">按任务浏览</h1>
+          <p className="mt-3 max-w-xl text-base text-[var(--muted)]">先选择要完成的工作，再比较适合的工具</p>
+        </div>
+      </header>
 
-        {/* Scene grid */}
-        <section className="mx-auto max-w-5xl px-6 pb-24">
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-            {scenes.map((scene, idx) => {
-              const Icon = sceneIcons[scene.icon] || Bot;
-              return (
-                      <Link
-                  key={scene.id}
-                  href={`/scenes/${scene.id}`}
-                  className="group"
-                >
-                  <div
-                    className={cn(
-                      'relative overflow-hidden rounded-2xl border border-white/10',
-                      'bg-white/[0.03] backdrop-blur-sm p-6',
-                      'transition-all duration-300',
-                      'hover:-translate-y-1 hover:border-white/20 hover:shadow-[0_8px_40px_rgba(139,92,246,0.1)]'
-                    )}
-                  >
-                    {/* Gradient bg */}
-                    <div
-                      className={cn(
-                        'pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-gradient-to-br blur-3xl opacity-50',
-                        gradients[idx]
-                      )}
-                    />
-
-                    <div className="relative flex items-start gap-5">
-                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white/5 text-white/70 transition-colors group-hover:bg-white/10">
-                        <Icon className="h-7 w-7" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-lg font-semibold text-white/90 group-hover:text-white">
-                          {scene.name}
-                        </h3>
-                        <p className="mt-1 text-sm text-white/40">{scene.description}</p>
-                        <div className="mt-3 flex items-center gap-2">
-                          <span className="rounded-full bg-white/5 px-2.5 py-0.5 text-xs text-white/50">
-                            {scene.toolCount} 款工具
-                          </span>
-                          <ArrowRight className="h-4 w-4 text-white/30 transition-transform group-hover:translate-x-1 group-hover:text-white/60" />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
-        </section>
-      </div>
-    </div>
+      <section className="mx-auto max-w-5xl px-4 py-9 sm:px-6 sm:py-12">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {scenes.map((scene) => {
+            const Icon = sceneIcons[scene.icon] || Bot;
+            return (
+              <Link key={scene.id} href={`/scenes/${scene.id}`} className="group flex min-h-[132px] items-start gap-4 rounded-lg border border-[var(--line)] bg-[var(--surface)] p-5 transition-colors duration-150 hover:border-[var(--line-strong)] hover:bg-[var(--surface-subtle)]">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-[var(--accent-soft)] text-[var(--accent)]"><Icon className="h-5 w-5" /></span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-base font-semibold">{scene.name}</span>
+                  <span className="mt-1 block text-sm text-[var(--muted)]">{scene.description}</span>
+                  <span className="mt-3 flex items-center gap-1 text-xs font-medium text-[var(--accent)]">{scene.toolCount} 款工具 <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" /></span>
+                </span>
+              </Link>
+            );
+          })}
+        </div>
+      </section>
+    </main>
   );
 }
