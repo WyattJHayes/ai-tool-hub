@@ -98,8 +98,8 @@ requireMatch(
 );
 requireMatch(
   nginxConfig,
-  /location\s*=\s*\/reset-domain-cache\s*{[\s\S]*?add_header\s+Clear-Site-Data\s+['"]?['"]cache['"]['"]?\s+always\s*;[\s\S]*?add_header\s+Cache-Control\s+['"]no-store['"]\s+always\s*;[\s\S]*?return\s+302\s+https:\/\/weihub\.cloud\/\?domain-cache-reset=1\s*;/,
-  `${nginxConfigPath} must provide a cache-only recovery route for legacy permanent redirects`
+  /location\s*=\s*\/reset-domain-cache\s*{[\s\S]*?default_type\s+text\/html\s*;[\s\S]*?add_header\s+Clear-Site-Data\s+['"]?['"]cache['"]['"]?\s+always\s*;[\s\S]*?add_header\s+Cache-Control\s+['"]no-store['"]\s+always\s*;[\s\S]*?return\s+200\s+['"][\s\S]*?http-equiv=["']refresh["'][\s\S]*?domain-cache-reset=2[\s\S]*?['"]\s*;/i,
+  `${nginxConfigPath} must serve a cache-only recovery page for legacy permanent redirects`
 );
 
 for (const forbidden of [
