@@ -114,6 +114,12 @@ if (!fs.existsSync(path.join(root, dockerfilePath))) {
   const dockerfile = read(dockerfilePath);
   requireMatch(dockerfile, /\bRUN\s+npm\s+ci\b/, `${dockerfilePath} must use npm ci`);
   requireMatch(dockerfile, /\bUSER\s+nextjs\b/, `${dockerfilePath} must run as nextjs`);
+  requireMatch(dockerfile, /\bARG\s+GIT_SHA(?:=\S+)?\b/, `${dockerfilePath} must accept the Git revision`);
+  requireMatch(
+    dockerfile,
+    /\bLABEL\s+org\.opencontainers\.image\.revision=["']?\$\{?GIT_SHA\}?["']?/,
+    `${dockerfilePath} must expose the Git revision as an OCI label`
+  );
 }
 
 if (!fs.existsSync(path.join(root, productionComposePath))) {
@@ -126,6 +132,7 @@ if (!fs.existsSync(path.join(root, productionComposePath))) {
   requireMatch(productionCompose, /^\s*container_name:\s*weihub-app\s*$/m, `${productionComposePath} must use the collision-free weihub-app container name`);
   requireMatch(productionCompose, /^\s*-\s+weihub-app\s*$/m, `${productionComposePath} must define the weihub-app alias`);
   requireMatch(productionCompose, /restart:\s*unless-stopped/, `${productionComposePath} must restart unless stopped`);
+  requireMatch(productionCompose, /^\s+GIT_SHA:\s*\$\{GIT_SHA:-unknown\}\s*$/m, `${productionComposePath} must forward the Git revision`);
   if (/^\s*ports:\s*$/m.test(productionCompose)) {
     failures.push(`${productionComposePath} must not publish application ports on the host`);
   }
@@ -138,6 +145,24 @@ requireMatch(
   deploymentScript,
   /docker container inspect ai-resume-optimizer\b/,
   'quick-deploy.sh must distinguish the legacy container from the same-named image'
+);
+requireMatch(deploymentScript, /git\s+-C\s+"\$PROJECT_ROOT"\s+rev-parse\s+HEAD/, 'deployment must capture the current Git revision');
+requireMatch(
+  deploymentScript,
+  /git\s+-C\s+"\$PROJECT_ROOT"\s+diff\s+--quiet\s+HEAD\s+--\s+next-src/,
+  'deployment must reject committed-path changes that are not represented by the revision'
+);
+requireMatch(
+  deploymentScript,
+  /git\s+-C\s+"\$PROJECT_ROOT"\s+ls-files\s+--others\s+--exclude-standard\s+--\s+next-src/,
+  'deployment must reject untracked application source files'
+);
+requireMatch(deploymentScript, /source-revision\.new/, 'deployment must upload the revision with the candidate source');
+requireMatch(deploymentScript, /export\s+GIT_SHA=/, 'deployment must provide the revision to Docker Compose');
+requireMatch(
+  deploymentScript,
+  /org\.opencontainers\.image\.revision/,
+  'deployment must verify the running image revision label'
 );
 
 for (const [pattern, message] of [
