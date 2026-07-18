@@ -1,7 +1,7 @@
 'use client';
 
+import { ArrowRight } from 'lucide-react';
 import Link from 'next/link';
-import { cn } from '@/lib/utils';
 import { trackClick } from '@/lib/api';
 
 interface SceneCardProps {
@@ -14,24 +14,24 @@ interface SceneCardProps {
 }
 
 export default function SceneCard({ scene }: SceneCardProps) {
-  const handleClick = () => { trackClick(0, '__scene__', undefined, scene.id).catch(() => {}); };
+  const handleClick = () => {
+    trackClick(0, '__scene__', undefined, scene.id).catch(() => {});
+  };
+
   return (
-    <Link href={`/scenes/${scene.id}`} onClick={handleClick}>
-      <div
-        className={cn(
-          'group relative flex flex-col items-center gap-3 rounded-2xl p-6',
-          'bg-white/5 backdrop-blur-sm border border-white/10',
-          'transition-all duration-300',
-          'hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(139,92,246,0.15)]',
-          'hover:border-violet-500/30'
-        )}
-      >
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-violet-500/10 text-violet-400 transition-colors group-hover:bg-violet-500/20">
-          {scene.icon}
-        </div>
-        <h3 className="text-sm font-medium text-white/90">{scene.name}</h3>
-        <p className="text-center text-xs text-white/50 leading-relaxed">{scene.description}</p>
-      </div>
+    <Link
+      href={`/scenes/${scene.id}`}
+      onClick={handleClick}
+      className="group flex min-h-[104px] items-center gap-3 rounded-lg border border-[var(--line)] bg-[var(--surface)] p-4 transition-colors duration-150 hover:border-[var(--line-strong)] hover:bg-[var(--surface-subtle)]"
+    >
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-[var(--accent-soft)] text-[var(--accent)]">
+        {scene.icon}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-semibold text-[var(--ink)]">{scene.name}</span>
+        <span className="mt-0.5 block text-xs leading-relaxed text-[var(--muted)]">{scene.description}</span>
+      </span>
+      <ArrowRight className="h-4 w-4 shrink-0 text-[var(--muted-subtle)] transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-[var(--accent)]" />
     </Link>
   );
 }

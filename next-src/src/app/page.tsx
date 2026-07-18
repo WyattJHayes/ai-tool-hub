@@ -1,198 +1,121 @@
 'use client';
 
-
 import { useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import {
-  Presentation, Code, Video, Palette, PenTool, Music, Search, Bot,
-  TrendingUp, BarChart3, Heart, Layers, Loader2, ArrowRight,
+  ArrowRight,
+  Bot,
+  Code,
+  Music,
+  Palette,
+  PenTool,
+  Presentation,
+  Search,
+  Video,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import { useToolStore } from '@/stores/useToolStore';
-import { getToolSlug } from '@/lib/tools-data';
 import type { Scene } from '@/types/tool';
+import { SearchBar } from '@/components/hero/SearchBar';
 import SceneCard from '@/components/scenes/SceneCard';
-import { ToolIcon } from '@/lib/icon-map';
+import { ToolCard } from '@/components/tools/ToolCard';
 
 const scenes: Scene[] = [
-  { id: 'ppt', name: 'PPT 制作', icon: '', description: 'AI 辅助生成专业演示文稿', toolIds: [] },
-  { id: 'coding', name: '代码助手', icon: '', description: '智能编程与代码审查', toolIds: [] },
-  { id: 'video', name: '视频创作', icon: '', description: 'AI 视频生成与剪辑', toolIds: [] },
-  { id: 'drawing', name: '设计创意', icon: '', description: 'AI 图像与 UI 设计', toolIds: [] },
-  { id: 'copywriting', name: '文案写作', icon: '', description: '智能文案与内容创作', toolIds: [] },
-  { id: 'music', name: '音乐生成', icon: '', description: 'AI 作曲与音效生成', toolIds: [] },
-  { id: 'search', name: '搜索研究', icon: '', description: 'AI 搜索与信息整合', toolIds: [] },
-  { id: 'chatbot', name: '智能对话', icon: '', description: 'AI 聊天与问答助手', toolIds: [] },
+  { id: 'ppt', name: 'PPT 制作', icon: '', description: '生成结构和视觉完整的演示文稿', toolIds: [] },
+  { id: 'coding', name: '代码助手', icon: '', description: '编写、理解和审查代码', toolIds: [] },
+  { id: 'video', name: '视频创作', icon: '', description: '生成视频、字幕和配音', toolIds: [] },
+  { id: 'drawing', name: '设计创意', icon: '', description: '图像生成与界面设计', toolIds: [] },
+  { id: 'copywriting', name: '文案写作', icon: '', description: '起草、改写和润色内容', toolIds: [] },
+  { id: 'music', name: '音乐生成', icon: '', description: '作曲、音效与声音处理', toolIds: [] },
+  { id: 'search', name: '搜索研究', icon: '', description: '查找资料并整理关键信息', toolIds: [] },
+  { id: 'chatbot', name: '智能对话', icon: '', description: '通用问答和任务协作', toolIds: [] },
 ];
 
 const sceneIcons = [Presentation, Code, Video, Palette, PenTool, Music, Search, Bot];
 
 export default function Home() {
-  const { tools, categories, isLoading, loadData, dataLoaded } = useToolStore();
+  const { tools, isLoading, loadData, dataLoaded } = useToolStore();
 
   useEffect(() => {
     if (!dataLoaded) loadData();
   }, [dataLoaded, loadData]);
 
-  const hotTools = useMemo(
-    () => tools.filter((t) => t.status === 'hot').slice(0, 6),
-    [tools]
-  );
-
-  const stats = useMemo(
-    () => ({
-      totalTools: tools.length,
-      totalCategories: categories.length,
-      favorites: tools.filter((t) => t.tags.includes('favorite')).length,
-    }),
-    [tools, categories]
-  );
+  const curatedTools = useMemo(() => {
+    const hotTools = tools.filter((tool) => tool.status === 'hot');
+    return (hotTools.length >= 6 ? hotTools : tools).slice(0, 6);
+  }, [tools]);
 
   return (
-    <div className="relative min-h-screen bg-gray-950 text-white"><div className="relative z-10">
-        {/* Hero Section */}
-        <section className="flex flex-col items-center justify-center px-6 pt-20 pb-16 text-center">
-          <h1 className="text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl">
-            <span className="bg-gradient-to-r from-violet-400 to-cyan-400 bg-clip-text text-transparent">
-              AI 工具集
-            </span>
-          </h1>
-          <p className="mt-4 max-w-2xl text-lg text-white/60">
-            发现、对比、选择最适合你的 AI 工具，提升工作效率
-          </p>
-        </section>
-
-        {/* 热门推荐 */}
-        <section className="mx-auto max-w-7xl px-6 pb-16">
-          <div className="mb-8 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <TrendingUp className="h-6 w-6 text-violet-400" />
-              <h2 className="text-2xl font-semibold">热门推荐</h2>
+    <main className="min-h-screen bg-[var(--page)] text-[var(--ink)]">
+      <section className="border-b border-[var(--line)] bg-[var(--surface)]">
+        <div className="mx-auto max-w-7xl px-4 py-9 sm:px-6 sm:py-12">
+          <div className="max-w-3xl">
+            <h1 className="text-3xl font-semibold leading-tight text-[var(--ink)] sm:text-4xl">
+              按任务找到合适的 AI 工具
+            </h1>
+            <p className="mt-3 max-w-2xl text-base text-[var(--muted)] sm:text-lg">
+              收录实用工具，帮你更快完成写作、设计、研究和开发
+            </p>
+            <div className="mt-6">
+              <SearchBar />
             </div>
-            <Link
-              href="/leaderboard"
-              className="flex items-center gap-1 text-sm text-white/40 transition-colors hover:text-white/70"
-            >
-              排行榜 <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
+            <p className="mt-3 text-xs text-[var(--muted-subtle)]">
+              {tools.length > 0 ? `${tools.length}+ 款工具` : '工具目录'} · 每周更新
+            </p>
           </div>
+        </div>
+      </section>
 
-          {isLoading ? (
-            <div className="flex items-center justify-center py-20">
-              <Loader2 className="h-8 w-8 animate-spin text-violet-400" />
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {hotTools.map((tool) => (
-                <Link key={tool.id} href={`/tools/${getToolSlug(tool)}`}>
-                  <div
-                    className={cn(
-                      'group relative flex items-start gap-4 rounded-2xl p-5',
-                      'bg-white/5 backdrop-blur-sm border border-white/10',
-                      'transition-all duration-300 hover:border-violet-500/30 hover:shadow-[0_0_30px_rgba(139,92,246,0.1)]'
-                    )}
-                  >
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-2xl">
-                      <ToolIcon name={tool.icon} className="h-6 w-6 text-violet-300" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-medium text-white/90">{tool.name}</h3>
-                        <span className="rounded-full bg-red-500/20 px-2 py-0.5 text-xs text-red-400">
-                          HOT
-                        </span>
-                        {tool.valueTag && (
-                          <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] text-emerald-400">
-                            {tool.valueTag}
-                          </span>
-                        )}
-                      </div>
-                      <p className="mt-1 text-sm text-white/50 line-clamp-2">{tool.desc}</p>
-                    </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* 按场景找工具 */}
-        <section className="mx-auto max-w-7xl px-6 pb-16">
-          <div className="mb-8 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Layers className="h-6 w-6 text-cyan-400" />
-              <h2 className="text-2xl font-semibold">按场景找工具</h2>
-            </div>
-            <Link
-              href="/scenes"
-              className="flex items-center gap-1 text-sm text-white/40 transition-colors hover:text-white/70"
-            >
-              全部场景 <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
+      <section className="mx-auto max-w-7xl px-4 py-9 sm:px-6 sm:py-12">
+        <div className="mb-5 flex items-end justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-semibold text-[var(--ink)] sm:text-2xl">本周值得试</h2>
+            <p className="mt-1 text-sm text-[var(--muted)]">从高频任务中挑选的实用工具</p>
           </div>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-            {scenes.map((scene, idx) => (
-              <SceneCard
-                key={scene.id}
-                scene={{
-                  ...scene,
-                  icon: (() => {
-                    const Icon = sceneIcons[idx];
-                    return <Icon className="h-6 w-6" />;
-                  })(),
-                }}
-              />
+          <Link href="/leaderboard" className="flex min-h-11 shrink-0 items-center gap-1 text-sm font-medium text-[var(--accent)] hover:text-[var(--accent-hover)]">
+            查看排行榜 <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
+
+        {isLoading ? (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3" aria-label="正在加载工具">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <div key={index} className="h-52 rounded-lg border border-[var(--line)] bg-[var(--surface)]" />
             ))}
           </div>
-        </section>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {curatedTools.map((tool) => (
+              <ToolCard key={tool.id} tool={tool} />
+            ))}
+          </div>
+        )}
+      </section>
 
-        {/* 数据概览 — hide zero-value stats */}
-        <section className="mx-auto max-w-7xl px-6 pb-24">
-          <div className="mb-8 flex items-center gap-3">
-            <BarChart3 className="h-6 w-6 text-emerald-400" />
-            <h2 className="text-2xl font-semibold">数据概览</h2>
+      <section className="border-y border-[var(--line)] bg-[var(--surface)]">
+        <div className="mx-auto max-w-7xl px-4 py-9 sm:px-6 sm:py-12">
+          <div className="mb-5 flex items-end justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-semibold text-[var(--ink)] sm:text-2xl">按任务浏览</h2>
+              <p className="mt-1 text-sm text-[var(--muted)]">从你要完成的工作开始选择</p>
+            </div>
+            <Link href="/scenes" className="flex min-h-11 shrink-0 items-center gap-1 text-sm font-medium text-[var(--accent)] hover:text-[var(--accent-hover)]">
+              全部场景 <ArrowRight className="h-4 w-4" />
+            </Link>
           </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div
-              className={cn(
-                'flex flex-col items-center gap-2 rounded-2xl p-8',
-                'bg-white/5 backdrop-blur-sm border border-white/10'
-              )}
-            >
-              <Layers className="h-8 w-8 text-violet-400" />
-              <span className="text-3xl font-bold text-white">
-                {stats.totalTools > 0 ? stats.totalTools : '—'}
-              </span>
-              <span className="text-sm text-white/50">收录工具</span>
-            </div>
-            <div
-              className={cn(
-                'flex flex-col items-center gap-2 rounded-2xl p-8',
-                'bg-white/5 backdrop-blur-sm border border-white/10'
-              )}
-            >
-              <BarChart3 className="h-8 w-8 text-cyan-400" />
-              <span className="text-3xl font-bold text-white">
-                {stats.totalCategories > 0 ? stats.totalCategories : '—'}
-              </span>
-              <span className="text-sm text-white/50">工具分类</span>
-            </div>
-            <div
-              className={cn(
-                'flex flex-col items-center gap-2 rounded-2xl p-8',
-                'bg-white/5 backdrop-blur-sm border border-white/10'
-              )}
-            >
-              <Heart className="h-8 w-8 text-emerald-400" />
-              <span className="text-3xl font-bold text-white">
-                {stats.favorites > 0 ? stats.favorites : '—'}
-              </span>
-              <span className="text-sm text-white/50">
-                {stats.favorites > 0 ? '精选推荐' : '暂无收藏数据'}
-              </span>
-            </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {scenes.map((scene, index) => {
+              const Icon = sceneIcons[index];
+              return (
+                <SceneCard
+                  key={scene.id}
+                  scene={{ ...scene, icon: <Icon className="h-5 w-5" /> }}
+                />
+              );
+            })}
           </div>
-        </section>
-      </div></div>
+        </div>
+      </section>
+    </main>
   );
 }
