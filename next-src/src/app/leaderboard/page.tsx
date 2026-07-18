@@ -1,13 +1,18 @@
 'use client';
 
-
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Trophy, TrendingUp, Eye, BarChart3 } from 'lucide-react';
+import { BarChart3, Eye, TrendingUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToolStore } from '@/stores/useToolStore';
 import { getToolSlug } from '@/lib/tools-data';
 import { ToolIcon } from '@/lib/icon-map';
+
+const tabs = [
+  { key: 'clicks' as const, label: '热度排行', icon: Eye },
+  { key: 'hot' as const, label: '常用工具', icon: TrendingUp },
+  { key: 'newest' as const, label: '最新收录', icon: BarChart3 },
+];
 
 export default function LeaderboardPage() {
   const { tools, clickStats, loadData, dataLoaded } = useToolStore();
@@ -17,123 +22,73 @@ export default function LeaderboardPage() {
     if (!dataLoaded) loadData();
   }, [dataLoaded, loadData]);
 
-  const ranked = [...tools].sort((a, b) => {
+  const ranked = [...tools].sort((left, right) => {
     if (tab === 'clicks') {
-      const aClicks = clickStats[String(a.id)] || 0;
-      const bClicks = clickStats[String(b.id)] || 0;
-      if (bClicks !== aClicks) return bClicks - aClicks;
-      // Tie-break by hot status
-      return (b.status === 'hot' ? 1 : 0) - (a.status === 'hot' ? 1 : 0);
+      const clickDifference = (clickStats[String(right.id)] || 0) - (clickStats[String(left.id)] || 0);
+      return clickDifference || (right.status === 'hot' ? 1 : 0) - (left.status === 'hot' ? 1 : 0);
     }
-    if (tab === 'hot') {
-      return (b.status === 'hot' ? 1 : 0) - (a.status === 'hot' ? 1 : 0);
-    }
-    // newest: by id descending (higher id = newer)
-    return b.id - a.id;
+    if (tab === 'hot') return (right.status === 'hot' ? 1 : 0) - (left.status === 'hot' ? 1 : 0);
+    return right.id - left.id;
   });
-
   const hasClickData = Object.keys(clickStats).length > 0;
 
-  const medals = ['🥇', '🥈', '🥉'];
-
   return (
-    <div className="min-h-screen bg-gray-950 text-white"><div className="mx-auto max-w-4xl px-6 pt-24 pb-16">
-        <div className="mb-8 flex items-center gap-4">
-          <Link
-            href="/"
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 text-white/50 transition-colors hover:bg-white/5 hover:text-white"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-          <div className="flex items-center gap-3">
-            <Trophy className="h-7 w-7 text-amber-400" />
-            <h1 className="text-2xl font-bold">排行榜</h1>
-          </div>
-        </div>
+    <main className="mx-auto min-h-screen max-w-4xl px-4 pb-24 pt-10 text-[var(--ink)] sm:px-6 sm:pb-16 sm:pt-12">
+      <header className="mb-7">
+        <h1 className="text-3xl font-semibold">排行榜</h1>
+        <p className="mt-2 text-sm text-[var(--muted)]">按实际使用热度和收录时间查看工具</p>
+      </header>
 
-        {/* Tabs */}
-        <div className="mb-8 flex gap-1 rounded-xl bg-white/5 p-1">
-          {[
-            { key: 'clicks' as const, label: '热度排行', icon: Eye },
-            { key: 'hot' as const, label: '热门工具', icon: TrendingUp },
-            { key: 'newest' as const, label: '最新收录', icon: BarChart3 },
-          ].map((t) => (
+      <div className="mb-7 flex overflow-x-auto rounded-md border border-[var(--line)] bg-[var(--surface)]" role="tablist" aria-label="排行榜类型">
+        {tabs.map((item, index) => {
+          const Icon = item.icon;
+          const active = tab === item.key;
+          return (
             <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              key={item.key}
+              onClick={() => setTab(item.key)}
               className={cn(
-                'flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2.5 text-sm transition-colors',
-                tab === t.key
-                  ? 'bg-white/10 text-white font-medium'
-                  : 'text-white/40 hover:text-white/60'
+                'flex min-h-11 flex-1 shrink-0 items-center justify-center gap-1.5 px-3 text-sm font-medium transition-colors',
+                index > 0 && 'border-l border-[var(--line)]',
+                active ? 'bg-[var(--accent-soft)] text-[var(--accent)]' : 'text-[var(--muted)] hover:bg-[var(--surface-subtle)] hover:text-[var(--ink)]'
               )}
             >
-              <t.icon className="h-3.5 w-3.5" />
-              {t.label}
+              <Icon className="h-4 w-4" />{item.label}
             </button>
-          ))}
+          );
+        })}
+      </div>
+
+      {tab === 'clicks' && !hasClickData ? (
+        <div className="mb-5 rounded-lg border border-dashed border-[var(--line-strong)] bg-[var(--surface)] px-6 py-8 text-center">
+          <p className="text-sm font-medium text-[var(--ink)]">暂无真实点击数据</p>
+          <p className="mt-1 text-xs text-[var(--muted)]">当前先按常用状态排列，使用数据生成后会自动更新</p>
         </div>
+      ) : null}
 
-        {/* Leaderboard list */}
-        {tab === 'clicks' && !hasClickData && (
-          <div className="flex flex-col items-center gap-4 py-16 text-center">
-            <Eye className="h-10 w-10 text-white/10" />
-            <p className="text-white/50">暂无真实点击数据</p>
-            <p className="text-sm text-white/30">用户开始使用后，排行数据将自动生成</p>
-            <p className="text-xs text-white/20">当前展示按热门状态排序</p>
-          </div>
-        )}
-
-        <div className="space-y-2">
-          {ranked.map((tool, idx) => {
-            const clicks = clickStats[String(tool.id)] || 0;
-            const showClicks = tab === 'clicks' && hasClickData && clicks > 0;
-
-            return (
-                    <Link
-                key={tool.id}
-                href={`/tools/${getToolSlug(tool)}`}
-                className="group flex items-center gap-4 rounded-xl border border-white/5 bg-white/[0.02] px-5 py-4 transition-all hover:border-white/10 hover:bg-white/[0.05]"
-              >
-                {/* Rank */}
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-lg font-bold">
-                  {idx < 3 ? (
-                    <span className="text-2xl">{medals[idx]}</span>
-                  ) : (
-                    <span className="text-sm text-white/30">{idx + 1}</span>
-                  )}
-                </div>
-
-                {/* Icon */}
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/5 text-xl">
-                  <ToolIcon name={tool.icon} className="h-5 w-5 text-white/60" />
-                </div>
-
-                {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-medium text-white/90 group-hover:text-white">{tool.name}</h3>
-                    {tool.status === 'hot' && (
-                      <span className="rounded-full bg-red-500/15 px-1.5 py-0.5 text-[10px] text-red-400">HOT</span>
-                    )}
-                    {tool.valueTag && (
-                      <span className="rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-400">{tool.valueTag}</span>
-                    )}
-                  </div>
-                  <p className="truncate text-xs text-white/35">{tool.desc}</p>
-                </div>
-
-                {/* Click count */}
-                {showClicks && (
-                  <div className="flex items-center gap-1 text-xs text-white/30">
-                    <Eye className="h-3 w-3" />
-                    {clicks}
-                  </div>
-                )}
-              </Link>
-            );
-          })}
-        </div>
-      </div></div>
+      <div className="overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--surface)]">
+        {ranked.map((tool, index) => {
+          const clicks = clickStats[String(tool.id)] || 0;
+          const showClicks = tab === 'clicks' && hasClickData && clicks > 0;
+          return (
+            <Link key={tool.id} href={`/tools/${getToolSlug(tool)}`} className="group flex min-h-[72px] items-center gap-3 border-b border-[var(--line)] px-4 py-3 last:border-b-0 hover:bg-[var(--surface-subtle)] sm:px-5">
+              <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center text-sm font-semibold', index < 3 ? 'text-[var(--accent)]' : 'text-[var(--muted-subtle)]')}>{index + 1}</span>
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-[var(--surface-subtle)] text-[var(--accent)]"><ToolIcon name={tool.icon} className="h-5 w-5" /></span>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-2">
+                  <span className="truncate text-sm font-semibold">{tool.name}</span>
+                  {tool.status === 'hot' ? <span className="rounded border border-red-100 bg-red-50 px-1.5 py-0.5 text-[10px] text-[var(--danger)] dark:border-red-950 dark:bg-red-950/40">常用</span> : null}
+                </span>
+                <span className="block truncate text-xs text-[var(--muted)]">{tool.desc}</span>
+              </span>
+              {showClicks ? <span className="flex shrink-0 items-center gap-1 text-xs text-[var(--muted)]"><Eye className="h-3.5 w-3.5" />{clicks}</span> : null}
+            </Link>
+          );
+        })}
+      </div>
+    </main>
   );
 }

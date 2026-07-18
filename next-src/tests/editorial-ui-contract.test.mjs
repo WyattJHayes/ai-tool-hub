@@ -63,3 +63,18 @@ test('keeps tool detail and scene routes in the same editorial system', () => {
     assert.doesNotMatch(read(route), forbidden, route);
   }
 });
+
+test('keeps account, ranking, comparison, and modal surfaces neutral', () => {
+  const remainingSurfaces = [
+    'src/app/leaderboard/page.tsx',
+    'src/app/user/page.tsx',
+    'src/app/compare/page.tsx',
+    'src/components/auth/AuthModal.tsx',
+    'src/components/ratings/RatingWidget.tsx',
+  ];
+  const forbidden = /bg-gray-9|bg-gradient|backdrop-blur|text-white\/|border-white\/|rounded-2xl|violet|purple|cyan/i;
+
+  for (const surface of remainingSurfaces) {
+    assert.doesNotMatch(read(surface), forbidden, surface);
+  }
+});

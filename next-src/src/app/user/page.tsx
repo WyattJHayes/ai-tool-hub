@@ -1,19 +1,15 @@
 'use client';
 
-
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
-import {
-  ArrowLeft, User, Heart, Star, Settings, LogIn,
-  BookOpen, BarChart3,
-} from 'lucide-react';
+import { BarChart3, Heart, LogIn, Settings, Star } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useUserStore } from '@/stores/useUserStore';
 import { useToolStore } from '@/stores/useToolStore';
 import { useCompareStore } from '@/stores/useCompareStore';
-import { getToolSlug, getRelatedTools } from '@/lib/tools-data';
+import { getRelatedTools, getToolSlug } from '@/lib/tools-data';
 import { AuthModal } from '@/components/auth/AuthModal';
-import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { ToolIcon } from '@/lib/icon-map';
 
 const COMPARE_HISTORY_KEY = 'ai-tool-hub-compare-history';
@@ -47,50 +43,34 @@ export default function UserPage() {
   const { selectedTools } = useCompareStore();
   const [showAuth, setShowAuth] = useState(false);
   const [activeTab, setActiveTab] = useState<'favorites' | 'ratings' | 'compare-history' | 'settings'>('favorites');
-  const compareHistorySnapshot = useSyncExternalStore(
-    subscribeCompareHistory,
-    getCompareHistorySnapshot,
-    () => '[]'
-  );
-  const compareHistory = useMemo(
-    () => parseCompareHistory(compareHistorySnapshot),
-    [compareHistorySnapshot]
-  );
+  const compareHistorySnapshot = useSyncExternalStore(subscribeCompareHistory, getCompareHistorySnapshot, () => '[]');
+  const compareHistory = useMemo(() => parseCompareHistory(compareHistorySnapshot), [compareHistorySnapshot]);
 
   useEffect(() => {
     if (!dataLoaded) loadData();
   }, [dataLoaded, loadData]);
 
-  // Save current compare selection to history
   useEffect(() => {
     if (selectedTools.length < 2) return;
-
-    const ids = selectedTools.map(t => t.id);
+    const ids = selectedTools.map((tool) => tool.id);
     const serializedIds = JSON.stringify(ids);
-    const updated = [
-      ids,
-      ...compareHistory.filter(history => JSON.stringify(history) !== serializedIds),
-    ].slice(0, 10);
+    const updated = [ids, ...compareHistory.filter((history) => JSON.stringify(history) !== serializedIds)].slice(0, 10);
     const nextSnapshot = JSON.stringify(updated);
-
     if (nextSnapshot !== compareHistorySnapshot) {
       localStorage.setItem(COMPARE_HISTORY_KEY, nextSnapshot);
       window.dispatchEvent(new Event(COMPARE_HISTORY_EVENT));
     }
   }, [selectedTools, compareHistory, compareHistorySnapshot]);
 
-  const favoriteTools = tools.filter((t) => favorites.includes(t.id));
-  const ratedTools = tools.filter((t) => ratings[t.id] && ratings[t.id] > 0);
-
-  // A-05: Personalized recommendations based on favorites
+  const favoriteTools = tools.filter((tool) => favorites.includes(tool.id));
+  const ratedTools = tools.filter((tool) => ratings[tool.id] && ratings[tool.id] > 0);
   const recommendedTools = (() => {
     if (favorites.length === 0) return [];
-    const favTools = tools.filter(t => favorites.includes(t.id));
-    const allRelated = favTools.flatMap(ft => getRelatedTools(tools, ft, 2));
+    const favoriteEntries = tools.filter((tool) => favorites.includes(tool.id));
+    const related = favoriteEntries.flatMap((tool) => getRelatedTools(tools, tool, 2));
     const seen = new Set(favorites);
-    return allRelated.filter(t => !seen.has(t.id)).filter((t, i, arr) => arr.findIndex(x => x.id === t.id) === i).slice(0, 6);
+    return related.filter((tool) => !seen.has(tool.id)).filter((tool, index, all) => all.findIndex((candidate) => candidate.id === tool.id) === index).slice(0, 6);
   })();
-
   const tabs = [
     { key: 'favorites' as const, label: '收藏', icon: Heart },
     { key: 'ratings' as const, label: '评价', icon: Star },
@@ -99,234 +79,99 @@ export default function UserPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
-      {/* Header */}
-      <div className="sticky top-0 z-50 border-b border-white/10 bg-gray-950/90 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-5xl items-center gap-4 px-6 py-4">
-          <Link href="/" className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 text-white/50 transition-colors hover:bg-white/5 hover:text-white">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-blue-500/20 to-purple-500/20">
-              <User className="h-5 w-5 text-blue-400" />
-            </div>
-            <div>
-              <h1 className="text-lg font-semibold">我的工具箱</h1>
-              <p className="text-xs text-white/40">管理收藏和评价</p>
-            </div>
+    <main className="mx-auto min-h-screen max-w-5xl px-4 pb-24 pt-10 text-[var(--ink)] sm:px-6 sm:pb-16 sm:pt-12">
+      <header className="mb-8 flex flex-wrap items-start justify-between gap-4">
+        <div><h1 className="text-3xl font-semibold">我的工具箱</h1><p className="mt-2 text-sm text-[var(--muted)]">管理收藏、评价和对比记录</p></div>
+        <button type="button" onClick={() => setShowAuth(true)} className="flex min-h-11 items-center gap-1.5 rounded-md border border-[var(--line)] bg-[var(--surface)] px-4 text-sm font-medium text-[var(--ink)] hover:bg-[var(--surface-subtle)]"><LogIn className="h-4 w-4" />登录</button>
+      </header>
+
+      <section className="mb-8 grid grid-cols-3 overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--surface)]">
+        {[
+          { label: '收藏工具', value: favorites.length },
+          { label: '已评价', value: ratedTools.length },
+          { label: '目录工具', value: tools.length },
+        ].map((item, index) => (
+          <div key={item.label} className={cn('px-3 py-5 text-center', index > 0 && 'border-l border-[var(--line)]')}><span className="block text-2xl font-semibold">{item.value}</span><span className="mt-1 block text-xs text-[var(--muted)]">{item.label}</span></div>
+        ))}
+      </section>
+
+      {recommendedTools.length ? (
+        <section className="mb-8">
+          <h2 className="mb-4 text-lg font-semibold">为你推荐</h2>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {recommendedTools.map((tool) => (
+              <Link key={tool.id} href={`/tools/${getToolSlug(tool)}`} className="flex min-h-[76px] items-center gap-3 rounded-lg border border-[var(--line)] bg-[var(--surface)] p-4 hover:bg-[var(--surface-subtle)]">
+                <span className="flex h-10 w-10 items-center justify-center rounded-md bg-[var(--surface-subtle)] text-[var(--accent)]"><ToolIcon name={tool.icon} className="h-5 w-5" /></span>
+                <span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{tool.name}</span><span className="block truncate text-xs text-[var(--muted)]">{tool.desc}</span></span>
+              </Link>
+            ))}
           </div>
-          <div className="flex-1" />
-          <button onClick={() => setShowAuth(true)} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/60 transition-colors hover:bg-white/10 hover:text-white">
-            <LogIn className="h-3.5 w-3.5" />
-            登录
-          </button>
-        </div>
+        </section>
+      ) : null}
+
+      <div className="scrollbar-hide mb-6 flex overflow-x-auto rounded-md border border-[var(--line)] bg-[var(--surface)]" role="tablist" aria-label="个人工具箱内容">
+        {tabs.map((tab, index) => {
+          const Icon = tab.icon;
+          const active = activeTab === tab.key;
+          return (
+            <button type="button" role="tab" aria-selected={active} key={tab.key} onClick={() => setActiveTab(tab.key)} className={cn('flex min-h-11 flex-1 shrink-0 items-center justify-center gap-1.5 px-3 text-sm font-medium', index > 0 && 'border-l border-[var(--line)]', active ? 'bg-[var(--accent-soft)] text-[var(--accent)]' : 'text-[var(--muted)] hover:bg-[var(--surface-subtle)] hover:text-[var(--ink)]')}><Icon className="h-4 w-4" />{tab.label}</button>
+          );
+        })}
       </div>
 
-      <div className="mx-auto max-w-5xl px-6 py-8">
-        {/* Stats */}
-        <div className="mb-8 grid grid-cols-3 gap-4">
-          <div className="flex flex-col items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-            <Heart className="h-6 w-6 text-red-400" />
-            <span className="text-2xl font-bold">{favorites.length}</span>
-            <span className="text-xs text-white/40">收藏工具</span>
+      {activeTab === 'favorites' ? (
+        favoriteTools.length === 0 ? <EmptyState icon={Heart} text="还没有收藏任何工具" linkText="浏览工具目录" /> : (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {favoriteTools.map((tool) => (
+              <div key={tool.id} className="flex min-h-[76px] items-center gap-3 rounded-lg border border-[var(--line)] bg-[var(--surface)] p-4">
+                <ToolIcon name={tool.icon} className="h-5 w-5 shrink-0 text-[var(--accent)]" />
+                <div className="min-w-0 flex-1"><Link href={`/tools/${getToolSlug(tool)}`} className="text-sm font-semibold hover:text-[var(--accent)]">{tool.name}</Link><p className="truncate text-xs text-[var(--muted)]">{tool.desc}</p></div>
+                <button type="button" onClick={() => toggleFavorite(tool.id)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-[var(--danger)] hover:bg-red-50 dark:hover:bg-red-950/40" aria-label={`取消收藏 ${tool.name}`}><Heart className="h-4 w-4 fill-current" /></button>
+              </div>
+            ))}
           </div>
-          <div className="flex flex-col items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-            <Star className="h-6 w-6 text-amber-400" />
-            <span className="text-2xl font-bold">{ratedTools.length}</span>
-            <span className="text-xs text-white/40">已评价</span>
+        )
+      ) : null}
+
+      {activeTab === 'ratings' ? (
+        ratedTools.length === 0 ? <EmptyState icon={Star} text="还没有评价任何工具" linkText="浏览工具目录" /> : (
+          <div className="space-y-2">
+            {ratedTools.map((tool) => (
+              <div key={tool.id} className="flex min-h-[64px] items-center gap-3 rounded-lg border border-[var(--line)] bg-[var(--surface)] px-4 py-3">
+                <ToolIcon name={tool.icon} className="h-5 w-5 text-[var(--accent)]" />
+                <Link href={`/tools/${getToolSlug(tool)}`} className="min-w-0 flex-1 truncate text-sm font-semibold">{tool.name}</Link>
+                <div className="flex gap-0.5">{[1, 2, 3, 4, 5].map((score) => <Star key={score} className={cn('h-3.5 w-3.5', score <= (ratings[tool.id] || 0) ? 'fill-amber-400 text-amber-400' : 'text-[var(--line-strong)]')} />)}</div>
+              </div>
+            ))}
           </div>
-          <div className="flex flex-col items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-            <BookOpen className="h-6 w-6 text-blue-400" />
-            <span className="text-2xl font-bold">{tools.length}</span>
-            <span className="text-xs text-white/40">浏览工具</span>
+        )
+      ) : null}
+
+      {activeTab === 'compare-history' ? (
+        compareHistory.length === 0 ? <EmptyState icon={BarChart3} text="还没有对比记录" linkText="选择工具进行对比" /> : (
+          <div className="space-y-2">
+            {compareHistory.map((ids, index) => (
+              <div key={index} className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--surface)] p-4">
+                <div className="flex flex-1 flex-wrap gap-2">{ids.map((id) => { const tool = tools.find((candidate) => candidate.id === id); return tool ? <Link key={id} href={`/tools/${getToolSlug(tool)}`} className="rounded border border-[var(--line)] bg-[var(--surface-subtle)] px-2.5 py-1 text-sm text-[var(--muted)] hover:text-[var(--ink)]">{tool.name}</Link> : null; })}</div>
+                <Link href="/compare" className="flex min-h-11 items-center text-xs font-medium text-[var(--accent)]">再次对比</Link>
+              </div>
+            ))}
           </div>
+        )
+      ) : null}
+
+      {activeTab === 'settings' ? (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)] p-5"><h2 className="font-semibold">数据存储</h2><p className="mt-2 text-sm text-[var(--muted)]">本地数据保存在当前浏览器。登录后可同步收藏和评分。</p><dl className="mt-4 space-y-2 text-sm">{[['收藏数量', favorites.length], ['评价数量', ratedTools.length], ['对比记录', compareHistory.length]].map(([label, value]) => <div key={String(label)} className="flex justify-between"><dt className="text-[var(--muted)]">{label}</dt><dd>{value}</dd></div>)}</dl></section>
+          <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)] p-5"><h2 className="font-semibold">账号</h2>{isLoggedIn ? <><p className="mt-2 text-sm text-[var(--accent)]">已登录，数据同步已启用</p><button type="button" onClick={async () => { if (supabase) await supabase.auth.signOut(); logout(); }} className="mt-4 min-h-11 rounded-md border border-red-200 px-4 text-sm text-[var(--danger)] hover:bg-red-50 dark:border-red-950 dark:hover:bg-red-950/40">退出登录</button></> : <><p className="mt-2 text-sm text-[var(--muted)]">{isSupabaseConfigured ? '尚未登录，数据仅保存在本地' : '云同步当前不可用'}</p><button type="button" onClick={() => setShowAuth(true)} className="mt-4 min-h-11 rounded-md bg-[var(--accent)] px-4 text-sm font-medium text-white hover:bg-[var(--accent-hover)]">登录 / 注册</button></>}</section>
         </div>
-
-        {/* A-05: Personalized recommendations */}
-        {recommendedTools.length > 0 && (
-          <div className="mb-8">
-            <h2 className="mb-4 text-lg font-semibold">为你推荐</h2>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {recommendedTools.map(tool => (
-                <Link
-                  key={tool.id}
-                  href={'/tools/' + getToolSlug(tool)}
-                  className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4 transition-colors hover:bg-white/[0.05]"
-                >
-                  <ToolIcon name={tool.icon} className="h-6 w-6 text-white/60" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-white/90">{tool.name}</p>
-                    <p className="truncate text-xs text-white/40">{tool.desc}</p>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Tabs */}
-        <div className="mb-6 flex gap-1 rounded-xl bg-white/5 p-1">
-          {tabs.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={cn(
-                'flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm transition-colors',
-                activeTab === tab.key
-                  ? 'bg-white/10 text-white font-medium'
-                  : 'text-white/40 hover:text-white/60'
-              )}
-            >
-              <tab.icon className="h-3.5 w-3.5" />
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Favorites tab */}
-        {activeTab === 'favorites' && (
-          <div>
-            {favoriteTools.length === 0 ? (
-              <div className="flex flex-col items-center gap-4 py-16 text-center">
-                <Heart className="h-10 w-10 text-white/10" />
-                <p className="text-white/40">还没有收藏任何工具</p>
-                <Link href="/" className="text-sm text-blue-400 hover:underline">去首页看看</Link>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {favoriteTools.map((tool) => (
-                  <div key={tool.id} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4 transition-colors hover:bg-white/[0.05]">
-                    <ToolIcon name={tool.icon} className="h-6 w-6 text-white/60" />
-                    <div className="flex-1 min-w-0">
-                      <Link href={'/tools/' + getToolSlug(tool)} className="font-medium text-white/90 hover:text-white text-sm">{tool.name}</Link>
-                      <p className="truncate text-xs text-white/40">{tool.desc}</p>
-                    </div>
-                    <button onClick={() => toggleFavorite(tool.id)} className="shrink-0 text-red-400 hover:text-red-300">
-                      <Heart className="h-4 w-4 fill-red-400" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Ratings tab */}
-        {activeTab === 'ratings' && (
-          <div>
-            {ratedTools.length === 0 ? (
-              <div className="flex flex-col items-center gap-4 py-16 text-center">
-                <Star className="h-10 w-10 text-white/10" />
-                <p className="text-white/40">还没有评价任何工具</p>
-                <Link href="/" className="text-sm text-blue-400 hover:underline">去评价工具</Link>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {ratedTools.map((tool) => (
-                  <div key={tool.id} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                    <ToolIcon name={tool.icon} className="h-6 w-6 text-white/60" />
-                    <div className="flex-1 min-w-0">
-                      <Link href={'/tools/' + getToolSlug(tool)} className="font-medium text-white/90 hover:text-white text-sm">{tool.name}</Link>
-                    </div>
-                    <div className="flex items-center gap-0.5">
-                      {[1, 2, 3, 4, 5].map((n) => (
-                        <Star key={n} className={cn('h-3.5 w-3.5', n <= (ratings[tool.id] || 0) ? 'fill-amber-400 text-amber-400' : 'text-white/15')} />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* A-04: Compare history tab */}
-        {activeTab === 'compare-history' && (
-          <div>
-            {compareHistory.length === 0 ? (
-              <div className="flex flex-col items-center gap-4 py-16 text-center">
-                <BarChart3 className="h-10 w-10 text-white/10" />
-                <p className="text-white/40">还没有对比记录</p>
-                <Link href="/" className="text-sm text-blue-400 hover:underline">去首页开始对比</Link>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {compareHistory.map((ids, idx) => (
-                  <div key={idx} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                    <div className="flex flex-1 flex-wrap gap-2">
-                      {ids.map(id => {
-                        const t = tools.find(x => x.id === id);
-                        if (!t) return null;
-                        return (
-                                <Link key={id} href={'/tools/' + getToolSlug(t)} className="rounded-full bg-violet-500/15 px-3 py-1 text-sm text-violet-300 border border-violet-500/30 hover:bg-violet-500/20">
-                            {t.name}
-                          </Link>
-                        );
-                      })}
-                    </div>
-                    <Link href="/compare" className="shrink-0 text-xs text-white/30 hover:text-white/60">再对比 →</Link>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Settings tab */}
-        {activeTab === 'settings' && (
-          <div className="space-y-4">
-            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-6">
-              <h3 className="font-medium text-white/80">数据存储</h3>
-              <p className="mt-2 text-sm text-white/40">当前数据存储在浏览器 localStorage 中。登录后可同步到云端，跨设备访问。</p>
-              <div className="mt-4 space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-white/50">收藏数量</span>
-                  <span className="text-white/70">{favorites.length}</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-white/50">评价数量</span>
-                  <span className="text-white/70">{ratedTools.length}</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-white/50">对比记录</span>
-                  <span className="text-white/70">{compareHistory.length}</span>
-                </div>
-              </div>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-6">
-              <h3 className="font-medium text-white/80">账号</h3>
-              {isLoggedIn ? (
-                <div>
-                  <p className="mt-2 flex items-center gap-1.5 text-sm text-emerald-400">
-                    <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
-                    已登录
-                  </p>
-                  <p className="mt-1 text-xs text-white/30">收藏和评分已同步到云端</p>
-                  <button
-                    onClick={async () => {
-                      if (supabase) await supabase.auth.signOut();
-                      logout();
-                    }}
-                    className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-400 transition-colors hover:bg-red-500/20"
-                  >
-                    退出登录
-                  </button>
-                </div>
-              ) : (
-                <div>
-                  <p className="mt-2 text-sm text-white/40">
-                    {isSupabaseConfigured ? '尚未登录，数据仅保存在本地' : 'Supabase 未配置，请设置环境变量'}
-                  </p>
-                  <button onClick={() => setShowAuth(true)} className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500">登录 / 注册</button>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
+      ) : null}
 
       <AuthModal isOpen={showAuth} onClose={() => setShowAuth(false)} />
-    </div>
+    </main>
   );
+}
+
+function EmptyState({ icon: Icon, text, linkText }: { icon: React.ElementType; text: string; linkText: string }) {
+  return <div className="rounded-lg border border-dashed border-[var(--line-strong)] bg-[var(--surface)] px-6 py-14 text-center"><Icon className="mx-auto h-7 w-7 text-[var(--muted-subtle)]" /><p className="mt-3 text-sm text-[var(--muted)]">{text}</p><Link href="/tools" className="mt-2 inline-flex min-h-11 items-center text-sm font-medium text-[var(--accent)]">{linkText}</Link></div>;
 }

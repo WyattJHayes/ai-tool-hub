@@ -1,14 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { Star, Send } from 'lucide-react';
+import { Send, Star } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useUserStore } from '@/stores/useUserStore';
 
-const RATING_TAGS = [
-  '上手快', '功能强', '价格贵', '中文友好', 'API好用',
-  '效果出色', '响应慢', '免费够用', '需翻墙', '推荐',
-];
+const RATING_TAGS = ['上手快', '功能强', '价格贵', '中文友好', 'API 好用', '效果出色', '响应慢', '免费够用', '需翻墙', '推荐'];
 
 interface RatingWidgetProps {
   toolId: number;
@@ -25,13 +22,10 @@ export function RatingWidget({ toolId, currentRating = 0, onRated }: RatingWidge
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const setRating = useUserStore((state) => state.setRating);
-
   const displayScore = hoverScore || score;
 
   const toggleTag = (tag: string) => {
-    setSelectedTags((prev) =>
-      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
-    );
+    setSelectedTags((current) => current.includes(tag) ? current.filter((item) => item !== tag) : [...current, tag]);
   };
 
   const handleSubmit = async () => {
@@ -40,10 +34,7 @@ export function RatingWidget({ toolId, currentRating = 0, onRated }: RatingWidge
     setError('');
     try {
       const saved = await setRating(toolId, score, selectedTags, comment);
-      if (!saved) {
-        setError('评价提交失败，请稍后重试');
-        return;
-      }
+      if (!saved) { setError('评价提交失败，请稍后重试'); return; }
       setSubmitted(true);
       onRated?.(score);
     } finally {
@@ -52,87 +43,38 @@ export function RatingWidget({ toolId, currentRating = 0, onRated }: RatingWidge
   };
 
   if (submitted) {
-    return (
-      <div className="flex flex-col items-center gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-6 text-center">
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/20">
-          <Star className="h-5 w-5 fill-emerald-400 text-emerald-400" />
-        </div>
-        <p className="text-sm text-white/70">感谢评价！</p>
-      </div>
-    );
+    return <div className="flex min-h-[120px] flex-col items-center justify-center gap-2 rounded-lg border border-[var(--accent-soft)] bg-[var(--accent-soft)] p-5 text-center"><Star className="h-5 w-5 fill-current text-[var(--accent)]" /><p className="text-sm text-[var(--accent)]">感谢评价</p></div>;
   }
 
   return (
-    <div className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-      {/* Star rating */}
-      <div className="flex items-center justify-center gap-2">
-        {[1, 2, 3, 4, 5].map((n) => (
-          <button
-            key={n}
-            onMouseEnter={() => setHoverScore(n)}
-            onMouseLeave={() => setHoverScore(0)}
-            onClick={() => setScore(n)}
-            className="transition-transform hover:scale-110"
-          >
-            <Star
-              className={cn(
-                'h-8 w-8 transition-colors',
-                n <= displayScore ? 'fill-amber-400 text-amber-400' : 'text-white/15'
-              )}
-            />
+    <div className="space-y-4 rounded-lg border border-[var(--line)] bg-[var(--surface)] p-5">
+      <div className="flex flex-wrap items-center justify-center gap-1">
+        {[1, 2, 3, 4, 5].map((value) => (
+          <button type="button" key={value} onMouseEnter={() => setHoverScore(value)} onMouseLeave={() => setHoverScore(0)} onClick={() => setScore(value)} className="flex h-11 w-11 items-center justify-center rounded-md hover:bg-[var(--surface-subtle)]" aria-label={`${value} 星`}>
+            <Star className={cn('h-7 w-7', value <= displayScore ? 'fill-amber-400 text-amber-400' : 'text-[var(--line-strong)]')} />
           </button>
         ))}
-        {score > 0 && (
-          <span className="ml-2 text-sm text-white/50">{score} 分</span>
-        )}
+        {score > 0 ? <span className="ml-2 text-sm text-[var(--muted)]">{score} 分</span> : null}
       </div>
 
-      {/* Tags */}
-      {score > 0 && (
+      {score > 0 ? (
         <div className="space-y-3">
-          <p className="text-xs text-white/40">选择标签评价（可选）</p>
+          <p className="text-xs text-[var(--muted)]">选择评价标签（可选）</p>
           <div className="flex flex-wrap gap-2">
-            {RATING_TAGS.map((tag) => (
-              <button
-                key={tag}
-                onClick={() => toggleTag(tag)}
-                className={cn(
-                  'rounded-full px-3 py-1 text-xs transition-colors',
-                  selectedTags.includes(tag)
-                    ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
-                    : 'bg-white/5 text-white/40 border border-white/10 hover:bg-white/10'
-                )}
-              >
-                {tag}
-              </button>
-            ))}
+            {RATING_TAGS.map((tag) => {
+              const selected = selectedTags.includes(tag);
+              return <button type="button" key={tag} onClick={() => toggleTag(tag)} aria-pressed={selected} className={cn('min-h-11 rounded-md border px-3 text-xs', selected ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]' : 'border-[var(--line)] text-[var(--muted)] hover:bg-[var(--surface-subtle)]')}>{tag}</button>;
+            })}
           </div>
-
-          {/* Short comment */}
           <div>
-            <input
-              type="text"
-              value={comment}
-              onChange={(e) => setComment(e.target.value.slice(0, 50))}
-              placeholder="一句话评价（50字以内，可选）"
-              maxLength={50}
-              className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white outline-none placeholder:text-white/25 focus:border-blue-500/50"
-            />
-            <p className="mt-1 text-right text-[10px] text-white/20">{comment.length}/50</p>
+            <label htmlFor={`rating-comment-${toolId}`} className="sr-only">一句话评价</label>
+            <input id={`rating-comment-${toolId}`} type="text" value={comment} onChange={(event) => setComment(event.target.value.slice(0, 50))} placeholder="一句话评价（50 字以内，可选）" maxLength={50} className="h-12 w-full rounded-md border border-[var(--line-strong)] bg-[var(--surface)] px-3 text-sm text-[var(--ink)] outline-none placeholder:text-[var(--muted-subtle)] focus:border-[var(--accent)]" />
+            <p className="mt-1 text-right text-[10px] text-[var(--muted-subtle)]">{comment.length}/50</p>
           </div>
-
-          {/* Submit */}
-          {error && <p className="text-center text-xs text-red-400">{error}</p>}
-          <button
-            onClick={handleSubmit}
-            disabled={submitting}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
-          >
-            <Send className="h-3.5 w-3.5" />
-            {submitting ? '提交中...' : '提交评价'}
-          </button>
+          {error ? <p className="text-center text-xs text-[var(--danger)]">{error}</p> : null}
+          <button type="button" onClick={handleSubmit} disabled={submitting} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-md bg-[var(--accent)] text-sm font-medium text-white hover:bg-[var(--accent-hover)] disabled:opacity-50"><Send className="h-4 w-4" />{submitting ? '提交中…' : '提交评价'}</button>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
