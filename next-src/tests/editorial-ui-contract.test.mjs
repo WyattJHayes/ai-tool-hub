@@ -49,20 +49,22 @@ test('keeps the homepage scene retry control touch accessible', () => {
   assert.match(home, /onClick=\{retryScenes\} className="[^"]*min-h-11[^"]*px-4[^"]*">重新加载/);
 });
 
-test('uses flat comparison-oriented tool cards and tab-like filters', () => {
-  const card = read('src/components/tools/ToolCard.tsx');
-  const categories = read('src/components/tools/CategoryFilter.tsx');
+test('uses aligned decision rows and quiet URL-driven controls', () => {
+  const row = read('src/components/tools/ToolDecisionRow.tsx');
+  const context = read('src/components/tools/TaskContextBar.tsx');
+  const filters = read('src/components/tools/FilterFields.tsx');
   const search = read('src/components/hero/SearchBar.tsx');
 
-  assert.doesNotMatch(card, /rotateX|scan_2s|backdrop-blur|bg-gradient|rounded-2xl/);
-  assert.match(card, /tool\.updateTime/);
-  assert.match(card, /tool\.platforms/);
-  assert.match(card, /aria-label=\{isFavorite \? `取消收藏/);
-  assert.match(card, /className="mt-3 min-h-11 flex flex-1"/);
-  assert.doesNotMatch(categories, /rounded-full|bg-gradient|shadow-\[/);
-  assert.match(categories, /border-b-2/);
+  assert.doesNotMatch(row, /rotateX|scan_2s|backdrop-blur|bg-gradient|rounded-2xl/);
+  assert.match(row, /data-field="tool"/);
+  assert.match(row, /data-field="task"/);
+  assert.match(row, /data-field="capabilities"/);
+  assert.match(row, /data-field="price"/);
+  assert.match(context, /sceneId/);
+  assert.match(context, /categoryId/);
+  assert.match(filters, /<fieldset/);
+  assert.doesNotMatch(context, /rounded-full|bg-gradient/);
   assert.doesNotMatch(search, /backdrop-blur|rounded-2xl|shadow-\[0_0/);
-  assert.doesNotMatch(search, /usePathname/);
   assert.match(search, /params\.set\('q', term\)/);
 });
 

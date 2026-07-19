@@ -73,8 +73,24 @@ test('untitled decision groups do not reference a missing heading', () => {
   assert.match(list, /aria-labelledby=\{group\.title \? `group-\$\{group\.id\}` : undefined\}/);
 });
 
-test('superseded components still exist until their route replacement tasks', () => {
-  assert.equal(existsSync(new URL('../src/components/tools/ToolGrid.tsx', import.meta.url)), true);
+test('superseded directory components are removed with the route replacement', () => {
+  for (const relativePath of [
+    '../src/components/tools/CategoryFilter.tsx',
+    '../src/components/tools/SortBar.tsx',
+    '../src/components/tools/ToolGrid.tsx',
+  ]) {
+    assert.equal(existsSync(new URL(relativePath, import.meta.url)), false, relativePath);
+  }
+});
+
+test('tools route wraps search-param client logic in Suspense', () => {
+  const page = read('src/app/tools/page.tsx');
+  const client = read('src/components/tools/ToolsBrowseClient.tsx');
+  assert.match(page, /<Suspense fallback=\{<ToolsPageSkeleton/);
+  assert.match(page, /<ToolsBrowseClient/);
+  assert.match(client, /selectDirectoryGroups/);
+  assert.match(client, /useToolDirectoryQuery/);
+  assert.doesNotMatch(client, /filteredTools|selectedCategory|setSort|setSearchTerm/);
 });
 
 test('homepage tasks use canonical scene ids and search preserves the query', () => {
