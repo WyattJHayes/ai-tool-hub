@@ -113,6 +113,10 @@ export interface DirectoryQueryState {
   sort: SortOption;
 }
 
+export type DirectoryQueryPatch =
+  | Partial<DirectoryQueryState>
+  | ((state: DirectoryQueryState) => Partial<DirectoryQueryState>);
+
 export interface DirectoryQueryCatalog {
   sceneIds: Set<string>;
   categoryIds: Set<string>;

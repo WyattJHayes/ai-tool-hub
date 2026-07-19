@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 import { FilterFields } from './FilterFields';
-import type { Category, DirectoryQueryState, PlatformValue } from '@/types/tool';
+import type { Category, DirectoryQueryPatch, DirectoryQueryState, PlatformValue } from '@/types/tool';
 
 interface MobileFilterDrawerProps {
   open: boolean;
@@ -11,7 +11,7 @@ interface MobileFilterDrawerProps {
   categories: Category[];
   state: DirectoryQueryState;
   platformOptions: PlatformValue[];
-  onPatch: (patch: Partial<DirectoryQueryState>) => void;
+  onPatch: (patch: DirectoryQueryPatch) => void;
   onClear: () => void;
 }
 

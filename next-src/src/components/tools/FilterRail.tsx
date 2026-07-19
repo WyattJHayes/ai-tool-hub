@@ -1,10 +1,10 @@
 import { FilterFields } from './FilterFields';
-import type { DirectoryQueryState, PlatformValue } from '@/types/tool';
+import type { DirectoryQueryPatch, DirectoryQueryState, PlatformValue } from '@/types/tool';
 
 interface FilterRailProps {
   state: DirectoryQueryState;
   platformOptions: PlatformValue[];
-  onPatch: (patch: Partial<DirectoryQueryState>) => void;
+  onPatch: (patch: DirectoryQueryPatch) => void;
   onClear: () => void;
 }
 

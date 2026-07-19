@@ -24,6 +24,17 @@ async function loadTypeScriptModule(path, mocks) {
   return loadedModule.exports;
 }
 
+function findElements(node, predicate, found = []) {
+  if (Array.isArray(node)) {
+    node.forEach((item) => findElements(item, predicate, found));
+    return found;
+  }
+  if (!node || typeof node !== 'object') return found;
+  if (predicate(node)) found.push(node);
+  findElements(node.props?.children, predicate, found);
+  return found;
+}
+
 test('decision rows preserve the approved field and accessibility contract', () => {
   const row = read('src/components/tools/ToolDecisionRow.tsx');
   assert.match(row, /data-field="tool"/);
@@ -79,7 +90,7 @@ test('directory controls are URL-driven and mobile filters use a dialog', () => 
   const rail = read('src/components/tools/FilterRail.tsx');
   const drawer = read('src/components/tools/MobileFilterDrawer.tsx');
   assert.match(hook, /useSearchParams/);
-  assert.match(hook, /router\.replace/);
+  assert.match(hook, /routerRef\.current\.replace/);
   assert.match(hook, /serializeDirectoryQuery/);
   assert.match(hook, /currentPath/);
   assert.match(bar, /categoryId/);
@@ -94,6 +105,46 @@ test('directory controls are URL-driven and mobile filters use a dialog', () => 
 });
 
 test('rapid directory patches compose against the latest intended query state', async () => {
+  const queryState = await import(new URL('../src/lib/tools-query-state.mjs', import.meta.url));
+  const replaceCalls = [];
+  const refs = [];
+  let refIndex = 0;
+  let searchParams = new URLSearchParams();
+  const hookModule = await loadTypeScriptModule('src/hooks/useToolDirectoryQuery.ts', {
+    react: {
+      useCallback: (callback) => callback,
+      useEffect: (effect) => effect(),
+      useMemo: (factory) => factory(),
+      useRef: (value) => {
+        const index = refIndex;
+        refIndex += 1;
+        refs[index] ||= { current: value };
+        return refs[index];
+      },
+    },
+    'next/navigation': {
+      usePathname: () => '/tools',
+      useRouter: () => ({ replace: (...args) => replaceCalls.push(args) }),
+      useSearchParams: () => searchParams,
+    },
+    '@/lib/tools-query-state.mjs': queryState,
+  });
+  const renderHook = () => {
+    refIndex = 0;
+    return hookModule.useToolDirectoryQuery({ sceneIds: new Set(), categoryIds: new Set(), platforms: new Set() });
+  };
+  const { update } = renderHook();
+
+  update({ price: 'free-tier' });
+  searchParams = new URLSearchParams('price=free-tier');
+  renderHook();
+  update({ searchTerm: 'claude' });
+
+  assert.equal(replaceCalls.length, 2);
+  assert.equal(replaceCalls[1][0], '/tools?q=claude&price=free-tier');
+});
+
+test('rapid origin checkbox changes compose through the latest query state', async () => {
   const queryState = await import(new URL('../src/lib/tools-query-state.mjs', import.meta.url));
   const replaceCalls = [];
   const refs = [];
@@ -117,18 +168,29 @@ test('rapid directory patches compose against the latest intended query state', 
     },
     '@/lib/tools-query-state.mjs': queryState,
   });
-  const renderHook = () => {
-    refIndex = 0;
-    return hookModule.useToolDirectoryQuery({ sceneIds: new Set(), categoryIds: new Set(), platforms: new Set() });
-  };
-  let { update } = renderHook();
+  const catalog = { sceneIds: new Set(), categoryIds: new Set(), platforms: new Set() };
+  const { state, update } = hookModule.useToolDirectoryQuery(catalog);
+  const filterModule = await loadTypeScriptModule('src/components/tools/FilterFields.tsx', {
+    'react/jsx-runtime': {
+      jsx: (type, props) => ({ type, props }),
+      jsxs: (type, props) => ({ type, props }),
+    },
+  });
+  const fields = filterModule.FilterFields({
+    state,
+    platformOptions: [],
+    radioGroupName: 'price-test',
+    onPatch: update,
+    onClear: () => {},
+  });
+  const originInputs = findElements(fields, (element) => element.type === 'input' && element.props.type === 'checkbox');
 
-  update({ price: 'free-tier' });
-  ({ update } = renderHook());
-  update({ searchTerm: 'claude' });
+  assert.equal(originInputs.length, 2);
+  originInputs[0].props.onChange();
+  originInputs[1].props.onChange();
 
   assert.equal(replaceCalls.length, 2);
-  assert.equal(replaceCalls[1][0], '/tools?q=claude&price=free-tier');
+  assert.equal(replaceCalls[1][0], '/tools?origin=domestic%2Coverseas');
 });
 
 test('mobile filter dialog closes when the desktop breakpoint activates', async () => {

@@ -2,7 +2,7 @@
 
 import { SlidersHorizontal } from 'lucide-react';
 import { SearchBar } from '@/components/hero/SearchBar';
-import type { Category, DirectoryQueryState, Scene, SortOption } from '@/types/tool';
+import type { Category, DirectoryQueryPatch, DirectoryQueryState, Scene, SortOption } from '@/types/tool';
 
 interface TaskContextBarProps {
   state: DirectoryQueryState;
@@ -11,7 +11,7 @@ interface TaskContextBarProps {
   resultCount: number;
   isLoading: boolean;
   activeFilterCount: number;
-  onPatch: (patch: Partial<DirectoryQueryState>) => void;
+  onPatch: (patch: DirectoryQueryPatch) => void;
   onOpenFilters: () => void;
 }
 
