@@ -176,18 +176,19 @@ test('task changes canonicalize through History and restore the rendered hook st
 
   const raw = renderHook();
   raw.update({ sceneId: 'coding' });
+  raw.update({ sort: 'hot' });
 
-  assert.deepEqual(historyCalls.map(([path]) => path), ['/tools?scene=coding']);
+  assert.deepEqual(historyCalls.map(([path]) => path), [
+    '/tools?scene=coding',
+    '/tools?scene=coding&sort=hot',
+  ]);
   assert.deepEqual(routerCalls, []);
   const restored = renderHook();
   assert.equal(restored.state.sceneId, 'coding');
+  assert.equal(restored.state.sort, 'hot');
   assert.equal(restored.state.price, null);
-
-  restored.update({ sceneId: 'coding' });
-  restored.update({ sort: 'hot' });
-
-  assert.equal(historyCalls.at(-1)[0], '/tools?scene=coding&sort=hot');
-  assert.deepEqual(routerCalls, []);
+  assert.equal(searchParams.has('unknown'), false);
+  assert.equal(searchParams.has('price'), false);
 });
 
 test('catalog hydration at the same URL preserves the scene on the first patch', async () => {
