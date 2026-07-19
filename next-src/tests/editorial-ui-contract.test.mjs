@@ -43,6 +43,12 @@ test('puts canonical task entry before deterministic weekly decision rows', () =
   assert.ok(home.indexOf('<TaskEntryList') < home.indexOf('本周值得试'));
 });
 
+test('keeps the homepage scene retry control touch accessible', () => {
+  const home = read('src/app/page.tsx');
+
+  assert.match(home, /onClick=\{retryScenes\} className="[^"]*min-h-11[^"]*px-4[^"]*">重新加载/);
+});
+
 test('uses flat comparison-oriented tool cards and tab-like filters', () => {
   const card = read('src/components/tools/ToolCard.tsx');
   const categories = read('src/components/tools/CategoryFilter.tsx');
