@@ -27,23 +27,26 @@ export default function CompareTray() {
         ref={trayRef}
         data-compare-tray
         aria-label="已选工具对比"
-        className="fixed inset-x-0 bottom-[var(--mobile-nav-block-size)] z-[90] overflow-hidden border-t border-[var(--line)] bg-[var(--surface)] px-4 py-2 md:bottom-0 md:px-6"
+        className="fixed inset-x-2 bottom-[var(--mobile-nav-block-size)] z-[90] overflow-hidden rounded-md border border-[var(--line)] bg-[var(--surface)] px-3 py-2 md:inset-x-0 md:bottom-0 md:rounded-none md:border-x-0 md:border-b-0 md:px-6"
       >
-        <div className="mx-auto flex h-full max-w-7xl items-center justify-between gap-3">
+        <div className="mx-auto flex h-full max-w-7xl items-center justify-between gap-2 sm:gap-3">
           <div className="min-w-0 flex-1">
             <span className="text-sm font-medium text-[var(--ink)]">已选 {selectedTools.length}/4 款</span>
-            <div className="mt-1 hidden gap-2 overflow-x-auto sm:flex">
+            <div
+              data-compare-selected-tools
+              className="mt-0.5 flex min-w-0 gap-1 overflow-hidden sm:mt-1 sm:gap-2 sm:overflow-x-auto"
+            >
               {selectedTools.map((tool) => (
                 <span
                   key={tool.id}
-                  className="inline-flex shrink-0 items-center gap-1 rounded border border-[var(--line)] px-2 py-1 text-xs"
+                  className="inline-flex min-w-0 flex-1 items-center gap-0.5 text-xs text-[var(--muted)] sm:flex-none sm:shrink-0 sm:gap-1 sm:rounded sm:border sm:border-[var(--line)] sm:px-2 sm:py-1 sm:text-[var(--ink)]"
                 >
-                  {tool.name}
+                  <span className="truncate">{tool.name}</span>
                   <button
                     type="button"
                     onClick={() => removeTool(tool.id)}
                     aria-label={`移除 ${tool.name}`}
-                    className="flex h-6 w-6 items-center justify-center"
+                    className="flex h-6 w-6 shrink-0 items-center justify-center"
                   >
                     <X className="h-3 w-3" />
                   </button>

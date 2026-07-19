@@ -536,6 +536,16 @@ test('root layout mounts one compare tray and no alternate shell duplicates it',
   assert.match(read('src/components/layout/BottomNav.tsx'), /safe-area-inset-bottom/);
 });
 
+test('mobile compare tray preserves the accepted inset anatomy and visible selected names', () => {
+  const tray = read('src/components/compare/CompareTray.tsx');
+  assert.match(tray, /fixed inset-x-2/);
+  assert.match(tray, /rounded-md border border-\[var\(--line\)\]/);
+  assert.match(tray, /md:inset-x-0/);
+  assert.match(tray, /data-compare-selected-tools/);
+  assert.match(tray, /className="truncate"/);
+  assert.doesNotMatch(tray, /mt-1 hidden gap-2 overflow-x-auto sm:flex/);
+});
+
 test('mobile navigation recognizes nested tool routes', () => {
   const nav = read('src/components/layout/BottomNav.tsx');
   assert.match(nav, /pathname\.startsWith\(`\$\{item\.href\}\/`\)/);
