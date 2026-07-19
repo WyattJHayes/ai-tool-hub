@@ -6,8 +6,7 @@ interface ToolDetailPageProps {
 }
 
 export default async function ToolDetailPage({ params, searchParams }: ToolDetailPageProps) {
-  const { slug } = await params;
-  const query = await searchParams;
+  const [{ slug }, query] = await Promise.all([params, searchParams]);
   const from = Array.isArray(query.from) ? query.from[0] : query.from;
   return <ToolDetailClient slug={slug} from={from} />;
 }

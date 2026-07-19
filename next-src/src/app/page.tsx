@@ -36,8 +36,8 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[var(--page)] text-[var(--ink)]">
-      <section className="border-b border-[var(--line)] bg-[var(--surface)]">
-        <div className="mx-auto max-w-7xl px-4 py-9 sm:px-6 sm:py-12">
+      <section>
+        <div className="mx-auto max-w-[1160px] px-4 py-9 sm:px-0 sm:pb-0 sm:pt-12">
           <div className="max-w-3xl">
             <h1 className="text-3xl font-semibold leading-tight sm:text-4xl">按任务找到合适的 AI 工具</h1>
             <p className="mt-3 text-[var(--muted)]">先确定任务，再比较能力、价格和使用条件</p>
@@ -45,16 +45,16 @@ export default function Home() {
           </div>
         </div>
       </section>
-      <section className="mx-auto max-w-7xl px-4 py-9 sm:px-6 sm:py-12">
+      <section className="mx-auto max-w-[1160px] px-4 py-9 sm:px-0 sm:py-12">
         <h2 className="mb-5 text-xl font-semibold sm:text-2xl">你要完成什么？</h2>
         {scenesLoading ? <div role="status" className="h-52 border-y border-[var(--line)]" /> : null}
         {scenesError ? <div role="alert"><p>{scenesError}</p><button type="button" onClick={retryScenes} className="mt-3 min-h-11 rounded-md border border-[var(--line)] px-4">重新加载</button></div> : null}
         {!scenesLoading && !scenesError ? <TaskEntryList scenes={scenes} /> : null}
       </section>
-      <section className="border-y border-[var(--line)] bg-[var(--surface)]">
-        <div className="mx-auto max-w-7xl px-4 py-9 sm:px-6 sm:py-12">
+      <section className="border-t border-[var(--line)]">
+        <div className="mx-auto max-w-[1160px] px-4 py-9 sm:px-0 sm:py-12">
           <h2 className="mb-5 text-xl font-semibold sm:text-2xl">本周值得试</h2>
-          <ToolDecisionList groups={[{ id: 'weekly', items: weeklyTools }]} variant="compact" isLoading={isLoading} error={error} onRetry={retryLoadData} />
+          <ToolDecisionList groups={[{ id: 'weekly', items: weeklyTools }]} variant="compact" showCompare={false} isLoading={isLoading} error={error} onRetry={retryLoadData} />
         </div>
       </section>
     </main>

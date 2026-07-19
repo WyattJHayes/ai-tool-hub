@@ -10,11 +10,14 @@ import { getSearchSuggestions } from '@/lib/search-suggestions.mjs';
 
 interface SearchBarProps {
   value?: string;
+  placeholder?: string;
+  ariaLabel?: string;
+  compact?: boolean;
   onValueChange?: (value: string) => void;
   onSubmit?: (value: string) => void;
 }
 
-export function SearchBar({ value: controlledValue, onValueChange, onSubmit }: SearchBarProps = {}) {
+export function SearchBar({ value: controlledValue, placeholder = '搜索工具、任务或能力', ariaLabel = placeholder, compact = false, onValueChange, onSubmit }: SearchBarProps = {}) {
   const router = useRouter();
   const [value, setValue] = useState(controlledValue || '');
   const [focused, setFocused] = useState(false);
@@ -90,7 +93,8 @@ export function SearchBar({ value: controlledValue, onValueChange, onSubmit }: S
     <div className="relative w-full">
       <div
         className={cn(
-          'relative flex h-14 items-center rounded-lg border bg-[var(--surface)] transition-colors duration-150',
+          'relative flex items-center rounded-lg border bg-[var(--surface)] transition-colors duration-150',
+          compact ? 'h-11' : 'h-14',
           focused
             ? 'border-[var(--accent)] ring-2 ring-[var(--accent-soft)]'
             : 'border-[var(--line-strong)] hover:border-[var(--muted-subtle)]'
@@ -108,11 +112,11 @@ export function SearchBar({ value: controlledValue, onValueChange, onSubmit }: S
             if (event.key === 'Enter') handleSubmit();
             if (event.key === 'Escape') handleClear();
           }}
-          placeholder="搜索工具、用途或任务"
+          placeholder={placeholder}
           className="h-full min-w-0 flex-1 appearance-none bg-transparent px-3 text-base text-[var(--ink)] outline-none placeholder:text-[var(--muted-subtle)] [&::-webkit-search-cancel-button]:hidden"
           role="combobox"
           aria-autocomplete="list"
-          aria-label="搜索工具、用途或任务"
+          aria-label={ariaLabel}
           aria-controls="tool-search-options"
           aria-expanded={showDropdown}
         />

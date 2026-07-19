@@ -113,6 +113,29 @@ test('homepage tasks use canonical scene ids and search preserves the query', ()
   assert.match(search, /params\.set\('q', term\)/);
 });
 
+test('reference-locked discovery copy and compact composition stay normalized', () => {
+  const home = read('src/app/page.tsx');
+  const tasks = read('src/components/home/TaskEntryList.tsx');
+  const search = read('src/components/hero/SearchBar.tsx');
+  const browse = read('src/components/tools/ToolsBrowseClient.tsx');
+  const context = read('src/components/tools/TaskContextBar.tsx');
+  const row = read('src/components/tools/ToolDecisionRow.tsx');
+  assert.match(search, /placeholder = '搜索工具、任务或能力'/);
+  assert.match(search, /compact\?: boolean/);
+  assert.match(context, /<SearchBar compact ariaLabel="搜索工具、任务或能力" placeholder="搜索当前任务下的工具或能力"/);
+  assert.match(context, /value: 'default', label: '任务优先'/);
+  assert.match(context, /sr-only lg:not-sr-only/);
+  assert.match(browse, /pt-2[^"']*sm:pt-10/);
+  assert.match(browse, /hidden[^"']*sm:block[^>]*>按任务、能力和使用条件比较工具/);
+  assert.match(browse, /sceneLabel.*resultCount/);
+  assert.match(home, /variant="compact"[^>]+showCompare=\{false\}/);
+  assert.doesNotMatch(tasks, /sceneIcons|<Icon/);
+  assert.match(tasks, /ChevronRight/);
+  assert.match(row, /const platformLabels/);
+  assert.match(row, /model\.platforms\.map\(\(platform\) => platformLabels\[platform\]\)/);
+  assert.match(row, /max-md:flex max-md:items-center max-md:gap-2/);
+});
+
 test('directory controls are URL-driven and mobile filters use a dialog', () => {
   const hook = read('src/hooks/useToolDirectoryQuery.ts');
   const bar = read('src/components/tools/TaskContextBar.tsx');
@@ -644,8 +667,7 @@ test('legacy tool surfaces use canonical platform and accessible compare limits'
 test('detail route resolves async params outside the client and uses decision evidence', () => {
   const page = read('src/app/tools/[slug]/page.tsx');
   const client = read('src/components/tools/ToolDetailClient.tsx');
-  assert.match(page, /await params/);
-  assert.match(page, /await searchParams/);
+  assert.match(page, /await Promise\.all\(\[params, searchParams\]\)/);
   assert.match(page, /<ToolDetailClient slug=\{slug\} from=\{from\}/);
   assert.match(client, /ToolDecisionSummary/);
   assert.match(client, /selectAlternativeTools/);
@@ -664,6 +686,15 @@ test('zero-review evidence exposes a compact accessible rating disclosure', () =
   assert.match(evidence, /<details/);
   assert.match(evidence, /<summary className="[^"]*min-h-11/);
   assert.match(evidence, /<RatingWidget/);
+  assert.match(evidence, />信息<\/h2>/);
+  assert.match(evidence, />评分与评论<\/h2>/);
+  assert.match(evidence, /tool\.toolTags\?\.length \? tool\.toolTags : tool\.tags/);
+});
+
+test('persisted review scores are textual while star icons are decorative', () => {
+  const evidence = read('src/components/tools/ToolEvidenceSections.tsx');
+  assert.match(evidence, /className="sr-only">\{review\.score\} \/ 5 分<\/span>/);
+  assert.match(evidence, /<div aria-hidden="true" className="flex gap-0\.5">/);
 });
 
 test('successful detail ratings update evidence immediately and refresh only the current tool', () => {

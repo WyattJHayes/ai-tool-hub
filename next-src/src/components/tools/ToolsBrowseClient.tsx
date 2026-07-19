@@ -39,6 +39,7 @@ export function ToolsBrowseClient() {
     [categories, clickStats, scenes, state, tools]
   );
   const resultCount = groups.reduce((total, group) => total + group.items.length, 0);
+  const sceneLabel = scenes.find((scene) => scene.id === state.sceneId)?.name.replace(/^我要/, '');
   const activeFilterCount = Number(Boolean(state.categoryId)) + Number(Boolean(state.price)) + state.origins.length + state.platforms.length;
   const clearSecondary = () => update({ categoryId: null, price: null, origins: [], platforms: [] });
   const clearEmptyState = () => update({ searchTerm: '', categoryId: null, price: null, origins: [], platforms: [] });
@@ -51,24 +52,27 @@ export function ToolsBrowseClient() {
   };
 
   return (
-    <main className="mx-auto max-w-7xl px-4 pb-36 pt-10 text-[var(--ink)] sm:px-6 sm:pb-24">
-      <header>
-        <h1 className="text-2xl font-semibold sm:text-3xl">工具目录</h1>
-        <p className="mt-2 text-sm text-[var(--muted)]">按任务、能力和使用条件比较工具</p>
+    <main className="mx-auto max-w-7xl px-4 pb-36 pt-2 text-[var(--ink)] sm:px-6 sm:pb-24 sm:pt-10">
+      <header className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold sm:text-3xl">工具目录</h1>
+          <p className="mt-2 hidden text-sm text-[var(--muted)] sm:block">按任务、能力和使用条件比较工具</p>
+        </div>
+        <p role="status" className="mt-1 shrink-0 text-sm text-[var(--muted)]">
+          {isLoading || scenesLoading ? '正在加载' : `${sceneLabel ? `${sceneLabel} · ` : ''}${resultCount} 款工具`}
+        </p>
       </header>
-      <div className="mt-6">
+      <div className="mt-2 sm:mt-6">
         <TaskContextBar
           state={state}
           scenes={scenes}
           categories={categories}
-          resultCount={resultCount}
-          isLoading={isLoading || scenesLoading}
           activeFilterCount={activeFilterCount}
           onPatch={update}
           onOpenFilters={() => setFiltersOpen(true)}
         />
       </div>
-      <div className="mt-8 grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+      <div className="mt-4 grid gap-6 lg:mt-8 lg:grid-cols-[220px_minmax(0,1fr)]">
         <FilterRail state={state} platformOptions={platforms} onPatch={update} onClear={clearSecondary} />
         <ToolDecisionList
           groups={groups}

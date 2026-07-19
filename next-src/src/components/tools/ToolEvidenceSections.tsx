@@ -18,6 +18,7 @@ interface ToolEvidenceSectionsProps {
 
 export function ToolEvidenceSections({ model, currentRating, ratingData, onRated }: ToolEvidenceSectionsProps) {
   const tool = model.tool;
+  const metadataTags = tool.toolTags?.length ? tool.toolTags : tool.tags;
   return (
     <div className="space-y-3">
       {model.capabilities.length ? (
@@ -60,11 +61,11 @@ export function ToolEvidenceSections({ model, currentRating, ratingData, onRated
       ) : null}
 
       <section aria-labelledby="metadata-title">
-        <h2 id="metadata-title" className="mb-1 text-lg font-semibold leading-6">使用信息</h2>
+        <h2 id="metadata-title" className="mb-1 text-lg font-semibold leading-6">信息</h2>
         <dl className="border-y border-[var(--line)] text-sm">
           <div className="grid grid-cols-[108px_minmax(0,1fr)] border-b border-[var(--line)] py-2">
             <dt className="text-[var(--muted)]">标签</dt>
-            <dd className="flex flex-wrap gap-x-4 gap-y-1">{[...tool.tags, ...(tool.toolTags || [])].map((tag, index) => <span key={`${tag}-${index}`}>{tag}</span>)}</dd>
+            <dd className="flex flex-wrap gap-x-4 gap-y-1">{metadataTags.map((tag, index) => <span key={`${tag}-${index}`}>{tag}</span>)}</dd>
           </div>
           {tool.updateTime ? (
             <div className="grid grid-cols-[108px_minmax(0,1fr)] py-2">
@@ -76,7 +77,7 @@ export function ToolEvidenceSections({ model, currentRating, ratingData, onRated
       </section>
 
       <section aria-labelledby="rating-title">
-        <h2 id="rating-title" className="mb-1 text-lg font-semibold leading-6">评价</h2>
+        <h2 id="rating-title" className="mb-1 text-lg font-semibold leading-6">评分与评论</h2>
         {ratingData.rating_count === 0 ? (
           <details className="group border-y border-[var(--line)]">
             <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2 [&::-webkit-details-marker]:hidden">
@@ -104,7 +105,8 @@ export function ToolEvidenceSections({ model, currentRating, ratingData, onRated
           <ul className="divide-y divide-[var(--line)] border-y border-[var(--line)]">
             {ratingData.reviews.slice(0, 5).map((review, index) => (
               <li key={`${review.score}-${index}`} className="py-3">
-                <div className="flex gap-0.5">{[1, 2, 3, 4, 5].map((score) => <Star key={score} className={cn('h-3.5 w-3.5', score <= review.score ? 'fill-amber-400 text-amber-400' : 'text-[var(--line-strong)]')} />)}</div>
+                <span className="sr-only">{review.score} / 5 分</span>
+                <div aria-hidden="true" className="flex gap-0.5">{[1, 2, 3, 4, 5].map((score) => <Star key={score} className={cn('h-3.5 w-3.5', score <= review.score ? 'fill-amber-400 text-amber-400' : 'text-[var(--line-strong)]')} />)}</div>
                 {review.tags.length ? <p className="mt-2 text-xs text-[var(--muted)]">{review.tags.join(' · ')}</p> : null}
                 {review.comment ? <p className="mt-2 text-sm text-[var(--muted)]">{review.comment}</p> : null}
               </li>
