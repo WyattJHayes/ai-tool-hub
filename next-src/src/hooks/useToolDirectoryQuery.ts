@@ -1,13 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { parseDirectoryQuery, patchDirectoryQuery, serializeDirectoryQuery } from '@/lib/tools-query-state.mjs';
 import type { DirectoryQueryCatalog, DirectoryQueryPatch, DirectoryQueryState } from '@/types/tool';
 
 export function useToolDirectoryQuery(catalog: DirectoryQueryCatalog) {
   const pathname = usePathname();
-  const router = useRouter();
   const searchParams = useSearchParams();
   const state = useMemo(() => parseDirectoryQuery(searchParams, catalog) as DirectoryQueryState, [catalog, searchParams]);
   const currentPath = useMemo(() => {
@@ -15,14 +14,12 @@ export function useToolDirectoryQuery(catalog: DirectoryQueryCatalog) {
     return `${pathname}${query ? `?${query}` : ''}`;
   }, [pathname, searchParams]);
   const pathnameRef = useRef(pathname);
-  const routerRef = useRef(router);
   const committedPathRef = useRef(currentPath);
   const latestStateRef = useRef(state);
   const pendingPathRef = useRef<string | null>(null);
   const pendingPatchesRef = useRef<Partial<DirectoryQueryState>[]>([]);
   useEffect(() => {
     pathnameRef.current = pathname;
-    routerRef.current = router;
     const pendingPath = pendingPathRef.current;
     if (!pendingPath || pendingPath === currentPath) {
       committedPathRef.current = currentPath;
@@ -41,12 +38,12 @@ export function useToolDirectoryQuery(catalog: DirectoryQueryCatalog) {
       const correctedPath = `${pathname}${query ? `?${query}` : ''}`;
       if (correctedPath !== pendingPath) {
         pendingPathRef.current = correctedPath;
-        router.replace(correctedPath, { scroll: false });
+        window.history.replaceState(null, '', correctedPath);
       }
       return;
     }
-    router.replace(pendingPath, { scroll: false });
-  }, [currentPath, pathname, router, state]);
+    window.history.replaceState(null, '', pendingPath);
+  }, [currentPath, pathname, state]);
   const update = useCallback((patch: DirectoryQueryPatch) => {
     const resolvedPatch = typeof patch === 'function' ? patch(latestStateRef.current) : patch;
     const next = patchDirectoryQuery(latestStateRef.current, resolvedPatch) as DirectoryQueryState;
@@ -61,7 +58,7 @@ export function useToolDirectoryQuery(catalog: DirectoryQueryCatalog) {
       pendingPathRef.current = nextPath;
       pendingPatchesRef.current = pendingPatches;
     }
-    routerRef.current.replace(nextPath, { scroll: false });
+    window.history.replaceState(null, '', nextPath);
   }, []);
   return { state, update, currentPath };
 }

@@ -35,6 +35,16 @@ function findElements(node, predicate, found = []) {
   return found;
 }
 
+function installHistoryReplaceMock(replaceCalls) {
+  globalThis.window = {
+    ...globalThis.window,
+    history: {
+      ...globalThis.window?.history,
+      replaceState: (_state, _title, path) => replaceCalls.push([path, { scroll: false }]),
+    },
+  };
+}
+
 test('decision rows preserve the approved field and accessibility contract', () => {
   const row = read('src/components/tools/ToolDecisionRow.tsx');
   assert.match(row, /data-field="tool"/);
@@ -106,7 +116,7 @@ test('directory controls are URL-driven and mobile filters use a dialog', () => 
   const rail = read('src/components/tools/FilterRail.tsx');
   const drawer = read('src/components/tools/MobileFilterDrawer.tsx');
   assert.match(hook, /useSearchParams/);
-  assert.match(hook, /routerRef\.current\.replace/);
+  assert.match(hook, /window\.history\.replaceState/);
   assert.match(hook, /serializeDirectoryQuery/);
   assert.match(hook, /currentPath/);
   assert.match(bar, /categoryId/);
@@ -123,6 +133,7 @@ test('directory controls are URL-driven and mobile filters use a dialog', () => 
 test('catalog hydration at the same URL preserves the scene on the first patch', async () => {
   const queryState = await import(new URL('../src/lib/tools-query-state.mjs', import.meta.url));
   const replaceCalls = [];
+  installHistoryReplaceMock(replaceCalls);
   const refs = [];
   let refIndex = 0;
   const searchParams = new URLSearchParams('scene=research');
@@ -161,6 +172,7 @@ test('catalog hydration at the same URL preserves the scene on the first patch',
 test('catalog hydration merges newly valid URL state with a pending patch', async () => {
   const queryState = await import(new URL('../src/lib/tools-query-state.mjs', import.meta.url));
   const replaceCalls = [];
+  installHistoryReplaceMock(replaceCalls);
   const refs = [];
   let refIndex = 0;
   const searchParams = new URLSearchParams('scene=research');
@@ -200,6 +212,7 @@ test('catalog hydration merges newly valid URL state with a pending patch', asyn
 test('catalog hydration corrects a pending target without another user action', async () => {
   const queryState = await import(new URL('../src/lib/tools-query-state.mjs', import.meta.url));
   const replaceCalls = [];
+  installHistoryReplaceMock(replaceCalls);
   const refs = [];
   let refIndex = 0;
   let searchParams = new URLSearchParams('scene=research');
@@ -368,6 +381,7 @@ test('directory retry targets failed sources without a duplicate catalog load', 
 test('rapid directory patches compose against the latest intended query state', async () => {
   const queryState = await import(new URL('../src/lib/tools-query-state.mjs', import.meta.url));
   const replaceCalls = [];
+  installHistoryReplaceMock(replaceCalls);
   const refs = [];
   let refIndex = 0;
   let searchParams = new URLSearchParams();
@@ -408,6 +422,7 @@ test('rapid directory patches compose against the latest intended query state', 
 test('rapid origin checkbox changes compose through the latest query state', async () => {
   const queryState = await import(new URL('../src/lib/tools-query-state.mjs', import.meta.url));
   const replaceCalls = [];
+  installHistoryReplaceMock(replaceCalls);
   const refs = [];
   let refIndex = 0;
   const hookModule = await loadTypeScriptModule('src/hooks/useToolDirectoryQuery.ts', {
