@@ -1,4 +1,5 @@
 import type { ToolsData, Tool, Category, SceneData } from '@/types/tool';
+import { deriveToolPrice } from '@/lib/tool-decision.mjs';
 
 let cachedData: ToolsData | null = null;
 let cachedScenes: SceneData | null = null;
@@ -67,12 +68,7 @@ export function getRelatedTools(tools: Tool[], tool: Tool, limit = 4): Tool[] {
 }
 
 export function getPricingHighlight(pricing: Tool['pricing']): string {
-  if (!pricing || pricing.length === 0) return '';
-  const free = pricing.find(p => p.price === 0);
-  const highlight = pricing.find(p => p.highlight);
-  if (free) return '免费';
-  if (highlight) return `${highlight.plan} ${highlight.price > 0 ? `$${highlight.price}` : ''}`;
-  return pricing[0].plan;
+  return deriveToolPrice({ pricing }).summary || '';
 }
 
 export function filterTools(tools: Tool[], filters: {
