@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useToolDirectoryQuery } from '@/hooks/useToolDirectoryQuery';
 import { useSceneData } from '@/hooks/useSceneData';
 import { deriveAvailablePlatforms } from '@/lib/tool-decision.mjs';
@@ -15,10 +15,17 @@ export function ToolsBrowseClient() {
   const { tools, categories, clickStats, isLoading, error, dataLoaded, loadData, retryLoadData } = useToolStore();
   const { scenes, isLoading: scenesLoading, error: scenesError, retry: retryScenes } = useSceneData();
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const catalogLoadRequestedRef = useRef(false);
 
   useEffect(() => {
-    if (!dataLoaded) loadData();
-  }, [dataLoaded, loadData]);
+    if (dataLoaded) {
+      catalogLoadRequestedRef.current = false;
+      return;
+    }
+    if (error || (isLoading && catalogLoadRequestedRef.current)) return;
+    catalogLoadRequestedRef.current = true;
+    void loadData();
+  }, [dataLoaded, error, isLoading, loadData]);
 
   const platforms = useMemo(() => deriveAvailablePlatforms(tools), [tools]);
   const catalog = useMemo(() => ({
@@ -34,9 +41,13 @@ export function ToolsBrowseClient() {
   const resultCount = groups.reduce((total, group) => total + group.items.length, 0);
   const activeFilterCount = Number(Boolean(state.categoryId)) + Number(Boolean(state.price)) + state.origins.length + state.platforms.length;
   const clearSecondary = () => update({ categoryId: null, price: null, origins: [], platforms: [] });
+  const clearEmptyState = () => update({ searchTerm: '', categoryId: null, price: null, origins: [], platforms: [] });
   const retry = () => {
-    retryLoadData();
-    retryScenes();
+    if (error) {
+      catalogLoadRequestedRef.current = true;
+      void retryLoadData();
+    }
+    if (scenesError) retryScenes();
   };
 
   return (
@@ -65,7 +76,7 @@ export function ToolsBrowseClient() {
           isLoading={isLoading || scenesLoading}
           error={error || scenesError}
           onRetry={retry}
-          onClear={clearSecondary}
+          onClear={clearEmptyState}
         />
       </div>
       <MobileFilterDrawer

@@ -18,20 +18,38 @@ export function useToolDirectoryQuery(catalog: DirectoryQueryCatalog) {
   const routerRef = useRef(router);
   const committedPathRef = useRef(currentPath);
   const latestStateRef = useRef(state);
+  const pendingPathRef = useRef<string | null>(null);
+  const pendingPatchesRef = useRef<Partial<DirectoryQueryState>[]>([]);
   useEffect(() => {
     pathnameRef.current = pathname;
     routerRef.current = router;
-    if (committedPathRef.current !== currentPath) {
-      committedPathRef.current = currentPath;
+    committedPathRef.current = currentPath;
+    if (!pendingPathRef.current || pendingPathRef.current === currentPath) {
       latestStateRef.current = state;
+      pendingPathRef.current = null;
+      pendingPatchesRef.current = [];
+    } else {
+      latestStateRef.current = pendingPatchesRef.current.reduce<DirectoryQueryState>(
+        (current, pendingPatch) => patchDirectoryQuery(current, pendingPatch) as DirectoryQueryState,
+        state
+      );
     }
   }, [currentPath, pathname, router, state]);
   const update = useCallback((patch: DirectoryQueryPatch) => {
     const resolvedPatch = typeof patch === 'function' ? patch(latestStateRef.current) : patch;
     const next = patchDirectoryQuery(latestStateRef.current, resolvedPatch) as DirectoryQueryState;
+    const pendingPatches = [...pendingPatchesRef.current, resolvedPatch];
     latestStateRef.current = next;
     const query = serializeDirectoryQuery(next);
-    routerRef.current.replace(`${pathnameRef.current}${query ? `?${query}` : ''}`, { scroll: false });
+    const nextPath = `${pathnameRef.current}${query ? `?${query}` : ''}`;
+    if (nextPath === committedPathRef.current) {
+      pendingPathRef.current = null;
+      pendingPatchesRef.current = [];
+    } else {
+      pendingPathRef.current = nextPath;
+      pendingPatchesRef.current = pendingPatches;
+    }
+    routerRef.current.replace(nextPath, { scroll: false });
   }, []);
   return { state, update, currentPath };
 }

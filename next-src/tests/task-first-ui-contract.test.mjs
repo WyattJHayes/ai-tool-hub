@@ -120,6 +120,195 @@ test('directory controls are URL-driven and mobile filters use a dialog', () => 
   assert.match(bar, /max-w-full/);
 });
 
+test('catalog hydration at the same URL preserves the scene on the first patch', async () => {
+  const queryState = await import(new URL('../src/lib/tools-query-state.mjs', import.meta.url));
+  const replaceCalls = [];
+  const refs = [];
+  let refIndex = 0;
+  const searchParams = new URLSearchParams('scene=research');
+  const hookModule = await loadTypeScriptModule('src/hooks/useToolDirectoryQuery.ts', {
+    react: {
+      useCallback: (callback) => callback,
+      useEffect: (effect) => effect(),
+      useMemo: (factory) => factory(),
+      useRef: (value) => {
+        const index = refIndex;
+        refIndex += 1;
+        refs[index] ||= { current: value };
+        return refs[index];
+      },
+    },
+    'next/navigation': {
+      usePathname: () => '/tools',
+      useRouter: () => ({ replace: (...args) => replaceCalls.push(args) }),
+      useSearchParams: () => searchParams,
+    },
+    '@/lib/tools-query-state.mjs': queryState,
+  });
+  const renderHook = (catalog) => {
+    refIndex = 0;
+    return hookModule.useToolDirectoryQuery(catalog);
+  };
+
+  renderHook({ sceneIds: new Set(), categoryIds: new Set(), platforms: new Set() });
+  const hydrated = renderHook({ sceneIds: new Set(['research']), categoryIds: new Set(), platforms: new Set() });
+  hydrated.update({ price: 'free-tier' });
+
+  assert.equal(replaceCalls.length, 1);
+  assert.equal(replaceCalls[0][0], '/tools?scene=research&price=free-tier');
+});
+
+test('catalog hydration merges newly valid URL state with a pending patch', async () => {
+  const queryState = await import(new URL('../src/lib/tools-query-state.mjs', import.meta.url));
+  const replaceCalls = [];
+  const refs = [];
+  let refIndex = 0;
+  const searchParams = new URLSearchParams('scene=research');
+  const hookModule = await loadTypeScriptModule('src/hooks/useToolDirectoryQuery.ts', {
+    react: {
+      useCallback: (callback) => callback,
+      useEffect: (effect) => effect(),
+      useMemo: (factory) => factory(),
+      useRef: (value) => {
+        const index = refIndex;
+        refIndex += 1;
+        refs[index] ||= { current: value };
+        return refs[index];
+      },
+    },
+    'next/navigation': {
+      usePathname: () => '/tools',
+      useRouter: () => ({ replace: (...args) => replaceCalls.push(args) }),
+      useSearchParams: () => searchParams,
+    },
+    '@/lib/tools-query-state.mjs': queryState,
+  });
+  const renderHook = (catalog) => {
+    refIndex = 0;
+    return hookModule.useToolDirectoryQuery(catalog);
+  };
+
+  const pending = renderHook({ sceneIds: new Set(), categoryIds: new Set(), platforms: new Set() });
+  pending.update({ price: 'free-tier' });
+  const hydrated = renderHook({ sceneIds: new Set(['research']), categoryIds: new Set(), platforms: new Set() });
+  hydrated.update({ searchTerm: 'claude' });
+
+  assert.equal(replaceCalls.length, 2);
+  assert.equal(replaceCalls[1][0], '/tools?scene=research&q=claude&price=free-tier');
+});
+
+test('directory retry targets failed sources without a duplicate catalog load', async () => {
+  let toolRetryCalls = 0;
+  let sceneRetryCalls = 0;
+  let loadDataCalls = 0;
+  let effects = [];
+  let refIndex = 0;
+  const refs = [];
+  const patches = [];
+  const directoryState = {
+    sceneId: 'research',
+    searchTerm: '',
+    categoryId: null,
+    price: null,
+    origins: [],
+    platforms: [],
+    sort: 'default',
+  };
+  const toolState = {
+    tools: [],
+    categories: [],
+    clickStats: {},
+    isLoading: false,
+    error: null,
+    dataLoaded: true,
+    loadData: () => { loadDataCalls += 1; },
+    retryLoadData: () => {
+      toolRetryCalls += 1;
+      toolState.dataLoaded = false;
+      toolState.isLoading = true;
+      toolState.error = null;
+    },
+  };
+  const sceneState = {
+    scenes: [],
+    isLoading: false,
+    error: 'scene failed',
+    retry: () => { sceneRetryCalls += 1; },
+  };
+  const ToolDecisionList = () => null;
+  const controllerModule = await loadTypeScriptModule('src/components/tools/ToolsBrowseClient.tsx', {
+    react: {
+      useEffect: (effect) => effects.push(effect),
+      useMemo: (factory) => factory(),
+      useRef: (value) => {
+        const index = refIndex;
+        refIndex += 1;
+        refs[index] ||= { current: value };
+        return refs[index];
+      },
+      useState: (value) => [value, () => {}],
+    },
+    '@/hooks/useToolDirectoryQuery': {
+      useToolDirectoryQuery: () => ({
+        state: directoryState,
+        update: (patch) => patches.push(patch),
+        currentPath: '/tools?scene=research',
+      }),
+    },
+    '@/hooks/useSceneData': { useSceneData: () => sceneState },
+    '@/lib/tool-decision.mjs': { deriveAvailablePlatforms: () => [] },
+    '@/lib/tools-query-state.mjs': { selectDirectoryGroups: () => [] },
+    '@/stores/useToolStore': { useToolStore: () => toolState },
+    './FilterRail': { FilterRail: () => null },
+    './MobileFilterDrawer': { MobileFilterDrawer: () => null },
+    './TaskContextBar': { TaskContextBar: () => null },
+    './ToolDecisionList': { ToolDecisionList },
+    'react/jsx-runtime': {
+      jsx: (type, props) => ({ type, props }),
+      jsxs: (type, props) => ({ type, props }),
+    },
+  });
+  const renderController = () => {
+    effects = [];
+    refIndex = 0;
+    return controllerModule.ToolsBrowseClient();
+  };
+  const getList = (tree) => findElements(tree, (element) => element.type === ToolDecisionList)[0];
+
+  getList(renderController()).props.onRetry();
+
+  sceneState.error = null;
+  toolState.dataLoaded = false;
+  toolState.isLoading = false;
+  toolState.error = 'tools failed';
+  getList(renderController()).props.onRetry();
+
+  renderController();
+  effects.forEach((effect) => effect());
+
+  toolState.dataLoaded = true;
+  toolState.isLoading = false;
+  directoryState.searchTerm = 'no matches';
+  getList(renderController()).props.onClear();
+  assert.deepEqual({
+    sceneRetryCalls,
+    toolRetryCalls,
+    loadDataCalls,
+    emptyPatch: patches.at(-1),
+  }, {
+    sceneRetryCalls: 1,
+    toolRetryCalls: 1,
+    loadDataCalls: 0,
+    emptyPatch: {
+      searchTerm: '',
+      categoryId: null,
+      price: null,
+      origins: [],
+      platforms: [],
+    },
+  });
+});
+
 test('rapid directory patches compose against the latest intended query state', async () => {
   const queryState = await import(new URL('../src/lib/tools-query-state.mjs', import.meta.url));
   const replaceCalls = [];
