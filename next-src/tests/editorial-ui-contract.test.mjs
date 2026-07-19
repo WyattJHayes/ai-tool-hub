@@ -30,6 +30,20 @@ test('ships a light default viewport and quiet directory navigation', () => {
   assert.doesNotMatch(layout, /发现最佳/);
 });
 
+test('ships the public-security filing icon referenced by the footer as a valid PNG', () => {
+  const iconPath = new URL('../public/beian-icon.png', import.meta.url);
+
+  assert.equal(existsSync(iconPath), true, 'footer filing icon must exist in public assets');
+
+  const icon = readFileSync(iconPath);
+  assert.ok(icon.length > 0, 'footer filing icon must not be empty');
+  assert.deepEqual(
+    icon.subarray(0, 8),
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    'footer filing icon must have a PNG signature',
+  );
+});
+
 test('loads local Geist without changing the neutral token system', () => {
   const layout = read('src/app/layout.tsx');
   const css = read('src/app/globals.css');
