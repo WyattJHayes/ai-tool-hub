@@ -64,3 +64,10 @@ test('all real tools produce nonempty tasks and capability summaries', async () 
     assert.ok(deriveCapabilitySummary(tool).length > 0, tool.name);
   }
 });
+
+test('alternatives prioritize shared explicit tasks then category fallback', async () => {
+  const { selectAlternativeTools } = await import(helperUrl);
+  const alternatives = selectAlternativeTools(byId.get(71), toolsData.tools, sceneData.scenes, 6);
+  assert.equal(alternatives.includes(byId.get(71)), false);
+  assert.ok(alternatives.some((tool) => sceneData.scenes.find((scene) => scene.id === 'research').toolIds.includes(tool.id)));
+});

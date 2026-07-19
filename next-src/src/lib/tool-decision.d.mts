@@ -40,3 +40,9 @@ export function createToolDecisionModel(
   selectedScene?: Scene | null,
   existingIndex?: Map<number, Scene[]> | null
 ): ToolDecisionModel;
+export function selectAlternativeTools(
+  tool: Tool,
+  tools: readonly Tool[],
+  scenes: readonly Scene[],
+  limit?: number
+): Tool[];

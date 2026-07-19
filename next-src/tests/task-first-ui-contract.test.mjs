@@ -559,3 +559,17 @@ test('legacy tool surfaces use canonical platform and accessible compare limits'
   assert.match(card, /limit-reached/);
   assert.match(card, /aria-live="polite"/);
 });
+
+test('detail route resolves async params outside the client and uses decision evidence', () => {
+  const page = read('src/app/tools/[slug]/page.tsx');
+  const client = read('src/components/tools/ToolDetailClient.tsx');
+  assert.match(page, /await params/);
+  assert.match(page, /await searchParams/);
+  assert.match(page, /<ToolDetailClient slug=\{slug\} from=\{from\}/);
+  assert.match(client, /ToolDecisionSummary/);
+  assert.match(client, /selectAlternativeTools/);
+  assert.match(client, /variant="compact"/);
+  assert.doesNotMatch(client, /<ToolCard/);
+  assert.match(client, /lg:sticky lg:top-\[/);
+  assert.match(client, /error.*retryLoadData/);
+});

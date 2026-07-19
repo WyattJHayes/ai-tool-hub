@@ -140,3 +140,16 @@ export function createToolDecisionModel(tool, scenes, categories, selectedScene 
     price: deriveToolPrice(tool),
   };
 }
+
+export function selectAlternativeTools(tool, tools, scenes, limit = 6) {
+  const matchingScenes = scenes.filter((scene) => scene.toolIds.includes(tool.id));
+  const explicitIds = new Set(matchingScenes.flatMap((scene) => scene.toolIds));
+  const categories = new Set(tool.categories || [tool.category]);
+  const explicit = tools.filter((candidate) => candidate.id !== tool.id && explicitIds.has(candidate.id));
+  const related = tools.filter((candidate) =>
+    candidate.id !== tool.id &&
+    !explicitIds.has(candidate.id) &&
+    (candidate.categories || [candidate.category]).some((id) => categories.has(id))
+  );
+  return [...explicit, ...related].slice(0, limit);
+}
