@@ -24,7 +24,7 @@
   --mobile-nav-block-size: 0px;
   --compare-tray-block-size: 0px;
   --max-width: 1280px;
-  --font: Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font: var(--font-geist), Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
 
 .dark {

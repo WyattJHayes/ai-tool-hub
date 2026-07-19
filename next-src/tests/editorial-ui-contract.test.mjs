@@ -30,6 +30,17 @@ test('ships a light default viewport and quiet directory navigation', () => {
   assert.doesNotMatch(layout, /发现最佳/);
 });
 
+test('loads local Geist without changing the neutral token system', () => {
+  const layout = read('src/app/layout.tsx');
+  const css = read('src/app/globals.css');
+
+  assert.match(layout, /localFont/);
+  assert.match(layout, /GeistVF\.woff/);
+  assert.match(layout, /className=\{geistSans\.variable\}/);
+  assert.match(css, /--font: var\(--font-geist\)/);
+  assert.match(css, /letter-spacing: 0/);
+});
+
 test('puts canonical task entry before deterministic weekly decision rows', () => {
   const home = read('src/app/page.tsx');
 
