@@ -3,6 +3,7 @@ import { deriveToolPrice } from '@/lib/tool-decision.mjs';
 
 let cachedData: ToolsData | null = null;
 let cachedScenes: SceneData | null = null;
+let scenesCacheGeneration = 0;
 
 export async function getToolsData(): Promise<ToolsData> {
   if (cachedData) return cachedData;
@@ -13,16 +14,18 @@ export async function getToolsData(): Promise<ToolsData> {
 
 export async function getScenesData(): Promise<SceneData> {
   if (cachedScenes) return cachedScenes;
+  const requestGeneration = scenesCacheGeneration;
   const res = await fetch('/data/scenes.json');
   if (!res.ok) throw new Error('Failed to load /data/scenes.json');
   const data = await res.json() as SceneData;
   if (!Array.isArray(data.scenes)) throw new Error('Invalid scene payload');
-  cachedScenes = data;
+  if (requestGeneration === scenesCacheGeneration) cachedScenes = data;
   return data;
 }
 
 export function clearScenesDataCache(): void {
   cachedScenes = null;
+  scenesCacheGeneration += 1;
 }
 
 export function getToolSlug(tool: Tool): string {
