@@ -14,8 +14,15 @@ export async function getToolsData(): Promise<ToolsData> {
 export async function getScenesData(): Promise<SceneData> {
   if (cachedScenes) return cachedScenes;
   const res = await fetch('/data/scenes.json');
-  cachedScenes = await res.json() as SceneData;
-  return cachedScenes;
+  if (!res.ok) throw new Error('Failed to load /data/scenes.json');
+  const data = await res.json() as SceneData;
+  if (!Array.isArray(data.scenes)) throw new Error('Invalid scene payload');
+  cachedScenes = data;
+  return data;
+}
+
+export function clearScenesDataCache(): void {
+  cachedScenes = null;
 }
 
 export function getToolSlug(tool: Tool): string {
