@@ -16,6 +16,17 @@ test('decision rows preserve the approved field and accessibility contract', () 
   assert.match(row, /additionalTaskCount/);
 });
 
+test('compact decision rows restore the six-field desktop grid', () => {
+  const row = read('src/components/tools/ToolDecisionRow.tsx');
+  assert.match(row, /: 'grid-cols-\[minmax\(0,1fr\)_44px\] rounded-md border md:grid-cols-\[44px_minmax\(120px,.9fr\)_minmax\(110px,.75fr\)_minmax\(180px,1.25fr\)_minmax\(88px,.6fr\)_44px\] md:rounded-none md:border-x-0 md:border-t-0 lg:grid-cols-\[44px_minmax\(150px,1fr\)_minmax\(130px,.85fr\)_minmax\(220px,1.35fr\)_minmax\(100px,.65fr\)_44px\]'/);
+  assert.match(row, /col-start-2 row-start-1 md:col-start-1 md:row-start-1/);
+  assert.match(row, /col-start-1 row-start-1 md:col-start-2 md:row-start-1/);
+  assert.match(row, /col-span-2 md:col-span-1 md:col-start-3 md:row-start-1/);
+  assert.match(row, /col-span-2 md:col-span-1 md:col-start-4 md:row-start-1/);
+  assert.match(row, /col-span-1 md:col-start-5 md:row-start-1/);
+  assert.match(row, /col-start-2 md:col-start-6 md:row-start-1/);
+});
+
 test('the decision list owns loading, retry, empty, and live limit feedback', () => {
   const list = read('src/components/tools/ToolDecisionList.tsx');
   assert.match(list, /role="status"/);
