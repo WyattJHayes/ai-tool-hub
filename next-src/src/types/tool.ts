@@ -103,6 +103,22 @@ export interface ToolDecisionGroup {
 
 export type SortOption = 'default' | 'hot' | 'free-first' | 'domestic' | 'name-asc' | 'name-desc' | 'popular';
 
+export interface DirectoryQueryState {
+  sceneId: string | null;
+  searchTerm: string;
+  categoryId: string | null;
+  price: PriceFilterValue | null;
+  origins: OriginValue[];
+  platforms: PlatformValue[];
+  sort: SortOption;
+}
+
+export interface DirectoryQueryCatalog {
+  sceneIds: Set<string>;
+  categoryIds: Set<string>;
+  platforms: Set<PlatformValue>;
+}
+
 export interface FilterState {
   category: string;
   sort: SortOption;
