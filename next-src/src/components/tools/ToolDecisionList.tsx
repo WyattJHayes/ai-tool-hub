@@ -49,7 +49,7 @@ export function ToolDecisionList({
     <div>
       <p className="sr-only" aria-live="polite">{announcement}</p>
       {groups.map((group) => (
-        <section key={group.id} className="mb-8" aria-labelledby={`group-${group.id}`}>
+        <section key={group.id} className="mb-8" aria-labelledby={group.title ? `group-${group.id}` : undefined}>
           {group.title ? <h2 id={`group-${group.id}`} className="mb-3 text-sm font-semibold text-[var(--ink)]">{group.title} <span className="font-normal text-[var(--muted)]">{group.items.length}</span></h2> : null}
           {group.items.length ? <ul className="overflow-hidden border-y border-[var(--line)]">
             {group.items.map((model) => {

@@ -25,6 +25,12 @@ test('the decision list owns loading, retry, empty, and live limit feedback', ()
   assert.doesNotMatch(list, /ToolCard/);
 });
 
+test('untitled decision groups do not reference a missing heading', () => {
+  const list = read('src/components/tools/ToolDecisionList.tsx');
+  assert.doesNotMatch(list, /aria-labelledby=\{`group-\$\{group\.id\}`\}/);
+  assert.match(list, /aria-labelledby=\{group\.title \? `group-\$\{group\.id\}` : undefined\}/);
+});
+
 test('superseded components still exist until their route replacement tasks', () => {
   assert.equal(existsSync(new URL('../src/components/tools/ToolGrid.tsx', import.meta.url)), true);
 });
