@@ -573,3 +573,14 @@ test('detail route resolves async params outside the client and uses decision ev
   assert.match(client, /lg:sticky lg:top-\[/);
   assert.match(client, /error.*retryLoadData/);
 });
+
+test('zero-review evidence exposes a compact accessible rating disclosure', () => {
+  const evidence = read('src/components/tools/ToolEvidenceSections.tsx');
+  assert.match(evidence, /ratingData\.rating_count === 0/);
+  assert.match(evidence, /暂无评分/);
+  assert.match(evidence, /还没有用户评价/);
+  assert.match(evidence, /提交评价/);
+  assert.match(evidence, /<details/);
+  assert.match(evidence, /<summary className="[^"]*min-h-11/);
+  assert.match(evidence, /<RatingWidget/);
+});

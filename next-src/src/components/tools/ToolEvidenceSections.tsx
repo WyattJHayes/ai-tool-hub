@@ -76,9 +76,24 @@ export function ToolEvidenceSections({ model, currentRating, ratingData }: ToolE
 
       <section aria-labelledby="rating-title">
         <h2 id="rating-title" className="mb-1 text-lg font-semibold leading-6">评价</h2>
-        <div className="border-y border-[var(--line)] py-1 [&>div]:min-h-0 [&>div]:rounded-none [&>div]:border-0 [&>div]:bg-transparent [&>div]:p-0">
-          <RatingWidget toolId={tool.id} currentRating={currentRating} />
-        </div>
+        {ratingData.rating_count === 0 ? (
+          <details className="group border-y border-[var(--line)]">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2 [&::-webkit-details-marker]:hidden">
+              <span className="min-w-0">
+                <strong className="block text-sm">暂无评分</strong>
+                <span className="block text-xs text-[var(--muted)]">还没有用户评价</span>
+              </span>
+              <span className="inline-flex min-h-11 shrink-0 items-center rounded-md border border-[var(--line-strong)] px-4 text-sm font-medium group-open:bg-[var(--surface-subtle)]">提交评价</span>
+            </summary>
+            <div className="border-t border-[var(--line)] py-2 [&>div]:min-h-0 [&>div]:rounded-none [&>div]:border-0 [&>div]:bg-transparent [&>div]:p-0">
+              <RatingWidget toolId={tool.id} currentRating={currentRating} />
+            </div>
+          </details>
+        ) : (
+          <div className="border-y border-[var(--line)] py-1 [&>div]:min-h-0 [&>div]:rounded-none [&>div]:border-0 [&>div]:bg-transparent [&>div]:p-0">
+            <RatingWidget toolId={tool.id} currentRating={currentRating} />
+          </div>
+        )}
       </section>
 
       {ratingData.rating_count > 0 ? (

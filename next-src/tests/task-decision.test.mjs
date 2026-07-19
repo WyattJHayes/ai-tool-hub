@@ -56,6 +56,16 @@ test('derives platform, origin, and price predicates from canonical fields', asy
   assert.deepEqual(deriveToolPrice({ pricing: [{ price: -1 }, { price: 10 }] }).filters, []);
 });
 
+test('price summaries distinguish fully free, mixed free tiers, and paid-only plans', async () => {
+  const { deriveToolPrice } = await import(helperUrl);
+  assert.equal(deriveToolPrice({ pricing: [{ plan: 'Free', price: 0 }] }).summary, '免费');
+  assert.equal(
+    deriveToolPrice({ pricing: [{ plan: 'Free', price: 0 }, { plan: 'Pro', price: 20, highlight: true }] }).summary,
+    '有免费额度'
+  );
+  assert.equal(deriveToolPrice({ pricing: [{ plan: 'Basic', price: 10, highlight: true }] }).summary, 'Basic $10');
+});
+
 test('all real tools produce nonempty tasks and capability summaries', async () => {
   const { buildSceneToolIndex, deriveCapabilitySummary, deriveToolTasks } = await import(helperUrl);
   const index = buildSceneToolIndex(sceneData.scenes);
@@ -65,9 +75,23 @@ test('all real tools produce nonempty tasks and capability summaries', async () 
   }
 });
 
-test('alternatives prioritize shared explicit tasks then category fallback', async () => {
+test('alternatives preserve explicit and category fallback order with stable limits', async () => {
   const { selectAlternativeTools } = await import(helperUrl);
-  const alternatives = selectAlternativeTools(byId.get(71), toolsData.tools, sceneData.scenes, 6);
-  assert.equal(alternatives.includes(byId.get(71)), false);
-  assert.ok(alternatives.some((tool) => sceneData.scenes.find((scene) => scene.id === 'research').toolIds.includes(tool.id)));
+  const current = { id: 1, category: 'search', categories: [] };
+  const tools = [
+    { id: 4, category: 'search', categories: [] },
+    { id: 3, category: 'writing', categories: ['writing'] },
+    { id: 6, category: 'video', categories: ['video'] },
+    { id: 2, category: 'code', categories: ['code'] },
+    { id: 5, category: 'search', categories: ['search'] },
+    current,
+  ];
+  const scenes = [
+    { id: 'research', toolIds: [1, 2] },
+    { id: 'citations', toolIds: [1, 3] },
+  ];
+
+  assert.deepEqual(selectAlternativeTools(current, tools, scenes).map((tool) => tool.id), [3, 2, 4, 5]);
+  assert.deepEqual(selectAlternativeTools(current, tools, scenes, 3).map((tool) => tool.id), [3, 2, 4]);
+  assert.equal(selectAlternativeTools(current, tools, scenes).some((tool) => tool.id === current.id), false);
 });

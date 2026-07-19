@@ -105,11 +105,12 @@ export function deriveToolPrice(tool) {
   if (free) filters.push('free-tier');
   if (fullyFree) filters.push('fully-free');
   if (paidOnly) filters.push('paid-only');
-  const freePlan = plans.find((plan) => plan.price === 0);
   const highlighted = plans.find((plan) => plan.highlight);
-  const summary = freePlan
+  const summary = fullyFree
     ? '免费'
-    : highlighted
+    : free
+      ? '有免费额度'
+      : highlighted
       ? `${highlighted.plan} ${highlighted.price > 0 ? `$${highlighted.price}` : ''}`.trim()
       : plans[0]?.plan || null;
   return { summary, valueTag: tool.valueTag || null, filters };
@@ -144,12 +145,13 @@ export function createToolDecisionModel(tool, scenes, categories, selectedScene 
 export function selectAlternativeTools(tool, tools, scenes, limit = 6) {
   const matchingScenes = scenes.filter((scene) => scene.toolIds.includes(tool.id));
   const explicitIds = new Set(matchingScenes.flatMap((scene) => scene.toolIds));
-  const categories = new Set(tool.categories || [tool.category]);
+  const categoryIds = (candidate) => candidate.categories?.length ? candidate.categories : [candidate.category];
+  const categories = new Set(categoryIds(tool));
   const explicit = tools.filter((candidate) => candidate.id !== tool.id && explicitIds.has(candidate.id));
   const related = tools.filter((candidate) =>
     candidate.id !== tool.id &&
     !explicitIds.has(candidate.id) &&
-    (candidate.categories || [candidate.category]).some((id) => categories.has(id))
+    categoryIds(candidate).some((id) => categories.has(id))
   );
   return [...explicit, ...related].slice(0, limit);
 }
