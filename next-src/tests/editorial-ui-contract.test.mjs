@@ -30,14 +30,17 @@ test('ships a light default viewport and quiet directory navigation', () => {
   assert.doesNotMatch(layout, /发现最佳/);
 });
 
-test('puts task search and real curated tools ahead of scene browsing', () => {
+test('puts canonical task entry before deterministic weekly decision rows', () => {
   const home = read('src/app/page.tsx');
 
   assert.match(home, /按任务找到合适的 AI 工具/);
-  assert.match(home, /本周值得试/);
-  assert.match(home, /<ToolCard key=\{tool\.id\} tool=\{tool\}/);
-  assert.match(home, /按任务浏览/);
-  assert.doesNotMatch(home, /数据概览|totalCategories|favorites/);
+  assert.match(home, /<TaskEntryList scenes=\{scenes\}/);
+  assert.match(home, /id: 'weekly'/);
+  assert.match(home, /<ToolDecisionList/);
+  assert.doesNotMatch(home, /const scenes: Scene\[\]/);
+  assert.doesNotMatch(home, /<ToolCard/);
+  assert.doesNotMatch(home, /数据概览/);
+  assert.ok(home.indexOf('<TaskEntryList') < home.indexOf('本周值得试'));
 });
 
 test('uses flat comparison-oriented tool cards and tab-like filters', () => {
@@ -53,8 +56,8 @@ test('uses flat comparison-oriented tool cards and tab-like filters', () => {
   assert.doesNotMatch(categories, /rounded-full|bg-gradient|shadow-\[/);
   assert.match(categories, /border-b-2/);
   assert.doesNotMatch(search, /backdrop-blur|rounded-2xl|shadow-\[0_0/);
-  assert.match(search, /usePathname/);
-  assert.match(search, /router\.push\('\/tools'\)/);
+  assert.doesNotMatch(search, /usePathname/);
+  assert.match(search, /params\.set\('q', term\)/);
 });
 
 test('keeps tool detail and scene routes in the same editorial system', () => {

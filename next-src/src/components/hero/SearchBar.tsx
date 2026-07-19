@@ -2,22 +2,18 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, Clock, Command, Search, X } from 'lucide-react';
-import { usePathname, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useToolStore } from '@/stores/useToolStore';
 import { ToolIcon } from '@/lib/icon-map';
 import { cn } from '@/lib/utils';
 import { getSearchSuggestions } from '@/lib/search-suggestions.mjs';
 
 export function SearchBar() {
-  const pathname = usePathname();
   const router = useRouter();
-  const storedSearchTerm = useToolStore((state) => state.searchTerm);
-  const [value, setValue] = useState(storedSearchTerm);
+  const [value, setValue] = useState('');
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
-  const setSearchTerm = useToolStore((state) => state.setSearchTerm);
   const addSearchHistory = useToolStore((state) => state.addSearchHistory);
   const searchHistory = useToolStore((state) => state.searchHistory);
   const tools = useToolStore((state) => state.tools);
@@ -27,25 +23,24 @@ export function SearchBar() {
     [tools, value]
   );
 
-  const openResultsPage = useCallback(() => {
-    if (pathname !== '/tools') router.push('/tools');
-  }, [pathname, router]);
+  const openResultsPage = useCallback((term: string) => {
+    const params = new URLSearchParams();
+    if (term) params.set('q', term);
+    router.push(`/tools${params.size ? `?${params.toString()}` : ''}`);
+  }, [router]);
 
   const handleChange = useCallback((nextValue: string) => {
     setValue(nextValue);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => setSearchTerm(nextValue), 300);
-  }, [setSearchTerm]);
+  }, []);
 
-  const handleSubmit = useCallback(() => {
-    const term = value.trim();
-    if (term) {
-      setSearchTerm(term);
-      addSearchHistory(term);
-      openResultsPage();
-    }
+  const submitTerm = useCallback((rawValue: string) => {
+    const term = rawValue.trim();
+    if (term) addSearchHistory(term);
+    openResultsPage(term);
     inputRef.current?.blur();
-  }, [value, setSearchTerm, addSearchHistory, openResultsPage]);
+  }, [addSearchHistory, openResultsPage]);
+
+  const handleSubmit = useCallback(() => submitTerm(value), [submitTerm, value]);
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
@@ -56,16 +51,11 @@ export function SearchBar() {
     };
 
     window.addEventListener('keydown', handleShortcut);
-    return () => {
-      window.removeEventListener('keydown', handleShortcut);
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
+    return () => window.removeEventListener('keydown', handleShortcut);
   }, []);
 
   const handleClear = () => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
     setValue('');
-    setSearchTerm('');
     inputRef.current?.focus();
   };
 
@@ -136,11 +126,7 @@ export function SearchBar() {
                   type="button"
                   key={term}
                   onMouseDown={() => {
-                    handleChange(term);
-                    setSearchTerm(term);
-                    addSearchHistory(term);
-                    openResultsPage();
-                    inputRef.current?.blur();
+                    submitTerm(term);
                   }}
                   className="flex min-h-12 w-full items-center justify-between px-4 text-left text-sm text-[var(--muted)] transition-colors hover:bg-[var(--surface-subtle)] hover:text-[var(--ink)]"
                   aria-label={`再次搜索 ${term}`}
@@ -159,11 +145,7 @@ export function SearchBar() {
               aria-selected="false"
               key={tool.id}
               onMouseDown={() => {
-                handleChange(tool.name);
-                setSearchTerm(tool.name);
-                addSearchHistory(tool.name);
-                openResultsPage();
-                inputRef.current?.blur();
+                submitTerm(tool.name);
               }}
               className="flex min-h-[60px] w-full items-center gap-3 border-b border-[var(--line)] px-4 text-left last:border-b-0 hover:bg-[var(--surface-subtle)]"
               aria-label={`搜索 ${tool.name}`}

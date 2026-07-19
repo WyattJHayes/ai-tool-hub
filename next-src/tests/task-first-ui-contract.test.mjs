@@ -34,3 +34,10 @@ test('untitled decision groups do not reference a missing heading', () => {
 test('superseded components still exist until their route replacement tasks', () => {
   assert.equal(existsSync(new URL('../src/components/tools/ToolGrid.tsx', import.meta.url)), true);
 });
+
+test('homepage tasks use canonical scene ids and search preserves the query', () => {
+  const entries = read('src/components/home/TaskEntryList.tsx');
+  const search = read('src/components/hero/SearchBar.tsx');
+  assert.match(entries, /`\/tools\?scene=\$\{encodeURIComponent\(scene\.id\)\}`/);
+  assert.match(search, /params\.set\('q', term\)/);
+});
