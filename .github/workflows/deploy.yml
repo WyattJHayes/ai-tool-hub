@@ -46,6 +46,14 @@ jobs:
 
       - name: Verify Next.js application
         run: |
+          node --test \
+            next-src/tests/task-decision.test.mjs \
+            next-src/tests/tools-query-state.test.mjs \
+            next-src/tests/compare-selection.test.mjs \
+            next-src/tests/data-loading-contract.test.mjs \
+            next-src/tests/search-suggestions.test.mjs \
+            next-src/tests/editorial-ui-contract.test.mjs \
+            next-src/tests/task-first-ui-contract.test.mjs
           npm --prefix next-src run lint
           npm --prefix next-src run build
           npm --prefix next-src audit --omit=dev
@@ -83,6 +91,23 @@ jobs:
 
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
+
+      - name: Run Next.js task-first UI guard
+        run: |
+          npm --prefix next-src run start -- --hostname 127.0.0.1 --port 4181 > /tmp/ai-tool-hub-task-first.log 2>&1 &
+          next_pid=$!
+          trap 'kill "$next_pid"' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:4181/ >/dev/null; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              cat /tmp/ai-tool-hub-task-first.log
+              exit 1
+            fi
+            sleep 1
+          done
+          TASK_FIRST_UI_URL=http://127.0.0.1:4181 node scripts/task-first-ui-guard.mjs
 
       - name: Run browser layout guard
         run: |

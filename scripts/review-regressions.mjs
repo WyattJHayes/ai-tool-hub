@@ -185,6 +185,10 @@ for (const [pattern, message] of [
   [/node next-src\/tests\/api-regressions\.test\.mjs/, 'CI must run Next.js API regressions'],
   [/node \.next\/standalone\/server\.js/, 'CI must start the standalone Next.js server before API regressions'],
   [/TEST_BASE_URL=http:\/\/127\.0\.0\.1:/, 'CI must provide the Next.js API regression base URL'],
+  [
+    /TASK_FIRST_UI_URL=http:\/\/127\.0\.0\.1:4181 node scripts\/task-first-ui-guard\.mjs/,
+    'CI must run the task-first Next.js browser guard',
+  ],
   [/node --test tools\/resume-optimizer\/tests\/api-client-auth\.test\.cjs/, 'CI must run resume optimizer regressions'],
   [/node scripts\/review-regressions\.mjs/, 'CI must run deployment regressions'],
   [/git diff --check/, 'CI must reject whitespace errors'],
