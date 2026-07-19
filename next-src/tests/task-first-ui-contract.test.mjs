@@ -52,3 +52,23 @@ test('homepage tasks use canonical scene ids and search preserves the query', ()
   assert.match(entries, /`\/tools\?scene=\$\{encodeURIComponent\(scene\.id\)\}`/);
   assert.match(search, /params\.set\('q', term\)/);
 });
+
+test('directory controls are URL-driven and mobile filters use a dialog', () => {
+  const hook = read('src/hooks/useToolDirectoryQuery.ts');
+  const bar = read('src/components/tools/TaskContextBar.tsx');
+  const rail = read('src/components/tools/FilterRail.tsx');
+  const drawer = read('src/components/tools/MobileFilterDrawer.tsx');
+  assert.match(hook, /useSearchParams/);
+  assert.match(hook, /router\.replace/);
+  assert.match(hook, /serializeDirectoryQuery/);
+  assert.match(hook, /currentPath/);
+  assert.match(bar, /categoryId/);
+  assert.match(bar, /sceneId/);
+  assert.match(drawer, /<dialog/);
+  assert.match(drawer, /showModal\(\)/);
+  assert.match(rail, /radioGroupName="price-desktop"/);
+  assert.match(drawer, /radioGroupName="price-mobile"/);
+  assert.match(bar, /data-directory-controls/);
+  assert.match(bar, /grid-cols-\[minmax\(0,1fr\)_minmax\(0,1fr\)_minmax\(0,1fr\)\]/);
+  assert.match(bar, /max-w-full/);
+});

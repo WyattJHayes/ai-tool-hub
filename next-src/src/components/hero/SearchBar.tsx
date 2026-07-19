@@ -8,11 +8,18 @@ import { ToolIcon } from '@/lib/icon-map';
 import { cn } from '@/lib/utils';
 import { getSearchSuggestions } from '@/lib/search-suggestions.mjs';
 
-export function SearchBar() {
+interface SearchBarProps {
+  value?: string;
+  onValueChange?: (value: string) => void;
+  onSubmit?: (value: string) => void;
+}
+
+export function SearchBar({ value: controlledValue, onValueChange, onSubmit }: SearchBarProps = {}) {
   const router = useRouter();
-  const [value, setValue] = useState('');
+  const [value, setValue] = useState(controlledValue || '');
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   const addSearchHistory = useToolStore((state) => state.addSearchHistory);
   const searchHistory = useToolStore((state) => state.searchHistory);
@@ -29,16 +36,27 @@ export function SearchBar() {
     router.push(`/tools${params.size ? `?${params.toString()}` : ''}`);
   }, [router]);
 
+  useEffect(() => {
+    // The local draft must reconcile when URL-driven controlled state changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (controlledValue !== undefined) setValue(controlledValue);
+  }, [controlledValue]);
+
   const handleChange = useCallback((nextValue: string) => {
     setValue(nextValue);
-  }, []);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => onValueChange?.(nextValue), 300);
+  }, [onValueChange]);
 
   const submitTerm = useCallback((rawValue: string) => {
     const term = rawValue.trim();
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    setValue(term);
     if (term) addSearchHistory(term);
-    openResultsPage(term);
+    if (onSubmit) onSubmit(term);
+    else openResultsPage(term);
     inputRef.current?.blur();
-  }, [addSearchHistory, openResultsPage]);
+  }, [addSearchHistory, onSubmit, openResultsPage]);
 
   const handleSubmit = useCallback(() => submitTerm(value), [submitTerm, value]);
 
@@ -51,11 +69,16 @@ export function SearchBar() {
     };
 
     window.addEventListener('keydown', handleShortcut);
-    return () => window.removeEventListener('keydown', handleShortcut);
+    return () => {
+      window.removeEventListener('keydown', handleShortcut);
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
   }, []);
 
   const handleClear = () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
     setValue('');
+    onValueChange?.('');
     inputRef.current?.focus();
   };
 
