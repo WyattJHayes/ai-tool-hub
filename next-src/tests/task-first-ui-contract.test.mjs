@@ -4,6 +4,26 @@ import { existsSync, readFileSync } from 'node:fs';
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
+async function loadTypeScriptModule(path, mocks) {
+  const ts = await import('typescript');
+  const { outputText } = ts.transpileModule(read(path), {
+    compilerOptions: {
+      esModuleInterop: true,
+      jsx: ts.JsxEmit.ReactJSX,
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+    },
+  });
+  const loadedModule = { exports: {} };
+  const requireMock = (id) => {
+    if (Object.hasOwn(mocks, id)) return mocks[id];
+    throw new Error(`Unexpected test module import: ${id}`);
+  };
+  const execute = new Function('require', 'module', 'exports', outputText);
+  execute(requireMock, loadedModule, loadedModule.exports);
+  return loadedModule.exports;
+}
+
 test('decision rows preserve the approved field and accessibility contract', () => {
   const row = read('src/components/tools/ToolDecisionRow.tsx');
   assert.match(row, /data-field="tool"/);
@@ -71,4 +91,109 @@ test('directory controls are URL-driven and mobile filters use a dialog', () => 
   assert.match(bar, /data-directory-controls/);
   assert.match(bar, /grid-cols-\[minmax\(0,1fr\)_minmax\(0,1fr\)_minmax\(0,1fr\)\]/);
   assert.match(bar, /max-w-full/);
+});
+
+test('rapid directory patches compose against the latest intended query state', async () => {
+  const queryState = await import(new URL('../src/lib/tools-query-state.mjs', import.meta.url));
+  const replaceCalls = [];
+  const refs = [];
+  let refIndex = 0;
+  const hookModule = await loadTypeScriptModule('src/hooks/useToolDirectoryQuery.ts', {
+    react: {
+      useCallback: (callback) => callback,
+      useEffect: (effect) => effect(),
+      useMemo: (factory) => factory(),
+      useRef: (value) => {
+        const index = refIndex;
+        refIndex += 1;
+        refs[index] ||= { current: value };
+        return refs[index];
+      },
+    },
+    'next/navigation': {
+      usePathname: () => '/tools',
+      useRouter: () => ({ replace: (...args) => replaceCalls.push(args) }),
+      useSearchParams: () => new URLSearchParams(),
+    },
+    '@/lib/tools-query-state.mjs': queryState,
+  });
+  const renderHook = () => {
+    refIndex = 0;
+    return hookModule.useToolDirectoryQuery({ sceneIds: new Set(), categoryIds: new Set(), platforms: new Set() });
+  };
+  let { update } = renderHook();
+
+  update({ price: 'free-tier' });
+  ({ update } = renderHook());
+  update({ searchTerm: 'claude' });
+
+  assert.equal(replaceCalls.length, 2);
+  assert.equal(replaceCalls[1][0], '/tools?q=claude&price=free-tier');
+});
+
+test('mobile filter dialog closes when the desktop breakpoint activates', async () => {
+  let changeListener;
+  let removedListener;
+  const mediaQuery = {
+    matches: false,
+    addEventListener: (type, listener) => {
+      assert.equal(type, 'change');
+      changeListener = listener;
+    },
+    removeEventListener: (type, listener) => {
+      assert.equal(type, 'change');
+      removedListener = listener;
+    },
+  };
+  const dialog = {
+    open: true,
+    closeCalls: 0,
+    close() {
+      this.closeCalls += 1;
+      this.open = false;
+    },
+    showModal() {
+      this.open = true;
+    },
+  };
+  const cleanups = [];
+  const originalWindow = globalThis.window;
+  globalThis.window = { matchMedia: () => mediaQuery };
+  try {
+    const drawerModule = await loadTypeScriptModule('src/components/tools/MobileFilterDrawer.tsx', {
+      react: {
+        useEffect: (effect) => cleanups.push(effect()),
+        useRef: () => ({ current: dialog }),
+      },
+      'lucide-react': { X: () => null },
+      './FilterFields': { FilterFields: () => null },
+      'react/jsx-runtime': {
+        jsx: (type, props) => ({ type, props }),
+        jsxs: (type, props) => ({ type, props }),
+      },
+    });
+    drawerModule.MobileFilterDrawer({
+      open: true,
+      onClose: () => {},
+      categories: [],
+      state: { sceneId: null, categoryId: null, price: null, origins: [], platforms: [] },
+      platformOptions: [],
+      onPatch: () => {},
+      onClear: () => {},
+    });
+
+    assert.equal(typeof changeListener, 'function');
+    changeListener({ matches: true });
+    assert.equal(dialog.closeCalls, 1);
+    cleanups.forEach((cleanup) => cleanup?.());
+    assert.equal(removedListener, changeListener);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test('mobile filter dialog is named by its heading', () => {
+  const drawer = read('src/components/tools/MobileFilterDrawer.tsx');
+  assert.match(drawer, /<dialog[^>]+aria-labelledby="mobile-filter-title"/);
+  assert.match(drawer, /<h2 id="mobile-filter-title"/);
 });
