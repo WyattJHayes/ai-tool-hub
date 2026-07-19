@@ -23,17 +23,29 @@ export function useToolDirectoryQuery(catalog: DirectoryQueryCatalog) {
   useEffect(() => {
     pathnameRef.current = pathname;
     routerRef.current = router;
-    committedPathRef.current = currentPath;
-    if (!pendingPathRef.current || pendingPathRef.current === currentPath) {
+    const pendingPath = pendingPathRef.current;
+    if (!pendingPath || pendingPath === currentPath) {
+      committedPathRef.current = currentPath;
       latestStateRef.current = state;
       pendingPathRef.current = null;
       pendingPatchesRef.current = [];
-    } else {
-      latestStateRef.current = pendingPatchesRef.current.reduce<DirectoryQueryState>(
+      return;
+    }
+    if (committedPathRef.current === currentPath) {
+      const reconciledState = pendingPatchesRef.current.reduce<DirectoryQueryState>(
         (current, pendingPatch) => patchDirectoryQuery(current, pendingPatch) as DirectoryQueryState,
         state
       );
+      latestStateRef.current = reconciledState;
+      const query = serializeDirectoryQuery(reconciledState);
+      const correctedPath = `${pathname}${query ? `?${query}` : ''}`;
+      if (correctedPath !== pendingPath) {
+        pendingPathRef.current = correctedPath;
+        router.replace(correctedPath, { scroll: false });
+      }
+      return;
     }
+    router.replace(pendingPath, { scroll: false });
   }, [currentPath, pathname, router, state]);
   const update = useCallback((patch: DirectoryQueryPatch) => {
     const resolvedPatch = typeof patch === 'function' ? patch(latestStateRef.current) : patch;

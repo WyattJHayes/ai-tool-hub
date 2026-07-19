@@ -193,8 +193,64 @@ test('catalog hydration merges newly valid URL state with a pending patch', asyn
   const hydrated = renderHook({ sceneIds: new Set(['research']), categoryIds: new Set(), platforms: new Set() });
   hydrated.update({ searchTerm: 'claude' });
 
-  assert.equal(replaceCalls.length, 2);
-  assert.equal(replaceCalls[1][0], '/tools?scene=research&q=claude&price=free-tier');
+  assert.equal(replaceCalls.length, 3);
+  assert.equal(replaceCalls[2][0], '/tools?scene=research&q=claude&price=free-tier');
+});
+
+test('catalog hydration corrects a pending target without another user action', async () => {
+  const queryState = await import(new URL('../src/lib/tools-query-state.mjs', import.meta.url));
+  const replaceCalls = [];
+  const refs = [];
+  let refIndex = 0;
+  let searchParams = new URLSearchParams('scene=research');
+  const hookModule = await loadTypeScriptModule('src/hooks/useToolDirectoryQuery.ts', {
+    react: {
+      useCallback: (callback) => callback,
+      useEffect: (effect) => effect(),
+      useMemo: (factory) => factory(),
+      useRef: (value) => {
+        const index = refIndex;
+        refIndex += 1;
+        refs[index] ||= { current: value };
+        return refs[index];
+      },
+    },
+    'next/navigation': {
+      usePathname: () => '/tools',
+      useRouter: () => ({ replace: (...args) => replaceCalls.push(args) }),
+      useSearchParams: () => searchParams,
+    },
+    '@/lib/tools-query-state.mjs': queryState,
+  });
+  const emptyCatalog = { sceneIds: new Set(), categoryIds: new Set(), platforms: new Set() };
+  const hydratedCatalog = { sceneIds: new Set(['research']), categoryIds: new Set(), platforms: new Set() };
+  const renderHook = (catalog) => {
+    refIndex = 0;
+    return hookModule.useToolDirectoryQuery(catalog);
+  };
+
+  const pending = renderHook(emptyCatalog);
+  pending.update({ price: 'free-tier' });
+  renderHook(hydratedCatalog);
+
+  assert.deepEqual(replaceCalls.map(([path]) => path), [
+    '/tools?price=free-tier',
+    '/tools?scene=research&price=free-tier',
+  ]);
+
+  searchParams = new URLSearchParams('price=free-tier');
+  renderHook(hydratedCatalog);
+  assert.equal(replaceCalls.at(-1)[0], '/tools?scene=research&price=free-tier');
+
+  searchParams = new URLSearchParams('scene=research&price=free-tier');
+  const committed = renderHook(hydratedCatalog);
+  const callsAtCommit = replaceCalls.length;
+  const stable = renderHook(hydratedCatalog);
+
+  assert.equal(committed.state.sceneId, 'research');
+  assert.equal(committed.state.price, 'free-tier');
+  assert.equal(stable.state.sceneId, 'research');
+  assert.equal(replaceCalls.length, callsAtCommit);
 });
 
 test('directory retry targets failed sources without a duplicate catalog load', async () => {
