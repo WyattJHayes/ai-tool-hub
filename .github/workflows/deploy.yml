@@ -94,20 +94,45 @@ jobs:
 
       - name: Run Next.js task-first UI guard
         run: |
-          npm --prefix next-src run start -- --hostname 127.0.0.1 --port 4181 > /tmp/ai-tool-hub-task-first.log 2>&1 &
+          set -euo pipefail
+          task_log=/tmp/ai-tool-hub-task-first.log
+          next_pid=''
+          cleanup() {
+            exit_status=$?
+            trap - EXIT INT TERM
+            if [ -n "$next_pid" ]; then
+              kill "$next_pid" 2>/dev/null || true
+              wait "$next_pid" 2>/dev/null || true
+            fi
+            rm -f "$task_log"
+            exit "$exit_status"
+          }
+          trap cleanup EXIT INT TERM
+          (
+            cd next-src
+            exec node node_modules/next/dist/bin/next start --hostname 127.0.0.1 --port 4181
+          ) > "$task_log" 2>&1 &
           next_pid=$!
-          trap 'kill "$next_pid"' EXIT
           for attempt in $(seq 1 30); do
+            if ! kill -0 "$next_pid" 2>/dev/null; then
+              cat "$task_log"
+              exit 1
+            fi
             if curl --fail --silent http://127.0.0.1:4181/ >/dev/null; then
               break
             fi
             if [ "$attempt" -eq 30 ]; then
-              cat /tmp/ai-tool-hub-task-first.log
+              cat "$task_log"
               exit 1
             fi
             sleep 1
           done
           TASK_FIRST_UI_URL=http://127.0.0.1:4181 node scripts/task-first-ui-guard.mjs
+          kill "$next_pid" 2>/dev/null || true
+          wait "$next_pid" 2>/dev/null || true
+          next_pid=''
+          rm -f "$task_log"
+          trap - EXIT INT TERM
 
       - name: Run browser layout guard
         run: |

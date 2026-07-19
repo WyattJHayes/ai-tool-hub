@@ -4,6 +4,59 @@ const baseUrl = process.env.TASK_FIRST_UI_URL || 'http://127.0.0.1:3101';
 const failures = [];
 const fail = (message) => failures.push(message);
 
+function isInducedResource500(message, expectedPaths) {
+  const resourceUrl = message.location().url;
+  return message.type() === 'error'
+    && /Failed to load resource: the server responded with a status of 500/.test(message.text())
+    && expectedPaths.some((path) => resourceUrl.endsWith(path));
+}
+
+function monitorPage(page, label, options = {}) {
+  const consoleIssues = [];
+  const pageErrors = [];
+  page.on('console', (message) => {
+    if (!['error', 'warning'].includes(message.type())) return;
+    if (options.allowConsoleIssue?.(message)) return;
+    consoleIssues.push(message.text());
+  });
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  return {
+    assertClean() {
+      if (consoleIssues.length) fail(`${label}: console issues: ${consoleIssues.slice(0, 5).join(' | ')}`);
+      if (pageErrors.length) fail(`${label}: page errors: ${pageErrors.slice(0, 5).join(' | ')}`);
+    },
+  };
+}
+
+async function withIsolatedPage(browser, contextOptions, label, run, diagnosticOptions = {}) {
+  const context = await browser.newContext(contextOptions);
+  let diagnostics;
+  try {
+    const page = await context.newPage();
+    diagnostics = monitorPage(page, label, diagnosticOptions);
+    return await run(page);
+  } finally {
+    diagnostics?.assertClean();
+    await context.close();
+  }
+}
+
+async function assertTargetSize(locator, label, useClosestLabel = false) {
+  const geometry = await locator.evaluate((element, closestLabel) => {
+    const target = closestLabel ? element.closest('label') : element;
+    if (!target) return null;
+    const rect = target.getBoundingClientRect();
+    return { width: Math.round(rect.width), height: Math.round(rect.height) };
+  }, useClosestLabel);
+  if (!geometry) {
+    fail(`${label}: interactive target is missing`);
+    return;
+  }
+  if (geometry.width < 44 || geometry.height < 44) {
+    fail(`${label}: interactive target is ${geometry.width}x${geometry.height}, expected at least 44x44`);
+  }
+}
+
 async function assertNoOverflow(page, label) {
   const layout = await page.evaluate(() => ({
     viewportWidth: innerWidth,
@@ -91,118 +144,130 @@ async function assertKeyboardAndTheme(page) {
 }
 
 async function assertCompareLimit(browser) {
-  const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
-  const page = await context.newPage();
-  await page.goto(`${baseUrl}/tools?scene=research`, { waitUntil: 'networkidle' });
-  const checks = page.locator('[data-tool-decision-row]').getByRole('checkbox');
-  for (let index = 0; index < 4; index += 1) await checks.nth(index).check();
-  await checks.nth(4).focus();
-  await page.keyboard.press('Space');
-  if (await checks.nth(4).isChecked()) fail('compare limit: fifth tool was selected');
-  const announcement = page.locator('[aria-live="polite"]').filter({ hasText: '最多比较 4 款工具' });
-  if (await announcement.count() === 0) fail('compare limit: aria-live explanation missing');
-  await context.close();
+  await withIsolatedPage(browser, { viewport: { width: 1280, height: 720 } }, 'compare limit', async (page) => {
+    await page.goto(`${baseUrl}/tools?scene=research`, { waitUntil: 'networkidle' });
+    const checks = page.locator('[data-tool-decision-row]').getByRole('checkbox');
+    for (let index = 0; index < 4; index += 1) await checks.nth(index).check();
+    await checks.nth(4).focus();
+    await page.keyboard.press('Space');
+    if (await checks.nth(4).isChecked()) fail('compare limit: fifth tool was selected');
+    const announcement = page.locator('[aria-live="polite"]').filter({ hasText: '最多比较 4 款工具' });
+    if (await announcement.count() === 0) fail('compare limit: aria-live explanation missing');
+  });
 }
 
 async function assertToolsRecovery(browser) {
-  const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
-  const page = await context.newPage();
   let failRequests = true;
   let apiRequests = 0;
   let staticRequests = 0;
-  await page.route('**/api/tools', (route) => {
-    apiRequests += 1;
-    return failRequests ? route.fulfill({ status: 500, contentType: 'application/json', body: '{}' }) : route.continue();
-  });
-  await page.route('**/data/tools.json', (route) => {
-    staticRequests += 1;
-    return failRequests ? route.fulfill({ status: 500, contentType: 'application/json', body: '{}' }) : route.continue();
-  });
-  await page.goto(`${baseUrl}/tools`, { waitUntil: 'networkidle' });
-  const alert = page.getByRole('alert').filter({ hasText: '工具数据暂时无法加载' });
-  if (await alert.count() !== 1) {
-    fail('data failure: retryable inline error missing');
-  }
-  const retry = page.getByRole('button', { name: '重新加载' });
-  if (await retry.count() === 0) fail('data failure: retry action missing');
-  failRequests = false;
-  await retry.click();
-  await page.locator('[data-tool-decision-row]').first().waitFor();
-  if (await alert.isVisible()) fail('data failure: alert remained after retry');
-  if (apiRequests < 2 || staticRequests < 1) fail(`data failure: retry did not exercise the failed loaders (api=${apiRequests}, static=${staticRequests})`);
-  await context.close();
+  await withIsolatedPage(
+    browser,
+    { viewport: { width: 1280, height: 720 } },
+    'tools recovery',
+    async (page) => {
+      await page.route('**/api/tools', (route) => {
+        apiRequests += 1;
+        return failRequests ? route.fulfill({ status: 500, contentType: 'application/json', body: '{}' }) : route.continue();
+      });
+      await page.route('**/data/tools.json', (route) => {
+        staticRequests += 1;
+        return failRequests ? route.fulfill({ status: 500, contentType: 'application/json', body: '{}' }) : route.continue();
+      });
+      await page.goto(`${baseUrl}/tools`, { waitUntil: 'networkidle' });
+      const alert = page.getByRole('alert').filter({ hasText: '工具数据暂时无法加载' });
+      if (await alert.count() !== 1) {
+        fail('data failure: retryable inline error missing');
+      }
+      const retry = page.getByRole('button', { name: '重新加载' });
+      if (await retry.count() === 0) fail('data failure: retry action missing');
+      failRequests = false;
+      await retry.click();
+      await page.locator('[data-tool-decision-row]').first().waitFor();
+      if (await alert.isVisible()) fail('data failure: alert remained after retry');
+      if (apiRequests < 2 || staticRequests < 1) fail(`data failure: retry did not exercise the failed loaders (api=${apiRequests}, static=${staticRequests})`);
+    },
+    {
+      allowConsoleIssue: (message) => failRequests
+        && isInducedResource500(message, ['/api/tools', '/data/tools.json']),
+    }
+  );
 }
 
 async function assertSceneRecovery(browser) {
-  const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
-  const page = await context.newPage();
   let failScene = true;
   let sceneRequests = 0;
-  await page.route('**/data/scenes.json', (route) => {
-    sceneRequests += 1;
-    return failScene ? route.fulfill({ status: 500, contentType: 'application/json', body: '{}' }) : route.continue();
-  });
-  await page.goto(`${baseUrl}/`, { waitUntil: 'networkidle' });
-  const alert = page.getByRole('alert').filter({ hasText: '任务数据暂时无法加载' });
-  if (await alert.count() !== 1) fail('scene failure: retryable inline error missing');
-  failScene = false;
-  await alert.getByRole('button', { name: '重新加载' }).click();
-  await page.getByRole('link', { name: /做调研/ }).waitFor();
-  if (await alert.isVisible()) fail('scene failure: alert remained after retry');
-  if (sceneRequests < 2) fail(`scene failure: retry did not issue a second scene request (${sceneRequests})`);
-  await context.close();
+  await withIsolatedPage(
+    browser,
+    { viewport: { width: 1280, height: 720 } },
+    'scene recovery',
+    async (page) => {
+      await page.route('**/data/scenes.json', (route) => {
+        sceneRequests += 1;
+        return failScene ? route.fulfill({ status: 500, contentType: 'application/json', body: '{}' }) : route.continue();
+      });
+      await page.goto(`${baseUrl}/`, { waitUntil: 'networkidle' });
+      const alert = page.getByRole('alert').filter({ hasText: '任务数据暂时无法加载' });
+      if (await alert.count() !== 1) fail('scene failure: retryable inline error missing');
+      failScene = false;
+      await alert.getByRole('button', { name: '重新加载' }).click();
+      await page.getByRole('link', { name: /做调研/ }).waitFor();
+      if (await alert.isVisible()) fail('scene failure: alert remained after retry');
+      if (sceneRequests < 2) fail(`scene failure: retry did not issue a second scene request (${sceneRequests})`);
+    },
+    {
+      allowConsoleIssue: (message) => failScene
+        && isInducedResource500(message, ['/data/scenes.json']),
+    }
+  );
 }
 
 async function assertUrlStateAndEmptyHistory(browser) {
-  const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
-  const page = await context.newPage();
-  const stateUrl = `${baseUrl}/tools?scene=research&q=${encodeURIComponent('引用')}&price=free-tier&origin=overseas&platform=web&sort=name-asc`;
-  await page.goto(stateUrl, { waitUntil: 'networkidle' });
-  const search = page.getByRole('combobox', { name: /搜索工具/ });
-  if (await search.inputValue() !== '引用') fail('URL state: search query was not restored');
-  if (await page.getByRole('combobox', { name: '选择任务' }).inputValue() !== 'research') fail('URL state: scene was not restored');
-  if (!await page.getByRole('radio', { name: '有免费额度' }).isChecked()) fail('URL state: price was not restored');
-  if (!await page.getByRole('checkbox', { name: '海外' }).isChecked()) fail('URL state: origin was not restored');
-  if (!await page.getByRole('checkbox', { name: '网页版' }).isChecked()) fail('URL state: platform was not restored');
-  if (await page.getByRole('combobox', { name: '工具排序' }).inputValue() !== 'name-asc') fail('URL state: sort was not restored');
-  await page.reload({ waitUntil: 'networkidle' });
-  if (await search.inputValue() !== '引用') fail('URL state: search query was lost after reload');
+  await withIsolatedPage(browser, { viewport: { width: 1280, height: 720 } }, 'URL state', async (page) => {
+    const stateUrl = `${baseUrl}/tools?scene=research&q=${encodeURIComponent('引用')}&price=free-tier&origin=overseas&platform=web&sort=name-asc`;
+    await page.goto(stateUrl, { waitUntil: 'networkidle' });
+    const search = page.getByRole('combobox', { name: /搜索工具/ });
+    if (await search.inputValue() !== '引用') fail('URL state: search query was not restored');
+    if (await page.getByRole('combobox', { name: '选择任务' }).inputValue() !== 'research') fail('URL state: scene was not restored');
+    if (!await page.getByRole('radio', { name: '有免费额度' }).isChecked()) fail('URL state: price was not restored');
+    if (!await page.getByRole('checkbox', { name: '海外' }).isChecked()) fail('URL state: origin was not restored');
+    if (!await page.getByRole('checkbox', { name: '网页版' }).isChecked()) fail('URL state: platform was not restored');
+    if (await page.getByRole('combobox', { name: '工具排序' }).inputValue() !== 'name-asc') fail('URL state: sort was not restored');
+    await page.reload({ waitUntil: 'networkidle' });
+    if (await search.inputValue() !== '引用') fail('URL state: search query was lost after reload');
 
-  const emptyUrl = `${baseUrl}/tools?scene=research&q=__no_such_tool__`;
-  await page.goto(emptyUrl, { waitUntil: 'networkidle' });
-  if (await page.getByText('没有符合这些条件的工具').count() !== 1) fail('empty state: expected message missing');
-  await page.goBack({ waitUntil: 'networkidle' });
-  if (await search.inputValue() !== '引用') fail('URL state: browser Back did not restore the search query');
-  await page.goForward({ waitUntil: 'networkidle' });
-  if (await page.getByText('没有符合这些条件的工具').count() !== 1) fail('URL state: browser Forward did not restore the empty result');
-  await context.close();
+    const emptyUrl = `${baseUrl}/tools?scene=research&q=__no_such_tool__`;
+    await page.goto(emptyUrl, { waitUntil: 'networkidle' });
+    if (await page.getByText('没有符合这些条件的工具').count() !== 1) fail('empty state: expected message missing');
+    await page.goBack({ waitUntil: 'networkidle' });
+    if (await search.inputValue() !== '引用') fail('URL state: browser Back did not restore the search query');
+    await page.goForward({ waitUntil: 'networkidle' });
+    if (await page.getByText('没有符合这些条件的工具').count() !== 1) fail('URL state: browser Forward did not restore the empty result');
+  });
 }
 
 async function assertDetailNotFound(browser) {
-  const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
-  const page = await context.newPage();
-  await page.goto(`${baseUrl}/tools/999999`, { waitUntil: 'networkidle' });
-  if (await page.getByRole('heading', { name: '工具未找到' }).count() !== 1) fail('detail: not-found state missing');
-  if (await page.getByRole('link', { name: '返回工具目录' }).count() !== 1) fail('detail: not-found return link missing');
-  await context.close();
+  await withIsolatedPage(browser, { viewport: { width: 1280, height: 720 } }, 'detail not found', async (page) => {
+    await page.goto(`${baseUrl}/tools/999999`, { waitUntil: 'networkidle' });
+    if (await page.getByRole('heading', { name: '工具未找到' }).count() !== 1) fail('detail: not-found state missing');
+    if (await page.getByRole('link', { name: '返回工具目录' }).count() !== 1) fail('detail: not-found return link missing');
+  });
 }
 
 async function assertRawReturnPath(browser) {
-  const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
-  const page = await context.newPage();
-  const rawPath = '/tools?scene=research&unknown=keep&price=bad';
-  await page.goto(`${baseUrl}${rawPath}`, { waitUntil: 'networkidle' });
-  await page.getByRole('link', { name: /查看 .* 详情/ }).first().click();
-  await page.waitForURL((url) => url.searchParams.get('from') === rawPath);
-  await page.getByRole('link', { name: '返回工具目录' }).click();
-  await page.waitForURL((url) => `${url.pathname}${url.search}` === rawPath);
-  await page.getByRole('combobox', { name: '选择任务' }).selectOption('coding');
-  await page.waitForURL((url) => url.pathname === '/tools' && url.searchParams.get('scene') === 'coding');
-  const canonical = new URL(page.url());
-  if (canonical.searchParams.has('unknown') || canonical.searchParams.has('price')) {
-    fail(`raw return path: control mutation did not canonicalize invalid values (${canonical.search})`);
-  }
-  await context.close();
+  await withIsolatedPage(browser, { viewport: { width: 1280, height: 720 } }, 'raw return path', async (page) => {
+    const rawPath = '/tools?scene=research&unknown=keep&price=bad';
+    await page.goto(`${baseUrl}${rawPath}`, { waitUntil: 'networkidle' });
+    await page.getByRole('link', { name: /查看 .* 详情/ }).first().click();
+    await page.waitForURL((url) => url.searchParams.get('from') === rawPath);
+    await page.getByRole('link', { name: '返回工具目录' }).click();
+    await page.waitForURL((url) => `${url.pathname}${url.search}` === rawPath);
+    await page.getByRole('combobox', { name: '选择任务' }).selectOption('coding');
+    await page.waitForURL((url) => url.pathname === '/tools' && url.searchParams.get('scene') === 'coding');
+    const canonical = new URL(page.url());
+    if (canonical.searchParams.has('unknown') || canonical.searchParams.has('price')) {
+      fail(`raw return path: control mutation did not canonicalize invalid values (${canonical.search})`);
+    }
+  });
 }
 
 function expectedSearchNames(tools, query) {
@@ -223,7 +288,12 @@ async function assertAllVisibleRowsMatch(page, tools, query, primaryName, label)
     await page.waitForFunction(({ expected, primary }) => {
       const rows = Array.from(document.querySelectorAll('[data-tool-decision-row]'));
       const names = rows.map((row) => row.querySelector('[data-field="tool"] strong')?.textContent?.trim() || '');
-      return names.length > 0 && names.includes(primary) && names.every((name) => expected.includes(name));
+      const actual = new Set(names);
+      return names.length > 0
+        && names.length === expected.length
+        && actual.size === expected.length
+        && names.includes(primary)
+        && expected.every((name) => actual.has(name));
     }, { expected: expectedNames, primary: primaryName });
   } catch {
     fail(`${label}: decision rows did not settle to semantic matches for ${query}`);
@@ -236,48 +306,55 @@ async function assertAllVisibleRowsMatch(page, tools, query, primaryName, label)
   }
   if (!names.includes(primaryName)) fail(`${label}: primary result ${primaryName} is missing`);
   const expected = new Set(expectedNames);
+  const actual = new Set(names);
+  if (names.length !== expectedNames.length || actual.size !== expected.size) {
+    fail(`${label}: rendered ${names.length} rows for ${expectedNames.length} expected semantic matches`);
+  }
+  expectedNames.forEach((name) => {
+    if (!actual.has(name)) fail(`${label}: expected semantic match is missing (${name})`);
+  });
   names.forEach((name, index) => {
     if (!expected.has(name)) fail(`${label}: row ${index + 1} is not a semantic match for ${query} (${name})`);
   });
 }
 
 async function assertSearchInteractions(browser) {
-  const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
-  const page = await context.newPage();
-  await page.goto(`${baseUrl}/`, { waitUntil: 'networkidle' });
-  const deployedTools = await page.evaluate(async () => {
-    const response = await fetch('/data/tools.json');
-    if (!response.ok) throw new Error(`catalog request failed with ${response.status}`);
-    const payload = await response.json();
-    return payload.tools;
+  await withIsolatedPage(browser, { viewport: { width: 1280, height: 720 } }, 'search interactions', async (page) => {
+    await page.goto(`${baseUrl}/`, { waitUntil: 'networkidle' });
+    const deployedTools = await page.evaluate(async () => {
+      const response = await fetch('/data/tools.json');
+      if (!response.ok) throw new Error(`catalog request failed with ${response.status}`);
+      const payload = await response.json();
+      return payload.tools;
+    });
+    const homeSearch = page.getByRole('combobox', { name: /搜索工具/ });
+    await homeSearch.fill('ChatGPT');
+    await homeSearch.press('Enter');
+    await page.waitForURL((url) => url.pathname === '/tools' && url.searchParams.get('q') === 'ChatGPT');
+    await assertAllVisibleRowsMatch(page, deployedTools, 'ChatGPT', 'ChatGPT', 'homepage submit');
+    await page.getByRole('link', { name: 'AI Tool Hub', exact: true }).click();
+    await page.waitForURL((url) => url.pathname === '/');
+    await homeSearch.focus();
+    await page.getByRole('button', { name: '再次搜索 ChatGPT' }).click();
+    await page.waitForURL((url) => url.pathname === '/tools' && url.searchParams.get('q') === 'ChatGPT');
+    await assertAllVisibleRowsMatch(page, deployedTools, 'ChatGPT', 'ChatGPT', 'homepage history');
+    await page.getByRole('link', { name: 'AI Tool Hub', exact: true }).click();
+    await page.waitForURL((url) => url.pathname === '/');
+    await page.waitForLoadState('networkidle');
+    await homeSearch.fill('Perplexity');
+    await page.getByRole('option', { name: '搜索 Perplexity AI' }).click();
+    await page.waitForURL((url) => url.pathname === '/tools' && url.searchParams.get('q') === 'Perplexity AI');
+    await assertAllVisibleRowsMatch(page, deployedTools, 'Perplexity AI', 'Perplexity AI', 'homepage suggestion');
+    const directorySearch = page.getByRole('combobox', { name: /搜索工具/ });
+    await directorySearch.fill('ChatGPT');
+    await page.waitForURL((url) => url.pathname === '/tools' && url.searchParams.get('q') === 'ChatGPT');
+    await assertAllVisibleRowsMatch(page, deployedTools, 'ChatGPT', 'ChatGPT', 'directory typing');
+    const typedCount = await page.locator('[data-tool-decision-row]').count();
+    await page.getByRole('button', { name: '清除搜索' }).click();
+    await page.waitForURL((url) => url.pathname === '/tools' && !url.searchParams.has('q'));
+    await page.waitForFunction((previousCount) => document.querySelectorAll('[data-tool-decision-row]').length > previousCount, typedCount);
+    if (await page.locator('[data-tool-decision-row]').count() <= typedCount) fail('directory clear: results did not expand after clearing the query');
   });
-  const homeSearch = page.getByRole('combobox', { name: /搜索工具/ });
-  await homeSearch.fill('ChatGPT');
-  await homeSearch.press('Enter');
-  await page.waitForURL((url) => url.pathname === '/tools' && url.searchParams.get('q') === 'ChatGPT');
-  await assertAllVisibleRowsMatch(page, deployedTools, 'ChatGPT', 'ChatGPT', 'homepage submit');
-  await page.getByRole('link', { name: 'AI Tool Hub', exact: true }).click();
-  await page.waitForURL((url) => url.pathname === '/');
-  await homeSearch.focus();
-  await page.getByRole('button', { name: '再次搜索 ChatGPT' }).click();
-  await page.waitForURL((url) => url.pathname === '/tools' && url.searchParams.get('q') === 'ChatGPT');
-  await assertAllVisibleRowsMatch(page, deployedTools, 'ChatGPT', 'ChatGPT', 'homepage history');
-  await page.getByRole('link', { name: 'AI Tool Hub', exact: true }).click();
-  await page.waitForURL((url) => url.pathname === '/');
-  await page.waitForLoadState('networkidle');
-  await homeSearch.fill('Perplexity');
-  await page.getByRole('option', { name: '搜索 Perplexity AI' }).click();
-  await page.waitForURL((url) => url.pathname === '/tools' && url.searchParams.get('q') === 'Perplexity AI');
-  await assertAllVisibleRowsMatch(page, deployedTools, 'Perplexity AI', 'Perplexity AI', 'homepage suggestion');
-  const directorySearch = page.getByRole('combobox', { name: /搜索工具/ });
-  await directorySearch.fill('ChatGPT');
-  await page.waitForURL((url) => url.pathname === '/tools' && url.searchParams.get('q') === 'ChatGPT');
-  await assertAllVisibleRowsMatch(page, deployedTools, 'ChatGPT', 'ChatGPT', 'directory typing');
-  const typedCount = await page.locator('[data-tool-decision-row]').count();
-  await page.getByRole('button', { name: '清除搜索' }).click();
-  await page.waitForURL((url) => url.pathname === '/tools' && !url.searchParams.has('q'));
-  if (await page.locator('[data-tool-decision-row]').count() <= typedCount) fail('directory clear: results did not expand after clearing the query');
-  await context.close();
 }
 
 async function assertResponsiveGeometry(browser) {
@@ -289,100 +366,114 @@ async function assertResponsiveGeometry(browser) {
   ];
   for (const viewport of viewports) {
     // Isolate storage and selected tools so every viewport repeats the same workflow.
-    const context = await browser.newContext({ viewport });
-    const page = await context.newPage();
-    await page.goto(`${baseUrl}/tools?scene=research`, { waitUntil: 'networkidle' });
-    await assertNoOverflow(page, `${viewport.width}x${viewport.height}`);
-    if (viewport.width === 320) await assertControlRowGeometry(page, '320px directory controls');
-    const rows = page.locator('[data-tool-decision-row]');
-    await rows.nth(0).getByRole('checkbox').check();
-    await rows.nth(1).getByRole('checkbox').check();
-    if (await page.locator('[data-compare-tray]').count() !== 1) fail(`${viewport.width}x${viewport.height}: compare tray missing`);
-    await page.waitForFunction(() => {
-      const rootStyle = getComputedStyle(document.documentElement);
-      const traySize = Number.parseFloat(rootStyle.getPropertyValue('--compare-tray-block-size'));
-      const nav = document.querySelector('nav[aria-label="移动端导航"]');
-      const visibleNav = nav && getComputedStyle(nav).display !== 'none' && nav.getBoundingClientRect().height > 0;
-      const navSize = Number.parseFloat(rootStyle.getPropertyValue('--mobile-nav-block-size'));
-      return traySize > 0 && (!visibleNav || navSize > 0);
+    const viewportLabel = `${viewport.width}x${viewport.height}`;
+    await withIsolatedPage(browser, { viewport }, viewportLabel, async (page) => {
+      await page.goto(`${baseUrl}/tools?scene=research`, { waitUntil: 'networkidle' });
+      await assertNoOverflow(page, viewportLabel);
+      if (viewport.width === 320) await assertControlRowGeometry(page, '320px directory controls');
+      const rows = page.locator('[data-tool-decision-row]');
+      const firstCheckbox = rows.nth(0).getByRole('checkbox');
+      await assertTargetSize(firstCheckbox, `${viewportLabel} compare target`, true);
+      await assertTargetSize(rows.nth(0).getByRole('link', { name: /查看 .* 详情/ }), `${viewportLabel} detail target`);
+      await firstCheckbox.check();
+      await rows.nth(1).getByRole('checkbox').check();
+      const tray = page.locator('[data-compare-tray]');
+      if (await tray.count() !== 1) fail(`${viewportLabel}: compare tray missing`);
+      await page.waitForFunction(() => {
+        const rootStyle = getComputedStyle(document.documentElement);
+        const traySize = Number.parseFloat(rootStyle.getPropertyValue('--compare-tray-block-size'));
+        const nav = document.querySelector('nav[aria-label="移动端导航"]');
+        const visibleNav = nav && getComputedStyle(nav).display !== 'none' && nav.getBoundingClientRect().height > 0;
+        const navSize = Number.parseFloat(rootStyle.getPropertyValue('--mobile-nav-block-size'));
+        return traySize > 0 && (!visibleNav || navSize > 0);
+      });
+      await assertTargetSize(tray.getByRole('button', { name: /比较 2 款/ }), `${viewportLabel} tray compare action`);
+      const clearance = await page.evaluate(() => {
+        const rootStyle = getComputedStyle(document.documentElement);
+        const trayElement = document.querySelector('[data-compare-tray]');
+        const spacer = trayElement?.previousElementSibling?.getBoundingClientRect();
+        return {
+          required: Number.parseFloat(rootStyle.getPropertyValue('--compare-tray-block-size'))
+            + Number.parseFloat(rootStyle.getPropertyValue('--mobile-nav-block-size')),
+          spacerHeight: spacer?.height || 0,
+        };
+      });
+      if (clearance.spacerHeight + 1 < clearance.required) fail(`${viewportLabel}: compare clearance spacer is too short`);
+      await assertNoOverflow(page, `${viewportLabel} with tray`);
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      await page.waitForFunction(() => {
+        const maxScroll = Math.max(0, document.documentElement.scrollHeight - innerHeight);
+        return Math.abs(scrollY - maxScroll) <= 1;
+      });
+      const obstruction = await page.evaluate(() => {
+        const lastRow = Array.from(document.querySelectorAll('[data-tool-decision-row]')).at(-1)?.getBoundingClientRect();
+        const trayElement = document.querySelector('[data-compare-tray]')?.getBoundingClientRect();
+        return lastRow && trayElement ? { lastBottom: Math.round(lastRow.bottom), trayTop: Math.round(trayElement.top) } : null;
+      });
+      if (obstruction && obstruction.lastBottom > obstruction.trayTop) fail(`${viewportLabel}: compare tray obscures the last row`);
+      await assertTrayGeometry(page, viewportLabel);
+      const taskSelect = page.getByRole('combobox', { name: '选择任务' });
+      const sortSelect = page.getByRole('combobox', { name: '工具排序' });
+      await assertTargetSize(taskSelect, `${viewportLabel} task select`);
+      await assertTargetSize(sortSelect, `${viewportLabel} sort select`);
+      const bottomNavTarget = page.getByRole('navigation', { name: '移动端导航' }).getByRole('link', { name: '工具' });
+      if (await bottomNavTarget.isVisible()) await assertTargetSize(bottomNavTarget, `${viewportLabel} bottom nav target`);
+      await taskSelect.focus();
+      await page.keyboard.press('Tab');
+      if (!await page.evaluate(() => ['BUTTON', 'INPUT', 'SELECT', 'A'].includes(document.activeElement?.tagName || ''))) fail(`${viewportLabel}: task control lost keyboard focus`);
+      await sortSelect.focus();
+      if (!await page.evaluate(() => document.activeElement?.getAttribute('aria-label') === '工具排序')) fail(`${viewportLabel}: sort control is not keyboard focusable`);
+      if (viewport.width < 1024) {
+        const filterButton = page.getByRole('button', { name: /^筛选/ });
+        await assertTargetSize(filterButton, `${viewportLabel} filter button`);
+        await filterButton.focus();
+        await page.keyboard.press('Enter');
+        if (!await page.getByRole('dialog').isVisible()) fail(`${viewportLabel}: filter drawer did not open from keyboard`);
+        await page.keyboard.press('Escape');
+        if (await page.getByRole('dialog').isVisible()) fail(`${viewportLabel}: filter drawer did not close with Escape`);
+        if (!await filterButton.evaluate((element) => document.activeElement === element)) fail(`${viewportLabel}: filter drawer did not restore keyboard focus`);
+      }
+      await page.getByRole('button', { name: '切换到暗色主题' }).click();
+      if (!await page.locator('html.dark').count()) fail(`${viewportLabel}: dark theme missing`);
+      await page.getByRole('button', { name: '切换到亮色主题' }).click();
+      if (await page.locator('html.dark').count()) fail(`${viewportLabel}: light theme was not restored`);
     });
-    const clearance = await page.evaluate(() => {
-      const rootStyle = getComputedStyle(document.documentElement);
-      const tray = document.querySelector('[data-compare-tray]');
-      const spacer = tray?.previousElementSibling?.getBoundingClientRect();
-      return {
-        required: Number.parseFloat(rootStyle.getPropertyValue('--compare-tray-block-size'))
-          + Number.parseFloat(rootStyle.getPropertyValue('--mobile-nav-block-size')),
-        spacerHeight: spacer?.height || 0,
-      };
-    });
-    if (clearance.spacerHeight + 1 < clearance.required) fail(`${viewport.width}x${viewport.height}: compare clearance spacer is too short`);
-    await assertNoOverflow(page, `${viewport.width}x${viewport.height} with tray`);
-    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-    await page.waitForFunction(() => {
-      const maxScroll = Math.max(0, document.documentElement.scrollHeight - innerHeight);
-      return Math.abs(scrollY - maxScroll) <= 1;
-    });
-    const obstruction = await page.evaluate(() => {
-      const lastRow = Array.from(document.querySelectorAll('[data-tool-decision-row]')).at(-1)?.getBoundingClientRect();
-      const tray = document.querySelector('[data-compare-tray]')?.getBoundingClientRect();
-      return lastRow && tray ? { lastBottom: Math.round(lastRow.bottom), trayTop: Math.round(tray.top) } : null;
-    });
-    if (obstruction && obstruction.lastBottom > obstruction.trayTop) fail(`${viewport.width}x${viewport.height}: compare tray obscures the last row`);
-    await assertTrayGeometry(page, `${viewport.width}x${viewport.height}`);
-    const taskSelect = page.getByRole('combobox', { name: '选择任务' });
-    await taskSelect.focus();
-    await page.keyboard.press('Tab');
-    if (!await page.evaluate(() => ['BUTTON', 'INPUT', 'SELECT', 'A'].includes(document.activeElement?.tagName || ''))) fail(`${viewport.width}x${viewport.height}: task control lost keyboard focus`);
-    const sortSelect = page.getByRole('combobox', { name: '工具排序' });
-    await sortSelect.focus();
-    if (!await page.evaluate(() => document.activeElement?.getAttribute('aria-label') === '工具排序')) fail(`${viewport.width}x${viewport.height}: sort control is not keyboard focusable`);
-    if (viewport.width < 1024) {
-      const filterButton = page.getByRole('button', { name: /^筛选/ });
-      await filterButton.focus();
-      await page.keyboard.press('Enter');
-      if (!await page.getByRole('dialog').isVisible()) fail(`${viewport.width}x${viewport.height}: filter drawer did not open from keyboard`);
-      await page.keyboard.press('Escape');
-      if (await page.getByRole('dialog').isVisible()) fail(`${viewport.width}x${viewport.height}: filter drawer did not close with Escape`);
-      if (!await filterButton.evaluate((element) => document.activeElement === element)) fail(`${viewport.width}x${viewport.height}: filter drawer did not restore keyboard focus`);
-    }
-    await page.getByRole('button', { name: '切换到暗色主题' }).click();
-    if (!await page.locator('html.dark').count()) fail(`${viewport.width}x${viewport.height}: dark theme missing`);
-    await page.getByRole('button', { name: '切换到亮色主题' }).click();
-    if (await page.locator('html.dark').count()) fail(`${viewport.width}x${viewport.height}: light theme was not restored`);
-    await context.close();
   }
 }
 
 async function main() {
-  const browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-  const consoleIssues = [];
-  page.on('console', (message) => {
-    if (['error', 'warning'].includes(message.type())) consoleIssues.push(message.text());
-  });
-
-  await runFlow(page);
-  await assertKeyboardAndTheme(page);
-  await assertResponsiveGeometry(browser);
-  await assertCompareLimit(browser);
-  await assertToolsRecovery(browser);
-  await assertSceneRecovery(browser);
-  await assertUrlStateAndEmptyHistory(browser);
-  await assertDetailNotFound(browser);
-  await assertRawReturnPath(browser);
-  await assertSearchInteractions(browser);
-
-  if (consoleIssues.length) fail(`console issues: ${consoleIssues.slice(0, 5).join(' | ')}`);
-  await browser.close();
+  let browser;
+  try {
+    browser = await chromium.launch();
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    const diagnostics = monitorPage(page, 'primary flow');
+    try {
+      await runFlow(page);
+      await assertKeyboardAndTheme(page);
+      await assertResponsiveGeometry(browser);
+      await assertCompareLimit(browser);
+      await assertToolsRecovery(browser);
+      await assertSceneRecovery(browser);
+      await assertUrlStateAndEmptyHistory(browser);
+      await assertDetailNotFound(browser);
+      await assertRawReturnPath(browser);
+      await assertSearchInteractions(browser);
+    } finally {
+      diagnostics.assertClean();
+    }
+  } finally {
+    await browser?.close();
+  }
   if (failures.length) {
     console.error(failures.join('\n'));
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
   console.log('task-first UI guard passed');
 }
 
 main().catch((error) => {
+  if (failures.length) console.error(failures.join('\n'));
   console.error(error);
-  process.exit(1);
+  process.exitCode = 1;
 });
