@@ -35,12 +35,15 @@ function findElements(node, predicate, found = []) {
   return found;
 }
 
-function installHistoryReplaceMock(replaceCalls) {
+function installHistoryReplaceMock(historyCalls, onReplace = () => {}) {
   globalThis.window = {
     ...globalThis.window,
     history: {
       ...globalThis.window?.history,
-      replaceState: (_state, _title, path) => replaceCalls.push([path, { scroll: false }]),
+      replaceState: (state, title, path) => {
+        historyCalls.push([path, { state, title }]);
+        onReplace(path);
+      },
     },
   };
 }
@@ -116,7 +119,6 @@ test('directory controls are URL-driven and mobile filters use a dialog', () => 
   const rail = read('src/components/tools/FilterRail.tsx');
   const drawer = read('src/components/tools/MobileFilterDrawer.tsx');
   assert.match(hook, /useSearchParams/);
-  assert.match(hook, /window\.history\.replaceState/);
   assert.match(hook, /serializeDirectoryQuery/);
   assert.match(hook, /currentPath/);
   assert.match(bar, /categoryId/);
@@ -130,9 +132,68 @@ test('directory controls are URL-driven and mobile filters use a dialog', () => 
   assert.match(bar, /max-w-full/);
 });
 
+test('task changes canonicalize through History and restore the rendered hook state', async () => {
+  const queryState = await import(new URL('../src/lib/tools-query-state.mjs', import.meta.url));
+  const historyCalls = [];
+  const routerCalls = [];
+  const refs = [];
+  let refIndex = 0;
+  let searchParams = new URLSearchParams('scene=research&unknown=keep&price=bad');
+  installHistoryReplaceMock(historyCalls, (path) => {
+    searchParams = new URL(path, 'https://example.test').searchParams;
+  });
+  const hookModule = await loadTypeScriptModule('src/hooks/useToolDirectoryQuery.ts', {
+    react: {
+      useCallback: (callback) => callback,
+      useEffect: (effect) => effect(),
+      useMemo: (factory) => factory(),
+      useRef: (value) => {
+        const index = refIndex;
+        refIndex += 1;
+        refs[index] ||= { current: value };
+        return refs[index];
+      },
+    },
+    'next/navigation': {
+      usePathname: () => '/tools',
+      useRouter: () => ({
+        replace: (...args) => routerCalls.push(['replace', ...args]),
+        push: (...args) => routerCalls.push(['push', ...args]),
+      }),
+      useSearchParams: () => searchParams,
+    },
+    '@/lib/tools-query-state.mjs': queryState,
+  });
+  const catalog = {
+    sceneIds: new Set(['research', 'coding']),
+    categoryIds: new Set(),
+    platforms: new Set(),
+  };
+  const renderHook = () => {
+    refIndex = 0;
+    return hookModule.useToolDirectoryQuery(catalog);
+  };
+
+  const raw = renderHook();
+  raw.update({ sceneId: 'coding' });
+
+  assert.deepEqual(historyCalls.map(([path]) => path), ['/tools?scene=coding']);
+  assert.deepEqual(routerCalls, []);
+  const restored = renderHook();
+  assert.equal(restored.state.sceneId, 'coding');
+  assert.equal(restored.state.price, null);
+
+  restored.update({ sceneId: 'coding' });
+  restored.update({ sort: 'hot' });
+
+  assert.equal(historyCalls.at(-1)[0], '/tools?scene=coding&sort=hot');
+  assert.deepEqual(routerCalls, []);
+});
+
 test('catalog hydration at the same URL preserves the scene on the first patch', async () => {
   const queryState = await import(new URL('../src/lib/tools-query-state.mjs', import.meta.url));
   const replaceCalls = [];
+  const routerCalls = [];
   installHistoryReplaceMock(replaceCalls);
   const refs = [];
   let refIndex = 0;
@@ -151,7 +212,7 @@ test('catalog hydration at the same URL preserves the scene on the first patch',
     },
     'next/navigation': {
       usePathname: () => '/tools',
-      useRouter: () => ({ replace: (...args) => replaceCalls.push(args) }),
+      useRouter: () => ({ replace: (...args) => routerCalls.push(args) }),
       useSearchParams: () => searchParams,
     },
     '@/lib/tools-query-state.mjs': queryState,
@@ -172,6 +233,7 @@ test('catalog hydration at the same URL preserves the scene on the first patch',
 test('catalog hydration merges newly valid URL state with a pending patch', async () => {
   const queryState = await import(new URL('../src/lib/tools-query-state.mjs', import.meta.url));
   const replaceCalls = [];
+  const routerCalls = [];
   installHistoryReplaceMock(replaceCalls);
   const refs = [];
   let refIndex = 0;
@@ -190,7 +252,7 @@ test('catalog hydration merges newly valid URL state with a pending patch', asyn
     },
     'next/navigation': {
       usePathname: () => '/tools',
-      useRouter: () => ({ replace: (...args) => replaceCalls.push(args) }),
+      useRouter: () => ({ replace: (...args) => routerCalls.push(args) }),
       useSearchParams: () => searchParams,
     },
     '@/lib/tools-query-state.mjs': queryState,
@@ -212,6 +274,7 @@ test('catalog hydration merges newly valid URL state with a pending patch', asyn
 test('catalog hydration corrects a pending target without another user action', async () => {
   const queryState = await import(new URL('../src/lib/tools-query-state.mjs', import.meta.url));
   const replaceCalls = [];
+  const routerCalls = [];
   installHistoryReplaceMock(replaceCalls);
   const refs = [];
   let refIndex = 0;
@@ -230,7 +293,7 @@ test('catalog hydration corrects a pending target without another user action', 
     },
     'next/navigation': {
       usePathname: () => '/tools',
-      useRouter: () => ({ replace: (...args) => replaceCalls.push(args) }),
+      useRouter: () => ({ replace: (...args) => routerCalls.push(args) }),
       useSearchParams: () => searchParams,
     },
     '@/lib/tools-query-state.mjs': queryState,
@@ -381,6 +444,7 @@ test('directory retry targets failed sources without a duplicate catalog load', 
 test('rapid directory patches compose against the latest intended query state', async () => {
   const queryState = await import(new URL('../src/lib/tools-query-state.mjs', import.meta.url));
   const replaceCalls = [];
+  const routerCalls = [];
   installHistoryReplaceMock(replaceCalls);
   const refs = [];
   let refIndex = 0;
@@ -399,7 +463,7 @@ test('rapid directory patches compose against the latest intended query state', 
     },
     'next/navigation': {
       usePathname: () => '/tools',
-      useRouter: () => ({ replace: (...args) => replaceCalls.push(args) }),
+      useRouter: () => ({ replace: (...args) => routerCalls.push(args) }),
       useSearchParams: () => searchParams,
     },
     '@/lib/tools-query-state.mjs': queryState,
@@ -422,6 +486,7 @@ test('rapid directory patches compose against the latest intended query state', 
 test('rapid origin checkbox changes compose through the latest query state', async () => {
   const queryState = await import(new URL('../src/lib/tools-query-state.mjs', import.meta.url));
   const replaceCalls = [];
+  const routerCalls = [];
   installHistoryReplaceMock(replaceCalls);
   const refs = [];
   let refIndex = 0;
@@ -439,7 +504,7 @@ test('rapid origin checkbox changes compose through the latest query state', asy
     },
     'next/navigation': {
       usePathname: () => '/tools',
-      useRouter: () => ({ replace: (...args) => replaceCalls.push(args) }),
+      useRouter: () => ({ replace: (...args) => routerCalls.push(args) }),
       useSearchParams: () => new URLSearchParams(),
     },
     '@/lib/tools-query-state.mjs': queryState,
