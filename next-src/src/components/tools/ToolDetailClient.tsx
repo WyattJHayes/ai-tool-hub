@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { ArrowLeft, ExternalLink } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { getRatings, trackClick } from '@/lib/api';
 import { createToolDecisionModel, selectAlternativeTools } from '@/lib/tool-decision.mjs';
 import { sanitizeToolsReturnPath } from '@/lib/tools-query-state.mjs';
@@ -35,6 +35,8 @@ export function ToolDetailClient({ slug, from }: ToolDetailClientProps) {
     () => tools.find((candidate) => getToolSlug(candidate) === slug) || null,
     [slug, tools]
   );
+  const activeToolIdRef = useRef<number | null>(tool?.id ?? null);
+  const ratingRequestGeneration = useRef(0);
   const model = useMemo(
     () => tool ? createToolDecisionModel(tool, scenes, categories) : null,
     [categories, scenes, tool]
@@ -53,15 +55,25 @@ export function ToolDetailClient({ slug, from }: ToolDetailClientProps) {
   }, [dataLoaded, loadData]);
 
   useEffect(() => {
+    activeToolIdRef.current = tool?.id ?? null;
+  }, [tool?.id]);
+
+  useEffect(() => {
     if (!tool) return;
     let active = true;
+    const generation = ratingRequestGeneration.current + 1;
+    ratingRequestGeneration.current = generation;
     trackClick(tool.id, getToolSlug(tool), 'detail');
     getRatings(tool.id)
       .then((data) => {
-        if (active) setRatingState({ toolId: tool.id, data: data as RatingData });
+        if (active && ratingRequestGeneration.current === generation) {
+          setRatingState({ toolId: tool.id, data: data as RatingData });
+        }
       })
       .catch(() => {
-        if (active) setRatingState({ toolId: tool.id, data: EMPTY_RATINGS });
+        if (active && ratingRequestGeneration.current === generation) {
+          setRatingState({ toolId: tool.id, data: EMPTY_RATINGS });
+        }
       });
     return () => {
       active = false;
@@ -99,6 +111,37 @@ export function ToolDetailClient({ slug, from }: ToolDetailClientProps) {
   };
   const handleFavorite = () => toggleFavorite(tool.id);
   const handleVisit = () => trackClick(tool.id, getToolSlug(tool), 'detail', 'primary-action');
+  const handleRated = (score: number) => {
+    const toolId = tool.id;
+    const generation = ratingRequestGeneration.current + 1;
+    ratingRequestGeneration.current = generation;
+    setRatingState((current) => {
+      const currentData = current?.toolId === toolId ? current.data : EMPTY_RATINGS;
+      const currentCount = currentData.rating_count;
+      return {
+        toolId,
+        data: {
+          ...currentData,
+          avg_rating: ((currentData.avg_rating * currentCount) + score) / (currentCount + 1),
+          rating_count: currentCount + 1,
+        },
+      };
+    });
+    getRatings(toolId)
+      .then((data) => {
+        const refreshed = data as RatingData;
+        if (
+          activeToolIdRef.current !== toolId ||
+          ratingRequestGeneration.current !== generation
+        ) return;
+        if (refreshed.rating_count > 0) {
+          setRatingState({ toolId, data: refreshed });
+        }
+      })
+      .catch(() => {
+        // The successful optimistic rating remains visible when refresh is unavailable.
+      });
+  };
 
   return (
     <main className="mx-auto max-w-[1230px] px-4 pb-32 text-[var(--ink)] sm:px-6">
@@ -107,7 +150,7 @@ export function ToolDetailClient({ slug, from }: ToolDetailClientProps) {
       <ToolDecisionSummary model={model} favorite={favorite} compared={compared} compareDisabled={compareDisabled} compareAnnouncement={announcement} onToggleFavorite={handleFavorite} onToggleCompare={handleCompare} onVisit={handleVisit} />
       <div className="mt-1 grid gap-8 lg:grid-cols-[minmax(0,1fr)_260px]">
         <div className="min-w-0">
-          <ToolEvidenceSections model={model} currentRating={getRating(model.tool.id)} ratingData={ratingData} />
+          <ToolEvidenceSections model={model} currentRating={getRating(model.tool.id)} ratingData={ratingData} onRated={handleRated} />
           {alternatives.length ? <section className="mt-3" aria-labelledby="alternatives-title"><h2 id="alternatives-title" className="mb-1 text-lg font-semibold leading-6">替代方案</h2><ToolDecisionList groups={[{ id: 'alternatives', items: alternatives }]} variant="compact" returnPath={returnPath} /></section> : null}
         </div>
         <aside className="h-fit border border-[var(--line)] bg-[var(--surface)] p-4 lg:sticky lg:top-[88px]">

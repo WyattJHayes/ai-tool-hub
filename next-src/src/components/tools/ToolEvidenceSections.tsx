@@ -13,9 +13,10 @@ interface ToolEvidenceSectionsProps {
   model: ToolDecisionModel;
   currentRating: number;
   ratingData: RatingData;
+  onRated: (score: number) => void;
 }
 
-export function ToolEvidenceSections({ model, currentRating, ratingData }: ToolEvidenceSectionsProps) {
+export function ToolEvidenceSections({ model, currentRating, ratingData, onRated }: ToolEvidenceSectionsProps) {
   const tool = model.tool;
   return (
     <div className="space-y-3">
@@ -86,12 +87,12 @@ export function ToolEvidenceSections({ model, currentRating, ratingData }: ToolE
               <span className="inline-flex min-h-11 shrink-0 items-center rounded-md border border-[var(--line-strong)] px-4 text-sm font-medium group-open:bg-[var(--surface-subtle)]">提交评价</span>
             </summary>
             <div className="border-t border-[var(--line)] py-2 [&>div]:min-h-0 [&>div]:rounded-none [&>div]:border-0 [&>div]:bg-transparent [&>div]:p-0">
-              <RatingWidget toolId={tool.id} currentRating={currentRating} />
+              <RatingWidget toolId={tool.id} currentRating={currentRating} onRated={onRated} />
             </div>
           </details>
         ) : (
           <div className="border-y border-[var(--line)] py-1 [&>div]:min-h-0 [&>div]:rounded-none [&>div]:border-0 [&>div]:bg-transparent [&>div]:p-0">
-            <RatingWidget toolId={tool.id} currentRating={currentRating} />
+            <RatingWidget toolId={tool.id} currentRating={currentRating} onRated={onRated} />
           </div>
         )}
       </section>

@@ -584,3 +584,18 @@ test('zero-review evidence exposes a compact accessible rating disclosure', () =
   assert.match(evidence, /<summary className="[^"]*min-h-11/);
   assert.match(evidence, /<RatingWidget/);
 });
+
+test('successful detail ratings update evidence immediately and refresh only the current tool', () => {
+  const evidence = read('src/components/tools/ToolEvidenceSections.tsx');
+  const client = read('src/components/tools/ToolDetailClient.tsx');
+  assert.match(evidence, /onRated: \(score: number\) => void/);
+  assert.equal((evidence.match(/onRated=\{onRated\}/g) || []).length, 2);
+  assert.match(client, /activeToolIdRef/);
+  assert.match(client, /const handleRated = \(score: number\) =>/);
+  assert.match(client, /setRatingState\(\(current\) =>/);
+  assert.match(client, /rating_count: currentCount \+ 1/);
+  assert.match(client, /getRatings\(toolId\)/);
+  assert.match(client, /activeToolIdRef\.current !== toolId/);
+  assert.match(client, /refreshed\.rating_count > 0/);
+  assert.match(client, /<ToolEvidenceSections[^>]+onRated=\{handleRated\}/);
+});
