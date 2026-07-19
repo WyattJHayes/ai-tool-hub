@@ -31,7 +31,7 @@
 - `next-src/src/lib/tools-query-state.mjs` and `next-src/src/lib/tools-query-state.d.mts`: URL parsing/normalization, filtering/grouping/sorting, and safe detail/return links plus their strict boundary.
 - `next-src/src/lib/compare-selection.mjs` and `next-src/src/lib/compare-selection.d.mts`: framework-free four-tool transitions and exact result types.
 - `next-src/src/lib/tools-data.ts`, `next-src/src/stores/useToolStore.ts`, and `next-src/src/hooks/useSceneData.ts`: canonical static fetches/caches, API-to-static tool fallback, terminal errors, and retry/reset behavior.
-- `next-src/src/stores/useCompareStore.ts` and `next-src/src/hooks/useToolDirectoryQuery.ts`: cross-route comparison state and URL-backed directory updates/current raw return path.
+- `next-src/src/stores/useCompareStore.ts`, `next-src/src/hooks/useToolDirectoryQuery.ts`, and `next-src/src/hooks/useFixedSurfaceGeometry.ts`: cross-route comparison state, URL-backed directory updates/current raw return path, and ResizeObserver-backed fixed-surface spacing.
 - `next-src/src/components/hero/SearchBar.tsx`: shared local search draft, homepage push handoff, controlled directory replace behavior, suggestions, and history.
 - `next-src/src/components/tools/ToolDecisionRow.tsx` and `next-src/src/components/tools/ToolDecisionList.tsx`: aligned/compact rows, titled groups, loading/error/empty states, and accessible compare-limit feedback.
 - `next-src/src/components/home/TaskEntryList.tsx`, `next-src/src/components/tools/TaskContextBar.tsx`, `next-src/src/components/tools/FilterFields.tsx`, `next-src/src/components/tools/FilterRail.tsx`, and `next-src/src/components/tools/MobileFilterDrawer.tsx`: canonical task entry and controlled desktop/mobile filtering without duplicated derivation.
@@ -188,8 +188,11 @@ test('derives platform, origin, and price predicates from canonical fields', asy
   assert.equal(deriveToolPrice(byId.get(9)).summary, '免费');
   assert.deepEqual(deriveToolPrice(byId.get(11)).filters, ['paid-only']);
   assert.equal(deriveToolPrice(byId.get(11)).summary, 'Basic $10');
+  assert.deepEqual(deriveToolPrice({}).filters, []);
   assert.deepEqual(deriveToolPrice({ pricing: [] }).filters, []);
+  assert.deepEqual(deriveToolPrice({ pricing: [{ price: 0 }, { price: 10 }] }).filters, ['free-tier']);
   assert.deepEqual(deriveToolPrice({ pricing: [{ price: -1 }, { price: 0 }] }).filters, ['free-tier']);
+  assert.deepEqual(deriveToolPrice({ pricing: [{ price: -1 }, { price: 10 }] }).filters, []);
 });
 
 test('all real tools produce nonempty tasks and capability summaries', async () => {
@@ -369,8 +372,9 @@ export function deriveAvailablePlatforms(tools) {
 }
 
 export function deriveToolPrice(tool) {
-  const plans = tool.pricing || [];
+  const plans = Array.isArray(tool.pricing) ? tool.pricing : [];
   const free = plans.some((plan) => plan.price === 0);
+  // "Fully free" and "paid only" apply only to a nonempty, uniformly priced plan set.
   const fullyFree = plans.length > 0 && plans.every((plan) => plan.price === 0);
   const paidOnly = plans.length > 0 && plans.every((plan) => plan.price > 0);
   const filters = [];
@@ -1687,6 +1691,9 @@ test('directory controls are URL-driven and mobile filters use a dialog', () => 
   assert.match(drawer, /showModal\(\)/);
   assert.match(rail, /radioGroupName="price-desktop"/);
   assert.match(drawer, /radioGroupName="price-mobile"/);
+  assert.match(bar, /data-directory-controls/);
+  assert.match(bar, /grid-cols-\[minmax\(0,1fr\)_minmax\(0,1fr\)_minmax\(0,1fr\)\]/);
+  assert.match(bar, /max-w-full/);
 });
 ```
 
@@ -1932,14 +1939,14 @@ export function TaskContextBar({ state, scenes, categories, resultCount, isLoadi
   return (
     <section aria-label="目录条件" className="border-y border-[var(--line)] bg-[var(--surface)] py-4">
       <SearchBar value={state.searchTerm} onValueChange={(searchTerm) => onPatch({ searchTerm })} onSubmit={(searchTerm) => onPatch({ searchTerm })} />
-      <div className="mt-3 grid grid-cols-3 gap-2 lg:grid-cols-[minmax(180px,1fr)_minmax(180px,1fr)_minmax(160px,.7fr)]">
-        <label className="min-w-0 text-xs text-[var(--muted)]">任务<select aria-label="选择任务" value={state.sceneId || ''} onChange={(event) => onPatch({ sceneId: event.target.value || null })} className="mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--line)] bg-[var(--surface)] px-2 text-sm text-[var(--ink)] sm:px-3"><option value="">全部任务</option>{scenes.map((scene) => <option key={scene.id} value={scene.id}>{scene.name.replace(/^我要/, '')}</option>)}</select></label>
+      <div data-directory-controls className="mt-3 grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2 lg:grid-cols-[minmax(180px,1fr)_minmax(180px,1fr)_minmax(160px,.7fr)]">
+        <label className="min-w-0 max-w-full overflow-hidden text-xs text-[var(--muted)]">任务<select aria-label="选择任务" value={state.sceneId || ''} onChange={(event) => onPatch({ sceneId: event.target.value || null })} className="mt-1 min-h-11 w-full min-w-0 max-w-full rounded-md border border-[var(--line)] bg-[var(--surface)] px-2 text-sm text-[var(--ink)] sm:px-3"><option value="">全部任务</option>{scenes.map((scene) => <option key={scene.id} value={scene.id}>{scene.name.replace(/^我要/, '')}</option>)}</select></label>
         <div className="min-w-0">
-          {!state.sceneId ? <label className="hidden min-w-0 text-xs text-[var(--muted)] lg:block">分类<select aria-label="选择分类" value={state.categoryId || ''} onChange={(event) => onPatch({ categoryId: event.target.value || null })} className="mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--line)] bg-[var(--surface)] px-3 text-sm text-[var(--ink)]"><option value="">全部分类</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label> : <div className="hidden lg:block" aria-hidden="true" />}
+          {!state.sceneId ? <label className="hidden min-w-0 max-w-full text-xs text-[var(--muted)] lg:block">分类<select aria-label="选择分类" value={state.categoryId || ''} onChange={(event) => onPatch({ categoryId: event.target.value || null })} className="mt-1 min-h-11 w-full min-w-0 max-w-full rounded-md border border-[var(--line)] bg-[var(--surface)] px-3 text-sm text-[var(--ink)]"><option value="">全部分类</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label> : <div className="hidden lg:block" aria-hidden="true" />}
           <span className="block text-xs text-[var(--muted)] lg:hidden">筛选</span>
-          <button type="button" onClick={onOpenFilters} className="mt-1 inline-flex min-h-11 w-full min-w-0 items-center justify-center gap-1 rounded-md border border-[var(--line)] px-2 text-sm lg:hidden"><SlidersHorizontal className="h-4 w-4 shrink-0" /><span className="truncate">筛选{activeFilterCount ? ` ${activeFilterCount}` : ''}</span></button>
+          <button type="button" onClick={onOpenFilters} className="mt-1 inline-flex min-h-11 w-full min-w-0 max-w-full items-center justify-center gap-1 overflow-hidden rounded-md border border-[var(--line)] px-2 text-sm lg:hidden"><SlidersHorizontal className="h-4 w-4 shrink-0" /><span className="truncate">筛选{activeFilterCount ? ` ${activeFilterCount}` : ''}</span></button>
         </div>
-        <label className="min-w-0 text-xs text-[var(--muted)]">排序<select aria-label="工具排序" value={state.sort} onChange={(event) => onPatch({ sort: event.target.value as SortOption })} className="mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--line)] bg-[var(--surface)] px-2 text-sm text-[var(--ink)] sm:px-3">{sorts.map((sort) => <option key={sort.value} value={sort.value}>{sort.label}</option>)}</select></label>
+        <label className="min-w-0 max-w-full overflow-hidden text-xs text-[var(--muted)]">排序<select aria-label="工具排序" value={state.sort} onChange={(event) => onPatch({ sort: event.target.value as SortOption })} className="mt-1 min-h-11 w-full min-w-0 max-w-full rounded-md border border-[var(--line)] bg-[var(--surface)] px-2 text-sm text-[var(--ink)] sm:px-3">{sorts.map((sort) => <option key={sort.value} value={sort.value}>{sort.label}</option>)}</select></label>
       </div>
       <p role="status" className="mt-3 flex min-h-11 items-center text-sm text-[var(--muted)]">{isLoading ? '正在加载' : `${resultCount} 款工具`}</p>
     </section>
@@ -2167,6 +2174,7 @@ Expected: the commit contains the Suspense shell, client controller, stable skel
 
 **Files:**
 - Create: `next-src/src/components/compare/CompareTray.tsx`
+- Create: `next-src/src/hooks/useFixedSurfaceGeometry.ts`
 - Delete: `next-src/src/components/compare/CompareBar.tsx`
 - Modify: `next-src/src/app/layout.tsx`
 - Modify: `next-src/src/components/layout/PageShell.tsx`
@@ -2179,7 +2187,7 @@ Expected: the commit contains the Suspense shell, client controller, stable skel
 
 **Interfaces:**
 - Consumes: `useCompareStore(): CompareStore`, `usePathname(): string`, `useRouter().push('/compare')`, the existing `ToolCard(props: { tool: Tool }): JSX.Element`, and Task 4 `CompareAddOutcome`.
-- Produces: `CompareTray(): JSX.Element | null`; `BottomNav(): JSX.Element` whose active predicate is exact-root or nested-prefix; `PageShell(props: { children: ReactNode; showNavbar?: boolean; showFooter?: boolean }): JSX.Element`; canonical `tool.platform` reads in `ToolCard` and `/compare`; and fixed CSS dimensions `--mobile-nav-height: 64px`, `--compare-tray-height: 72px`.
+- Produces: `useFixedSurfaceGeometry(ref, cssVariable, enabled): void`, which writes a measured border-box height to the root; `CompareTray(): JSX.Element | null`; `BottomNav(): JSX.Element` whose active predicate is exact-root or nested-prefix; `PageShell(props: { children: ReactNode; showNavbar?: boolean; showFooter?: boolean }): JSX.Element`; canonical `tool.platform` reads in `ToolCard` and `/compare`; and rendered geometry variables `--mobile-nav-block-size` and `--compare-tray-block-size`.
 
 - [ ] **Step 1: Add failing tray and navigation contracts**
 
@@ -2194,7 +2202,11 @@ test('root layout mounts one compare tray and no alternate shell duplicates it',
   assert.doesNotMatch(shell, /CompareTray|CompareBar/);
   assert.match(tray, /pathname === '\/compare'/);
   assert.match(tray, /data-compare-tray/);
-  assert.match(tray, /mobile-nav-height/);
+  assert.match(tray, /useFixedSurfaceGeometry/);
+  assert.match(tray, /mobile-nav-block-size/);
+  assert.match(tray, /compare-tray-block-size/);
+  assert.match(read('src/components/layout/BottomNav.tsx'), /data-mobile-bottom-nav/);
+  assert.match(read('src/components/layout/BottomNav.tsx'), /safe-area-inset-bottom/);
 });
 
 test('mobile navigation recognizes nested tool routes', () => {
@@ -2220,16 +2232,47 @@ node --test next-src/tests/task-first-ui-contract.test.mjs
 
 Expected: FAIL because `CompareTray.tsx` does not exist and nested routes are not active.
 
-- [ ] **Step 3: Define shared fixed-surface dimensions**
+- [ ] **Step 3: Measure fixed-surface geometry instead of assuming fixed heights**
 
-Add to `:root` in `next-src/src/app/globals.css`:
+Create `next-src/src/hooks/useFixedSurfaceGeometry.ts`:
 
-```css
-  --mobile-nav-height: 64px;
-  --compare-tray-height: 72px;
+```tsx
+'use client';
+
+import { useLayoutEffect, type RefObject } from 'react';
+
+export function useFixedSurfaceGeometry(
+  ref: RefObject<HTMLElement | null>,
+  cssVariable: '--mobile-nav-block-size' | '--compare-tray-block-size',
+  enabled: boolean
+) {
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    const element = ref.current;
+    if (!enabled || !element) {
+      root.style.setProperty(cssVariable, '0px');
+      return;
+    }
+    const update = () => root.style.setProperty(cssVariable, `${Math.ceil(element.getBoundingClientRect().height)}px`);
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    update();
+    return () => {
+      observer.disconnect();
+      root.style.setProperty(cssVariable, '0px');
+    };
+  }, [cssVariable, enabled, ref]);
+}
 ```
 
-Keep these values in `.dark`; they are dimensions, not colors.
+Add these zero-size hydration fallbacks to `:root` in `next-src/src/app/globals.css`:
+
+```css
+  --mobile-nav-block-size: 0px;
+  --compare-tray-block-size: 0px;
+```
+
+The measurement must include the bottom-nav border and `env(safe-area-inset-bottom, 0px)`: give the mobile nav a border-box height of `calc(64px + env(safe-area-inset-bottom, 0px))`, not a separate guessed offset. Do not duplicate either geometry variable in `.dark`.
 
 - [ ] **Step 4: Replace CompareBar with the single route-aware tray**
 
@@ -2239,22 +2282,28 @@ Create `next-src/src/components/compare/CompareTray.tsx`:
 'use client';
 
 import { usePathname, useRouter } from 'next/navigation';
+import { useRef } from 'react';
 import { X } from 'lucide-react';
+import { useFixedSurfaceGeometry } from '@/hooks/useFixedSurfaceGeometry';
 import { useCompareStore } from '@/stores/useCompareStore';
 
 export default function CompareTray() {
   const pathname = usePathname();
   const router = useRouter();
   const { selectedTools, removeTool, clearAll } = useCompareStore();
-  if (pathname === '/compare' || selectedTools.length < 2) return null;
+  const trayRef = useRef<HTMLElement>(null);
+  const visible = pathname !== '/compare' && selectedTools.length >= 2;
+  useFixedSurfaceGeometry(trayRef, '--compare-tray-block-size', visible);
+  if (!visible) return null;
 
   return (
     <>
-      <div aria-hidden="true" className="h-[calc(var(--compare-tray-height)+var(--mobile-nav-height)+1px+env(safe-area-inset-bottom,0px))] md:h-[var(--compare-tray-height)]" />
+      <div aria-hidden="true" className="h-[calc(var(--compare-tray-block-size)+var(--mobile-nav-block-size))] md:h-[var(--compare-tray-block-size)]" />
       <aside
+        ref={trayRef}
         data-compare-tray
         aria-label="已选工具对比"
-        className="fixed inset-x-0 bottom-[calc(var(--mobile-nav-height)+1px+env(safe-area-inset-bottom,0px))] z-[90] h-[var(--compare-tray-height)] overflow-hidden border-t border-[var(--line)] bg-[var(--surface)] px-4 py-2 md:bottom-0 md:px-6"
+        className="fixed inset-x-0 bottom-[var(--mobile-nav-block-size)] z-[90] overflow-hidden border-t border-[var(--line)] bg-[var(--surface)] px-4 py-2 md:bottom-0 md:px-6"
       >
         <div className="mx-auto flex h-full max-w-7xl items-center justify-between gap-3">
           <div className="min-w-0 flex-1">
@@ -2321,13 +2370,26 @@ Delete `next-src/src/components/compare/CompareBar.tsx` after these replacements
 
 - [ ] **Step 6: Fix nested mobile navigation state**
 
-In `BottomNav.tsx`, replace the exact-only active check with:
+In `BottomNav.tsx`, import `useRef` and `useFixedSurfaceGeometry`, initialize `const navRef = useRef<HTMLElement>(null)`, and call `useFixedSurfaceGeometry(navRef, '--mobile-nav-block-size', true)`. Replace the exact-only active check with:
 
 ```tsx
 const active = item.href === '/'
   ? pathname === '/'
   : pathname === item.href || pathname.startsWith(`${item.href}/`);
 ```
+
+On the existing mobile `<nav>`, add `ref={navRef}` and `data-mobile-bottom-nav`, and make its border box include the visual border and safe area:
+
+```tsx
+<nav
+  ref={navRef}
+  data-mobile-bottom-nav
+  aria-label="移动端导航"
+  className="fixed inset-x-0 bottom-0 z-[100] box-border h-[calc(64px+env(safe-area-inset-bottom,0px))] border-t border-[var(--line)] bg-[var(--surface)] pb-[env(safe-area-inset-bottom,0px)] md:hidden"
+>
+```
+
+The tray must use only `bottom-[var(--mobile-nav-block-size)]`; do not re-add a separate `+1px` border or safe-area term. Its measured nav block already includes both.
 
 - [ ] **Step 7: Make legacy tool cards explain comparison limits**
 
@@ -2385,7 +2447,7 @@ if rg -n "tool\.(scenes|platforms)" next-src/src; then
   echo "legacy tool field read remains" >&2
   exit 1
 fi
-git diff --check -- next-src/src/components/compare/CompareTray.tsx next-src/src/components/compare/CompareBar.tsx next-src/src/components/layout/PageShell.tsx next-src/src/components/layout/BottomNav.tsx next-src/src/components/tools/ToolCard.tsx next-src/src/app/compare/page.tsx next-src/src/app/layout.tsx next-src/src/app/globals.css next-src/src/types/tool.ts next-src/tests/task-first-ui-contract.test.mjs
+git diff --check -- next-src/src/components/compare/CompareTray.tsx next-src/src/components/compare/CompareBar.tsx next-src/src/hooks/useFixedSurfaceGeometry.ts next-src/src/components/layout/PageShell.tsx next-src/src/components/layout/BottomNav.tsx next-src/src/components/tools/ToolCard.tsx next-src/src/app/compare/page.tsx next-src/src/app/layout.tsx next-src/src/app/globals.css next-src/src/types/tool.ts next-src/tests/task-first-ui-contract.test.mjs
 ```
 
 Expected: all commands exit 0.
@@ -2393,7 +2455,7 @@ Expected: all commands exit 0.
 - [ ] **Step 10: Commit**
 
 ```bash
-git add next-src/src/components/compare/CompareTray.tsx next-src/src/components/compare/CompareBar.tsx next-src/src/components/layout/PageShell.tsx next-src/src/components/layout/BottomNav.tsx next-src/src/components/tools/ToolCard.tsx next-src/src/app/compare/page.tsx next-src/src/app/layout.tsx next-src/src/app/globals.css next-src/src/types/tool.ts next-src/tests/task-first-ui-contract.test.mjs
+git add next-src/src/components/compare/CompareTray.tsx next-src/src/components/compare/CompareBar.tsx next-src/src/hooks/useFixedSurfaceGeometry.ts next-src/src/components/layout/PageShell.tsx next-src/src/components/layout/BottomNav.tsx next-src/src/components/tools/ToolCard.tsx next-src/src/app/compare/page.tsx next-src/src/app/layout.tsx next-src/src/app/globals.css next-src/src/types/tool.ts next-src/tests/task-first-ui-contract.test.mjs
 git commit -m "fix: keep compare tray clear of mobile navigation"
 ```
 
@@ -2914,9 +2976,31 @@ async function assertTrayGeometry(page, label) {
     const tray = trayElement.getBoundingClientRect();
     const nav = navElement.getBoundingClientRect();
     if (nav.height === 0) return null;
-    return { trayBottom: Math.round(tray.bottom), navTop: Math.round(nav.top) };
+    return {
+      trayBottom: Math.round(tray.bottom),
+      navTop: Math.round(nav.top),
+      navBottom: Math.round(nav.bottom),
+      viewportBottom: Math.round(innerHeight),
+    };
   });
-  if (geometry && geometry.trayBottom > geometry.navTop) fail(`${label}: compare tray overlaps mobile nav`);
+  if (geometry && Math.abs(geometry.trayBottom - geometry.navTop) > 1) fail(`${label}: compare tray is not flush above the measured mobile nav`);
+  if (geometry && Math.abs(geometry.navBottom - geometry.viewportBottom) > 1) fail(`${label}: mobile nav does not reach the safe-area viewport edge`);
+}
+
+async function assertControlRowGeometry(page, label) {
+  const geometry = await page.locator('[data-directory-controls]').evaluate((element) => {
+    const row = element.getBoundingClientRect();
+    const children = Array.from(element.children).map((child) => child.getBoundingClientRect());
+    return {
+      rowLeft: Math.round(row.left),
+      rowRight: Math.round(row.right),
+      viewportWidth: innerWidth,
+      childOverflow: children.some((child) => child.left < row.left - 1 || child.right > row.right + 1),
+    };
+  });
+  if (geometry.rowLeft < -1 || geometry.rowRight > geometry.viewportWidth + 1 || geometry.childOverflow) {
+    fail(`${label}: three-column controls overflow their container`);
+  }
 }
 
 async function runFlow(page) {
@@ -2973,12 +3057,20 @@ async function assertCompareLimit(browser) {
   await context.close();
 }
 
-async function assertDoubleFailure(browser) {
+async function assertToolsRecovery(browser) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
   const page = await context.newPage();
   let failRequests = true;
-  await page.route('**/api/tools', (route) => failRequests ? route.fulfill({ status: 500, contentType: 'application/json', body: '{}' }) : route.continue());
-  await page.route('**/data/tools.json', (route) => failRequests ? route.fulfill({ status: 500, contentType: 'application/json', body: '{}' }) : route.continue());
+  let apiRequests = 0;
+  let staticRequests = 0;
+  await page.route('**/api/tools', (route) => {
+    apiRequests += 1;
+    return failRequests ? route.fulfill({ status: 500, contentType: 'application/json', body: '{}' }) : route.continue();
+  });
+  await page.route('**/data/tools.json', (route) => {
+    staticRequests += 1;
+    return failRequests ? route.fulfill({ status: 500, contentType: 'application/json', body: '{}' }) : route.continue();
+  });
   await page.goto(`${baseUrl}/tools`, { waitUntil: 'networkidle' });
   const alert = page.getByRole('alert');
   if (await alert.count() === 0 || !String(await alert.textContent()).includes('工具数据暂时无法加载')) {
@@ -2989,6 +3081,8 @@ async function assertDoubleFailure(browser) {
   failRequests = false;
   await retry.click();
   await page.locator('[data-tool-decision-row]').first().waitFor();
+  if (await alert.isVisible()) fail('data failure: alert remained after retry');
+  if (apiRequests < 2 || staticRequests < 1) fail(`data failure: retry did not exercise the failed loaders (api=${apiRequests}, static=${staticRequests})`);
   await context.close();
 }
 
@@ -2996,13 +3090,19 @@ async function assertSceneRecovery(browser) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
   const page = await context.newPage();
   let failScene = true;
-  await page.route('**/data/scenes.json', (route) => failScene ? route.fulfill({ status: 500, contentType: 'application/json', body: '{}' }) : route.continue());
+  let sceneRequests = 0;
+  await page.route('**/data/scenes.json', (route) => {
+    sceneRequests += 1;
+    return failScene ? route.fulfill({ status: 500, contentType: 'application/json', body: '{}' }) : route.continue();
+  });
   await page.goto(`${baseUrl}/`, { waitUntil: 'networkidle' });
   const alert = page.getByRole('alert').filter({ hasText: '任务数据暂时无法加载' });
   if (await alert.count() !== 1) fail('scene failure: retryable inline error missing');
   failScene = false;
   await alert.getByRole('button', { name: '重新加载' }).click();
   await page.getByRole('link', { name: /做调研/ }).waitFor();
+  if (await alert.isVisible()) fail('scene failure: alert remained after retry');
+  if (sceneRequests < 2) fail(`scene failure: retry did not issue a second scene request (${sceneRequests})`);
   await context.close();
 }
 
@@ -3049,7 +3149,27 @@ async function assertRawReturnPath(browser) {
   await page.waitForURL((url) => url.searchParams.get('from') === rawPath);
   await page.getByRole('link', { name: '返回工具目录' }).click();
   await page.waitForURL((url) => `${url.pathname}${url.search}` === rawPath);
+  await page.getByRole('combobox', { name: '选择任务' }).selectOption('coding');
+  await page.waitForURL((url) => url.pathname === '/tools' && url.searchParams.get('scene') === 'coding');
+  const canonical = new URL(page.url());
+  if (canonical.searchParams.has('unknown') || canonical.searchParams.has('price')) {
+    fail(`raw return path: control mutation did not canonicalize invalid values (${canonical.search})`);
+  }
   await context.close();
+}
+
+async function assertAllVisibleRowsContain(page, query, label) {
+  const rows = page.locator('[data-tool-decision-row]');
+  const count = await rows.count();
+  if (count === 0) {
+    fail(`${label}: query produced no decision rows`);
+    return;
+  }
+  const needle = query.toLocaleLowerCase('en-US');
+  for (let index = 0; index < count; index += 1) {
+    const text = String(await rows.nth(index).textContent()).toLocaleLowerCase('en-US');
+    if (!text.includes(needle)) fail(`${label}: row ${index + 1} does not match ${query}`);
+  }
 }
 
 async function assertSearchInteractions(browser) {
@@ -3057,24 +3177,31 @@ async function assertSearchInteractions(browser) {
   const page = await context.newPage();
   await page.goto(`${baseUrl}/`, { waitUntil: 'networkidle' });
   const homeSearch = page.getByRole('combobox', { name: /搜索工具/ });
+  await homeSearch.fill('ChatGPT');
+  await homeSearch.press('Enter');
+  await page.waitForURL((url) => url.pathname === '/tools' && url.searchParams.get('q') === 'ChatGPT');
+  await assertAllVisibleRowsContain(page, 'ChatGPT', 'homepage submit');
+  await page.getByRole('link', { name: 'AI Tool Hub', exact: true }).click();
+  await page.getByRole('button', { name: '再次搜索 ChatGPT' }).click();
+  await page.waitForURL((url) => url.pathname === '/tools' && url.searchParams.get('q') === 'ChatGPT');
+  await assertAllVisibleRowsContain(page, 'ChatGPT', 'homepage history');
+  await page.getByRole('link', { name: 'AI Tool Hub', exact: true }).click();
   await homeSearch.fill('Perplexity');
   await page.getByRole('button', { name: '搜索 Perplexity AI' }).click();
   await page.waitForURL((url) => url.pathname === '/tools' && url.searchParams.get('q') === 'Perplexity AI');
-  await page.getByRole('link', { name: 'AI Tool Hub', exact: true }).click();
-  await homeSearch.focus();
-  await page.getByRole('button', { name: '再次搜索 Perplexity AI' }).click();
-  await page.waitForURL((url) => url.pathname === '/tools' && url.searchParams.get('q') === 'Perplexity AI');
-
+  await assertAllVisibleRowsContain(page, 'Perplexity', 'homepage suggestion');
   const directorySearch = page.getByRole('combobox', { name: /搜索工具/ });
   await directorySearch.fill('ChatGPT');
   await page.waitForURL((url) => url.pathname === '/tools' && url.searchParams.get('q') === 'ChatGPT');
-  if (await page.locator('[data-tool-decision-row]').count() === 0) fail('search: typed directory query produced no rows');
+  await assertAllVisibleRowsContain(page, 'ChatGPT', 'directory typing');
+  const typedCount = await page.locator('[data-tool-decision-row]').count();
   await page.getByRole('button', { name: '清除搜索' }).click();
   await page.waitForURL((url) => url.pathname === '/tools' && !url.searchParams.has('q'));
+  if (await page.locator('[data-tool-decision-row]').count() <= typedCount) fail('directory clear: results did not expand after clearing the query');
   await context.close();
 }
 
-async function assertResponsiveGeometry(page) {
+async function assertResponsiveGeometry(browser) {
   const viewports = [
     { width: 1280, height: 720 },
     { width: 768, height: 1024 },
@@ -3082,9 +3209,12 @@ async function assertResponsiveGeometry(page) {
     { width: 320, height: 844 },
   ];
   for (const viewport of viewports) {
-    await page.setViewportSize(viewport);
+    // Isolate storage and selected tools so every viewport repeats the same workflow.
+    const context = await browser.newContext({ viewport });
+    const page = await context.newPage();
     await page.goto(`${baseUrl}/tools?scene=research`, { waitUntil: 'networkidle' });
     await assertNoOverflow(page, `${viewport.width}x${viewport.height}`);
+    if (viewport.width === 320) await assertControlRowGeometry(page, '320px directory controls');
     const rows = page.locator('[data-tool-decision-row]');
     await rows.nth(0).getByRole('checkbox').check();
     await rows.nth(1).getByRole('checkbox').check();
@@ -3101,17 +3231,24 @@ async function assertResponsiveGeometry(page) {
     const taskSelect = page.getByRole('combobox', { name: '选择任务' });
     await taskSelect.focus();
     await page.keyboard.press('Tab');
-    if (!await page.evaluate(() => ['BUTTON', 'INPUT', 'SELECT', 'A'].includes(document.activeElement?.tagName || ''))) fail(`${viewport.width}x${viewport.height}: keyboard focus left interactive controls`);
+    if (!await page.evaluate(() => ['BUTTON', 'INPUT', 'SELECT', 'A'].includes(document.activeElement?.tagName || ''))) fail(`${viewport.width}x${viewport.height}: task control lost keyboard focus`);
+    const sortSelect = page.getByRole('combobox', { name: '工具排序' });
+    await sortSelect.focus();
+    if (!await page.evaluate(() => document.activeElement?.getAttribute('aria-label') === '工具排序')) fail(`${viewport.width}x${viewport.height}: sort control is not keyboard focusable`);
     if (viewport.width < 1024) {
       const filterButton = page.getByRole('button', { name: /^筛选/ });
       await filterButton.focus();
       await page.keyboard.press('Enter');
       if (!await page.getByRole('dialog').isVisible()) fail(`${viewport.width}x${viewport.height}: filter drawer did not open from keyboard`);
       await page.keyboard.press('Escape');
+      if (await page.getByRole('dialog').isVisible()) fail(`${viewport.width}x${viewport.height}: filter drawer did not close with Escape`);
+      if (!await filterButton.evaluate((element) => document.activeElement === element)) fail(`${viewport.width}x${viewport.height}: filter drawer did not restore keyboard focus`);
     }
     await page.getByRole('button', { name: '切换到暗色主题' }).click();
     if (!await page.locator('html.dark').count()) fail(`${viewport.width}x${viewport.height}: dark theme missing`);
     await page.getByRole('button', { name: '切换到亮色主题' }).click();
+    if (await page.locator('html.dark').count()) fail(`${viewport.width}x${viewport.height}: light theme was not restored`);
+    await context.close();
   }
 }
 
@@ -3125,9 +3262,9 @@ async function main() {
 
   await runFlow(page);
   await assertKeyboardAndTheme(page);
-  await assertResponsiveGeometry(page);
+  await assertResponsiveGeometry(browser);
   await assertCompareLimit(browser);
-  await assertDoubleFailure(browser);
+  await assertToolsRecovery(browser);
   await assertSceneRecovery(browser);
   await assertUrlStateAndEmptyHistory(browser);
   await assertDetailNotFound(browser);
@@ -3303,6 +3440,7 @@ git add \
   next-src/src/components/layout/BottomNav.tsx \
   next-src/src/hooks/useSceneData.ts \
   next-src/src/hooks/useToolDirectoryQuery.ts \
+  next-src/src/hooks/useFixedSurfaceGeometry.ts \
   next-src/src/stores/useToolStore.ts \
   next-src/src/stores/useCompareStore.ts \
   next-src/src/lib/tool-decision.mjs \
