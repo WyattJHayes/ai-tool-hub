@@ -21,6 +21,8 @@
   --radius: 8px;
   --radius-sm: 6px;
   --nav-height: 64px;
+  --mobile-nav-block-size: 0px;
+  --compare-tray-block-size: 0px;
   --max-width: 1280px;
   --font: Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif;
 }

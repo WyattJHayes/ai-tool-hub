@@ -3,6 +3,8 @@
 import { Heart, Home, LayoutGrid, Trophy } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useRef } from 'react';
+import { useFixedSurfaceGeometry } from '@/hooks/useFixedSurfaceGeometry';
 import { cn } from '@/lib/utils';
 
 const navItems = [
@@ -14,13 +16,22 @@ const navItems = [
 
 export default function BottomNav() {
   const pathname = usePathname();
+  const navRef = useRef<HTMLElement>(null);
+  useFixedSurfaceGeometry(navRef, '--mobile-nav-block-size', true);
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-[100] border-t border-[var(--line)] bg-[var(--surface)] pb-[env(safe-area-inset-bottom,0px)] md:hidden" aria-label="移动端导航">
+    <nav
+      ref={navRef}
+      data-mobile-bottom-nav
+      aria-label="移动端导航"
+      className="fixed inset-x-0 bottom-0 z-[100] box-border h-[calc(64px+env(safe-area-inset-bottom,0px))] border-t border-[var(--line)] bg-[var(--surface)] pb-[env(safe-area-inset-bottom,0px)] md:hidden"
+    >
       <div className="mx-auto grid max-w-[500px] grid-cols-4 px-2 py-1">
         {navItems.map((item) => {
           const Icon = item.icon;
-          const active = pathname === item.href;
+          const active = item.href === '/'
+            ? pathname === '/'
+            : pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (
             <Link
               key={item.href}

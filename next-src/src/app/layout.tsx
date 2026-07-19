@@ -4,7 +4,7 @@ import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import { AuthProvider } from '@/components/auth/AuthProvider';
 import Navbar from '@/components/layout/Navbar';
 import Footer from '@/components/layout/Footer';
-import CompareBar from '@/components/compare/CompareBar';
+import CompareTray from '@/components/compare/CompareTray';
 import BottomNav from '@/components/layout/BottomNav';
 
 export const metadata: Metadata = {
@@ -53,7 +53,7 @@ export default function RootLayout({
           </ErrorBoundary>
         </AuthProvider>
         <Footer />
-        <CompareBar />
+        <CompareTray />
         <BottomNav />
       </body>
     </html>

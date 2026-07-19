@@ -68,7 +68,7 @@ export default function ComparePage() {
       return `${tool.pricing[0].plan} ${tool.pricing[0].price}${tool.pricing[0].unit}`;
     }
     if (key === 'valueTag') return tool.valueTag || '未知';
-    if (key === 'platform') return (tool.platform || tool.platforms || []).join('、') || '未知';
+    if (key === 'platform') return (tool.platform || []).join('、') || '未知';
     if (key === 'difficulty') return ({ beginner: '入门', intermediate: '进阶', advanced: '高级' } as Record<string, string>)[tool.difficulty || ''] || '未知';
     return '-';
   };

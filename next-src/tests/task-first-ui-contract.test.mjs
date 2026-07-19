@@ -520,3 +520,32 @@ test('mobile filter dialog is named by its heading', () => {
   assert.match(drawer, /<dialog[^>]+aria-labelledby="mobile-filter-title"/);
   assert.match(drawer, /<h2 id="mobile-filter-title"/);
 });
+
+test('root layout mounts one compare tray and no alternate shell duplicates it', () => {
+  const layout = read('src/app/layout.tsx');
+  const shell = read('src/components/layout/PageShell.tsx');
+  const tray = read('src/components/compare/CompareTray.tsx');
+  assert.equal((layout.match(/<CompareTray/g) || []).length, 1);
+  assert.doesNotMatch(shell, /CompareTray|CompareBar/);
+  assert.match(tray, /pathname === '\/compare'/);
+  assert.match(tray, /data-compare-tray/);
+  assert.match(tray, /useFixedSurfaceGeometry/);
+  assert.match(tray, /mobile-nav-block-size/);
+  assert.match(tray, /compare-tray-block-size/);
+  assert.match(read('src/components/layout/BottomNav.tsx'), /data-mobile-bottom-nav/);
+  assert.match(read('src/components/layout/BottomNav.tsx'), /safe-area-inset-bottom/);
+});
+
+test('mobile navigation recognizes nested tool routes', () => {
+  const nav = read('src/components/layout/BottomNav.tsx');
+  assert.match(nav, /pathname\.startsWith\(`\$\{item\.href\}\/`\)/);
+});
+
+test('legacy tool surfaces use canonical platform and accessible compare limits', () => {
+  const card = read('src/components/tools/ToolCard.tsx');
+  const compare = read('src/app/compare/page.tsx');
+  assert.doesNotMatch(card, /tool\.platforms/);
+  assert.doesNotMatch(compare, /tool\.platforms/);
+  assert.match(card, /limit-reached/);
+  assert.match(card, /aria-live="polite"/);
+});

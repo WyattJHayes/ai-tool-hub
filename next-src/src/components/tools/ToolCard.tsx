@@ -2,6 +2,7 @@
 
 import { ArrowRight, ExternalLink, Heart } from 'lucide-react';
 import Link from 'next/link';
+import { useState } from 'react';
 import type { Tool } from '@/types/tool';
 import { useUserStore } from '@/stores/useUserStore';
 import { useCompareStore } from '@/stores/useCompareStore';
@@ -31,11 +32,24 @@ interface ToolCardProps {
 export function ToolCard({ tool }: ToolCardProps) {
   const toggleFavorite = useUserStore((state) => state.toggleFavorite);
   const isFavorite = useUserStore((state) => state.isFavorite(tool.id));
-  const { addTool, removeTool, isSelected } = useCompareStore();
+  const { selectedTools, addTool, removeTool, isSelected } = useCompareStore();
+  const [compareAnnouncement, setCompareAnnouncement] = useState('');
   const compareSelected = isSelected(tool.id);
+  const compareDisabled = !compareSelected && selectedTools.length >= 4;
   const slug = getToolSlug(tool);
   const priceLabel = getPricingHighlight(tool.pricing);
-  const platformLabel = tool.platforms?.[0] || tool.platform?.[0];
+  const platformLabel = tool.platform?.[0];
+
+  const handleCompare = () => {
+    if (compareSelected) {
+      removeTool(tool.id);
+      setCompareAnnouncement('已移出比较');
+      return;
+    }
+
+    const outcome = addTool(tool);
+    setCompareAnnouncement(outcome === 'limit-reached' ? '最多比较 4 款工具，请先移除一款' : '已加入比较');
+  };
 
   const displayTags = [
     ...(tool.status === 'hot' ? ['hot'] : []),
@@ -74,11 +88,14 @@ export function ToolCard({ tool }: ToolCardProps) {
           <input
             type="checkbox"
             checked={compareSelected}
-            onChange={() => (compareSelected ? removeTool(tool.id) : addTool(tool))}
+            aria-disabled={compareDisabled}
+            aria-label={`${compareSelected ? '取消对比' : '加入对比'} ${tool.name}`}
+            onChange={handleCompare}
             className="h-4 w-4 rounded border-[var(--line-strong)] accent-[var(--accent)]"
           />
           <span>对比</span>
         </label>
+        <span className="sr-only" aria-live="polite">{compareAnnouncement}</span>
       </div>
 
       <Link href={`/tools/${slug}`} className="mt-3 min-h-11 flex flex-1">

@@ -17,12 +17,10 @@ export interface Tool {
   toolTags: string[];
   url: string;
   status?: string;
-  platforms?: string[];
   difficulty?: string;
   updateTime?: string;
   pricing?: PricingPlan[];
   valueTag?: string;
-  scenes?: string[];
   highlights?: string[];
   platform?: string[];
   relatedTools?: number[];
