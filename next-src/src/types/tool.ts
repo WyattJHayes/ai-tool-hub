@@ -129,3 +129,6 @@ export interface FilterState {
     status: string[];
   };
 }
+
+export type CompareAddOutcome = 'added' | 'already-selected' | 'limit-reached';
+export type CompareAvailability = 'selected' | 'limit-reached' | 'available';
