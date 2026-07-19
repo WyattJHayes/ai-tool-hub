@@ -196,6 +196,10 @@ for (const [pattern, message] of [
   [/if ! kill -0 "\$next_pid" 2>\/dev\/null; then/, 'CI must detect early task-first Next.js server exit'],
   [/wait "\$next_pid" 2>\/dev\/null \|\| true/, 'CI must wait for the exact task-first Next.js server process'],
   [/exit_status=\$\?/, 'CI task-first cleanup must preserve the failing command status'],
+  [
+    /if \[ "\$exit_status" -ne 0 \]; then\s+cat "\$task_log"\s+fi\s+rm -f "\$task_log"/,
+    'CI task-first cleanup must print a failed run log once before removing it',
+  ],
   [/rm -f "\$task_log"/, 'CI task-first cleanup must remove its temporary log'],
   [/trap - EXIT INT TERM/, 'CI task-first cleanup must remove its traps after explicit cleanup'],
   [/node --test tools\/resume-optimizer\/tests\/api-client-auth\.test\.cjs/, 'CI must run resume optimizer regressions'],

@@ -104,6 +104,9 @@ jobs:
               kill "$next_pid" 2>/dev/null || true
               wait "$next_pid" 2>/dev/null || true
             fi
+            if [ "$exit_status" -ne 0 ]; then
+              cat "$task_log"
+            fi
             rm -f "$task_log"
             exit "$exit_status"
           }
@@ -115,14 +118,12 @@ jobs:
           next_pid=$!
           for attempt in $(seq 1 30); do
             if ! kill -0 "$next_pid" 2>/dev/null; then
-              cat "$task_log"
               exit 1
             fi
             if curl --fail --silent http://127.0.0.1:4181/ >/dev/null; then
               break
             fi
             if [ "$attempt" -eq 30 ]; then
-              cat "$task_log"
               exit 1
             fi
             sleep 1

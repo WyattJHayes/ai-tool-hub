@@ -46,14 +46,14 @@ async function assertTargetSize(locator, label, useClosestLabel = false) {
     const target = closestLabel ? element.closest('label') : element;
     if (!target) return null;
     const rect = target.getBoundingClientRect();
-    return { width: Math.round(rect.width), height: Math.round(rect.height) };
+    return { width: rect.width, height: rect.height };
   }, useClosestLabel);
   if (!geometry) {
     fail(`${label}: interactive target is missing`);
     return;
   }
   if (geometry.width < 44 || geometry.height < 44) {
-    fail(`${label}: interactive target is ${geometry.width}x${geometry.height}, expected at least 44x44`);
+    fail(`${label}: interactive target is ${Math.round(geometry.width)}x${Math.round(geometry.height)}, expected at least 44x44`);
   }
 }
 
