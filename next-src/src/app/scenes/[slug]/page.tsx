@@ -73,7 +73,7 @@ export default function SceneDetailPage() {
         {sceneTools.length === 0 && !isLoading ? (
           <div className="rounded-lg border border-dashed border-[var(--line-strong)] bg-[var(--surface)] px-6 py-16 text-center">
             <p className="text-base text-[var(--muted)]">该场景暂无工具推荐</p>
-            <Link href="/scenes" className="mt-3 inline-flex min-h-11 items-center text-sm font-medium text-[var(--accent)]">返回场景列表</Link>
+            <Link href="/scenes" className="mt-3 inline-flex min-h-11 items-center text-sm font-medium text-[var(--accent-ink)] hover:text-[var(--accent-hover)]">返回场景列表</Link>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">

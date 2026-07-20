@@ -1,10 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const readRepo = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
 const css = read('src/app/globals.css');
+
+function collectSourceFiles(directory) {
+  return readdirSync(directory).flatMap((entry) => {
+    const absolute = path.join(directory, entry);
+    return statSync(absolute).isDirectory()
+      ? collectSourceFiles(absolute)
+      : /\.(css|ts|tsx)$/.test(entry) ? [absolute] : [];
+  });
+}
 
 function cssBlock(selector) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -250,4 +261,22 @@ test('uses carbon compare headers while keeping recoverable compare actions neut
   assert.match(clearAction, /text-\[var\(--muted\)\]/);
   assert.match(clearAction, /hover:bg-\[var\(--surface-hover\)\]/);
   assert.doesNotMatch(clearAction, /--(?:danger|signal)|(?:bg|border|text|ring|fill)-(?:red|amber|orange|signal)|\b(?:amber|orange|signal)\b|text-white/);
+});
+
+test('contains no legacy palette, raw status colors, or prohibited motion in application source', () => {
+  const sourceRoot = fileURLToPath(new URL('../src/', import.meta.url));
+  const files = collectSourceFiles(sourceRoot);
+  const forbiddenHex = /#(?:f6f7f4|eef1ec|e8ede7|171a17|5f675f|858c85|dce1da|c8cfc6|176b4d|105b40|e4f0e9|b54747|9a6700|171917|202320|292d29|303530|f2f4ef|b2b9b0|858d84|373d36|4a5148|72b897|8cc8aa|203c30|e08080|d8ad58)\b/i;
+  const rawPaletteClass = /\b(?:bg|border|text|fill|ring)-(?:red|amber|yellow|green|emerald|teal|cyan|sky|blue|purple|violet)-\d+\b/;
+  const prohibitedEffect = /\bbg-gradient-|\b(?:from|via|to)-[a-z]+-\d+|repeating-linear-gradient|shadow-\[[^\]]*0_0|animate-spin|transition-transform|(?:group-)?hover:(?:-?translate|scale|rotate)/;
+
+  for (const file of files) {
+    const content = readFileSync(file, 'utf8');
+    assert.doesNotMatch(content, forbiddenHex, file);
+    assert.doesNotMatch(content, rawPaletteClass, file);
+    assert.doesNotMatch(content, /var\(--(?:danger|warning)\)|text-white|rounded-full/, file);
+    assert.doesNotMatch(content, /rgba\(23,\s*26,\s*23/, file);
+    assert.doesNotMatch(content, prohibitedEffect, file);
+    assert.doesNotMatch(content, /tracking-\[-|letter-spacing:\s*-/, file);
+  }
 });

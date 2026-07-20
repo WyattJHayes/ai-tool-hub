@@ -65,7 +65,7 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
         </div>
 
         {!isSupabaseConfigured ? (
-          <div className="mb-4 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-[var(--warning)] dark:border-amber-950 dark:bg-amber-950/40"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><p>云同步服务当前不可用，仍可继续使用本地收藏和评分。</p></div>
+          <div className="mb-4 flex items-start gap-2 rounded-md border border-[var(--signal-ink)] bg-[var(--signal-soft)] p-3 text-xs text-[var(--signal-ink)]"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><p>云同步服务当前不可用，仍可继续使用本地收藏和评分。</p></div>
         ) : null}
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -75,17 +75,17 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
           <label className="block text-sm font-medium text-[var(--ink)]" htmlFor="auth-password">密码</label>
           <div className="relative -mt-2"><Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted-subtle)]" /><input id="auth-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required minLength={6} className="h-12 w-full rounded-md border border-[var(--line-strong)] bg-[var(--surface)] pl-10 pr-3 text-sm text-[var(--ink)] outline-none focus:border-[var(--accent)]" /></div>
 
-          {error ? <p className="rounded-md bg-red-50 px-3 py-2 text-xs text-[var(--danger)] dark:bg-red-950/40">{error}</p> : null}
-          {success ? <p className="rounded-md bg-[var(--accent-soft)] px-3 py-2 text-xs text-[var(--accent)]">{success}</p> : null}
+          {error ? <p className="rounded-md border border-[var(--signal-ink)] bg-[var(--signal-soft)] px-3 py-2 text-xs text-[var(--signal-ink)]">{error}</p> : null}
+          {success ? <p className="rounded-md bg-[var(--surface-subtle)] px-3 py-2 text-xs text-[var(--ink)]">{success}</p> : null}
 
-          <button type="submit" disabled={loading || !isSupabaseConfigured} className={cn('flex min-h-12 w-full items-center justify-center rounded-md text-sm font-medium text-white', isSupabaseConfigured ? 'bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-50' : 'cursor-not-allowed bg-[var(--muted-subtle)]')}>
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : mode === 'login' ? '登录' : '注册'}
+          <button type="submit" disabled={loading || !isSupabaseConfigured} className={cn('flex min-h-12 w-full items-center justify-center rounded-md text-sm font-medium text-[var(--on-accent)]', isSupabaseConfigured ? 'bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-50' : 'cursor-not-allowed bg-[var(--muted-subtle)]')}>
+            {loading ? <><Loader2 className="h-4 w-4" aria-hidden="true" /><span className="sr-only">处理中</span></> : mode === 'login' ? '登录' : '注册'}
           </button>
         </form>
 
         <p className="mt-4 text-center text-xs text-[var(--muted)]">
           {mode === 'login' ? '没有账号？' : '已有账号？'}{' '}
-          <button type="button" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(''); setSuccess(''); }} className="min-h-11 font-medium text-[var(--accent)] hover:text-[var(--accent-hover)]">{mode === 'login' ? '注册' : '登录'}</button>
+          <button type="button" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(''); setSuccess(''); }} className="min-h-11 font-medium text-[var(--accent-ink)] hover:text-[var(--accent-hover)]">{mode === 'login' ? '注册' : '登录'}</button>
         </p>
       </div>
     </div>

@@ -37,8 +37,6 @@
   --tool-signal: #f28b3c;
   --tool-signal-ink: #ffb57d;
   --tool-signal-soft: #3a2114;
-  --danger: var(--signal-ink);
-  --warning: var(--signal-ink);
   --radius: 6px;
   --radius-sm: 4px;
   --transition-duration: 140ms;
@@ -69,8 +67,6 @@
   --signal-ink: #ffb57d;
   --signal-soft: #3a2114;
   --tool-surface: #0c1216;
-  --danger: var(--signal-ink);
-  --warning: var(--signal-ink);
 }
 
 .carbon-tool-surface {

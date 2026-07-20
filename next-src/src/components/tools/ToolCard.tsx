@@ -20,9 +20,9 @@ const TAG_LABELS: Record<string, string> = {
 };
 
 const TAG_STYLES: Record<string, string> = {
-  free: 'border-[var(--accent-soft)] bg-[var(--accent-soft)] text-[var(--accent)]',
-  hot: 'border-red-100 bg-red-50 text-[var(--danger)] dark:border-red-950 dark:bg-red-950/40',
-  vip: 'border-amber-100 bg-amber-50 text-[var(--warning)] dark:border-amber-950 dark:bg-amber-950/40',
+  free: 'border-[var(--line)] bg-[var(--surface-subtle)] text-[var(--muted)]',
+  hot: 'border-[var(--line)] bg-[var(--surface-subtle)] text-[var(--muted)]',
+  vip: 'border-[var(--line)] bg-[var(--surface-subtle)] text-[var(--muted)]',
 };
 
 interface ToolCardProps {
@@ -109,25 +109,25 @@ export function ToolCard({ tool }: ToolCardProps) {
       </div>
 
       <div className="mt-3 flex items-center justify-between border-t border-[var(--line)] pt-3">
-        <Link href={`/tools/${slug}`} className="flex min-h-11 items-center gap-1 text-xs font-medium text-[var(--accent)] hover:text-[var(--accent-hover)]">
+        <Link href={`/tools/${slug}`} className="flex min-h-11 items-center gap-1 text-xs font-medium text-[var(--accent-ink)] hover:text-[var(--accent-hover)]">
           查看详情 <ArrowRight className="h-3.5 w-3.5" />
         </Link>
         <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={() => toggleFavorite(tool.id)}
-            className="flex h-11 w-11 items-center justify-center rounded-md text-[var(--muted-subtle)] transition-colors hover:bg-[var(--surface-subtle)] hover:text-[var(--danger)]"
+            className="flex h-11 w-11 items-center justify-center rounded-md text-[var(--muted)] transition-colors hover:bg-[var(--surface-hover)]"
             aria-label={isFavorite ? `取消收藏 ${tool.name}` : `收藏 ${tool.name}`}
             title={isFavorite ? '取消收藏' : '收藏'}
           >
-            <Heart className={cn('h-[18px] w-[18px]', isFavorite && 'fill-current text-[var(--danger)]')} />
+            <Heart className={cn('h-[18px] w-[18px]', isFavorite && 'fill-current text-[var(--accent)]')} />
           </button>
           <a
             href={tool.url}
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => trackClick(tool.id, slug, 'card')}
-            className="flex h-11 items-center gap-1.5 rounded-md border border-[var(--line)] px-3 text-xs font-medium text-[var(--ink)] transition-colors hover:border-[var(--line-strong)] hover:bg-[var(--surface-subtle)]"
+            className="flex h-11 items-center gap-1.5 rounded-md border border-[var(--line-strong)] px-3 text-xs font-medium text-[var(--muted)] transition-colors hover:bg-[var(--surface-hover)]"
             aria-label={`访问 ${tool.name}`}
           >
             访问 <ExternalLink className="h-3.5 w-3.5" />
