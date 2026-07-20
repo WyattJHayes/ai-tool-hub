@@ -18,7 +18,7 @@
 - Do not add metrics, charts, terminal logs, activity feeds, marketing copy, gradients, glow, glass, background grids, scanlines, particles, 3D effects, scale, rotation, hover movement, or card nesting.
 - Keep ordinary radii at 4px or 6px, transitions at 140ms `ease-out`, and interactive targets at least 44x44px.
 - Preserve WCAG AA contrast, keyboard operation, `prefers-reduced-motion`, the existing responsive field order, and a 320px minimum width without horizontal overflow.
-- Do not modify `.superpowers/`, `design-qa.md`, tool JSON, Supabase configuration, or generated evidence files.
+- Do not commit `.superpowers/`, `design-qa.md`, or generated evidence files. The ignored `.superpowers/sdd/progress.md` ledger may be appended for workflow recovery; do not modify other `.superpowers/` evidence. Do not modify tool JSON or Supabase configuration.
 
 ---
 
@@ -155,7 +155,7 @@ Expected: only pre-existing `.superpowers/` and `design-qa.md` are untracked; ba
 **Interfaces:**
 
 - Consumes: persisted Zustand JSON shaped as `{ state: { theme?: unknown } }` under `ai-tool-hub-user`.
-- Produces: `Theme`, `DEFAULT_THEME`, `THEME_STORAGE_KEY`, `resolveStoredTheme(raw)`, and `THEME_BOOTSTRAP_SCRIPT` for the store, layout, tests, and browser guard.
+- Produces: `Theme`, `DEFAULT_THEME`, `THEME_STORAGE_KEY`, `resolveStoredTheme(raw, fallback)`, and `THEME_BOOTSTRAP_SCRIPT` for the store, layout, tests, and browser guard.
 
 - [ ] **Step 1: Add failing bootstrap contract tests**
 
@@ -163,14 +163,8 @@ Add the imports and helper below to `next-src/tests/carbon-theme-contract.test.m
 
 ```js
 import vm from 'node:vm';
-import {
-  DEFAULT_THEME,
-  THEME_BOOTSTRAP_SCRIPT,
-  THEME_STORAGE_KEY,
-  resolveStoredTheme,
-} from '../src/lib/theme-bootstrap.mjs';
 
-function runThemeBootstrap(raw) {
+function runThemeBootstrap(script, raw, storageError = false) {
   const classNames = new Set();
   let requestedKey = null;
   const root = {
@@ -180,12 +174,13 @@ function runThemeBootstrap(raw) {
     },
     style: {},
   };
-  vm.runInNewContext(THEME_BOOTSTRAP_SCRIPT, {
+  vm.runInNewContext(script, {
     document: { documentElement: root },
     window: {
       localStorage: {
         getItem(key) {
           requestedKey = key;
+          if (storageError) throw new Error('storage unavailable');
           return raw;
         },
       },
@@ -199,29 +194,45 @@ function runThemeBootstrap(raw) {
 }
 ```
 
-Add this test after the existing metadata/radius/motion test:
+Add this async test after the existing metadata/radius/motion test. The explicit
+`existsSync` assertion supplies the RED failure without turning a missing module
+into a test-loader error:
 
 ```js
-test('boots dark before paint while honoring a persisted theme', () => {
+test('boots dark before paint while honoring a persisted theme', async () => {
   const layout = read('src/app/layout.tsx');
   const store = read('src/stores/useUserStore.ts');
+  const moduleUrl = new URL('../src/lib/theme-bootstrap.mjs', import.meta.url);
+
+  assert.equal(existsSync(moduleUrl), true, 'missing theme bootstrap module');
+  const {
+    DEFAULT_THEME,
+    THEME_BOOTSTRAP_SCRIPT,
+    THEME_STORAGE_KEY,
+    resolveStoredTheme,
+  } = await import(`${moduleUrl.href}?contract=${Date.now()}`);
 
   assert.equal(DEFAULT_THEME, 'dark');
   assert.equal(THEME_STORAGE_KEY, 'ai-tool-hub-user');
-  assert.equal(resolveStoredTheme(null), 'dark');
-  assert.equal(resolveStoredTheme('{bad json'), 'dark');
-  assert.equal(resolveStoredTheme(JSON.stringify({ state: { theme: 'light' } })), 'light');
-  assert.equal(resolveStoredTheme(JSON.stringify({ state: { theme: 'dark' } })), 'dark');
-  assert.equal(resolveStoredTheme(JSON.stringify({ state: { theme: 'green' } })), 'dark');
+  assert.equal(resolveStoredTheme(null, DEFAULT_THEME), 'dark');
+  assert.equal(resolveStoredTheme('{bad json', DEFAULT_THEME), 'dark');
+  assert.equal(resolveStoredTheme(JSON.stringify({ state: { theme: 'light' } }), DEFAULT_THEME), 'light');
+  assert.equal(resolveStoredTheme(JSON.stringify({ state: { theme: 'dark' } }), DEFAULT_THEME), 'dark');
+  assert.equal(resolveStoredTheme(JSON.stringify({ state: { theme: 'green' } }), DEFAULT_THEME), 'dark');
 
-  assert.deepEqual(runThemeBootstrap(null), {
+  assert.deepEqual(runThemeBootstrap(THEME_BOOTSTRAP_SCRIPT, null), {
     colorScheme: 'dark',
     dark: true,
     requestedKey: 'ai-tool-hub-user',
   });
-  assert.deepEqual(runThemeBootstrap(JSON.stringify({ state: { theme: 'light' } })), {
+  assert.deepEqual(runThemeBootstrap(THEME_BOOTSTRAP_SCRIPT, JSON.stringify({ state: { theme: 'light' } })), {
     colorScheme: 'light',
     dark: false,
+    requestedKey: 'ai-tool-hub-user',
+  });
+  assert.deepEqual(runThemeBootstrap(THEME_BOOTSTRAP_SCRIPT, null, true), {
+    colorScheme: 'dark',
+    dark: true,
     requestedKey: 'ai-tool-hub-user',
   });
   assert.match(store, /theme:\s*DEFAULT_THEME/);
@@ -241,7 +252,7 @@ Run:
 node --test --test-name-pattern="boots dark before paint" next-src/tests/carbon-theme-contract.test.mjs
 ```
 
-Expected: FAIL with `ERR_MODULE_NOT_FOUND` for `src/lib/theme-bootstrap.mjs`.
+Expected: FAIL with `AssertionError: missing theme bootstrap module`.
 
 - [ ] **Step 3: Create the shared bootstrap module and declarations**
 
@@ -251,30 +262,31 @@ Create `next-src/src/lib/theme-bootstrap.mjs`:
 export const DEFAULT_THEME = 'dark';
 export const THEME_STORAGE_KEY = 'ai-tool-hub-user';
 
-export function resolveStoredTheme(raw) {
+export function resolveStoredTheme(raw, fallback) {
   try {
     const theme = raw ? JSON.parse(raw)?.state?.theme : null;
-    return theme === 'light' || theme === 'dark' ? theme : DEFAULT_THEME;
+    return theme === 'light' || theme === 'dark' ? theme : fallback;
   } catch {
-    return DEFAULT_THEME;
+    return fallback;
   }
 }
 
-function applyInitialTheme(storageKey, fallback) {
-  let theme = fallback;
+export const THEME_BOOTSTRAP_SCRIPT = `(() => {
+  const resolveStoredTheme = ${resolveStoredTheme.toString()};
+  let stored = null;
   try {
-    const stored = window.localStorage.getItem(storageKey);
-    const value = stored ? JSON.parse(stored)?.state?.theme : null;
-    if (value === 'light' || value === 'dark') theme = value;
+    stored = window.localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)});
   } catch {
-    theme = fallback;
+    stored = null;
   }
+  const theme = resolveStoredTheme(
+    stored,
+    ${JSON.stringify(DEFAULT_THEME)},
+  );
   const root = document.documentElement;
   root.classList.toggle('dark', theme === 'dark');
   root.style.colorScheme = theme;
-}
-
-export const THEME_BOOTSTRAP_SCRIPT = `(${applyInitialTheme.toString()})(${JSON.stringify(THEME_STORAGE_KEY)}, ${JSON.stringify(DEFAULT_THEME)});`;
+})();`;
 ```
 
 Create `next-src/src/lib/theme-bootstrap.d.mts`:
@@ -285,7 +297,7 @@ export type Theme = 'dark' | 'light';
 export const DEFAULT_THEME: Theme;
 export const THEME_STORAGE_KEY: 'ai-tool-hub-user';
 export const THEME_BOOTSTRAP_SCRIPT: string;
-export function resolveStoredTheme(raw: string | null): Theme;
+export function resolveStoredTheme(raw: string | null, fallback: Theme): Theme;
 ```
 
 - [ ] **Step 4: Wire the store and root layout to the shared contract**
