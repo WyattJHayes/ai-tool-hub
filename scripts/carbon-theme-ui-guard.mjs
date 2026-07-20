@@ -3,6 +3,7 @@ import { readFile, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
+import { DEFAULT_THEME, THEME_STORAGE_KEY } from '../next-src/src/lib/theme-bootstrap.mjs';
 import { prepareQaDir } from './carbon-qa-path.mjs';
 
 const baseUrl = process.env.CARBON_THEME_URL || 'http://127.0.0.1:3101';
@@ -55,7 +56,7 @@ const viewports = [
   { width: 1280, height: 720 },
   { width: 768, height: 1024 },
   { width: 390, height: 844 },
-  { width: 320, height: 700 },
+  { width: 320, height: 844 },
 ];
 
 const evidencePairs = [
@@ -194,6 +195,41 @@ async function assertAuthoritativeRatingFlow(browser) {
   }
 }
 
+async function assertInitialTheme(browser) {
+  const cases = [
+    { name: 'new visitor', stored: null, expected: DEFAULT_THEME },
+    { name: 'persisted light', stored: 'light', expected: 'light' },
+    { name: 'persisted dark', stored: 'dark', expected: 'dark' },
+  ];
+  for (const entry of cases) {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    if (entry.stored) {
+      await context.addInitScript(({ key, theme }) => {
+        try {
+          localStorage.setItem(key, JSON.stringify({ state: { theme }, version: 0 }));
+        } catch {
+          // The script runs again after the target origin is created.
+        }
+      }, { key: THEME_STORAGE_KEY, theme: entry.stored });
+    }
+    const page = await context.newPage();
+    try {
+      const response = await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+      if (!response || !response.ok()) throw new Error(`${entry.name}: navigation failed`);
+      const actual = await page.evaluate(() => ({
+        colorScheme: document.documentElement.style.colorScheme,
+        dark: document.documentElement.classList.contains('dark'),
+      }));
+      const expectedDark = entry.expected === 'dark';
+      if (actual.dark !== expectedDark || actual.colorScheme !== entry.expected) {
+        throw new Error(`${entry.name}: initial theme is ${JSON.stringify(actual)}, expected ${entry.expected}`);
+      }
+    } finally {
+      await context.close();
+    }
+  }
+}
+
 async function assertScenarioIdentity(page, scenario, label) {
   const url = new URL(page.url());
   if (url.pathname !== scenario.expectedPath) {
@@ -287,6 +323,48 @@ async function assertHomeHover(page, scenario, theme, label) {
     || hover.borderLeftStyle === 'none') {
     fail(`${label}: research hover geometry/colors are ${JSON.stringify(hover)}`);
   }
+}
+
+async function assertInstrumentConsole(page, scenario, theme, label) {
+  if (scenario.name !== 'home') return;
+  await requireCount(page.locator('[data-instrument-section]'), 3, `${label} instrument sections`);
+  await requireCount(page.locator('[data-task-entry]'), 8, `${label} task entries`);
+  await requireCount(page.locator('[data-decision-list] [data-tool-decision-row]'), 6, `${label} weekly rows`);
+  if (await page.getByRole('checkbox', { name: /对比/ }).count()) {
+    fail(`${label}: homepage exposes compare checkboxes`);
+  }
+
+  const taskGrid = page.locator('[data-task-entry-list]');
+  const columnCount = await taskGrid.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length);
+  const width = await page.evaluate(() => innerWidth);
+  const expectedColumns = width >= 1024 ? 4 : width >= 640 ? 2 : 1;
+  if (columnCount !== expectedColumns) fail(`${label}: task columns ${columnCount}, expected ${expectedColumns}`);
+
+  const tasksSection = page.locator('[data-instrument-section="tasks"]');
+  const marker = await tasksSection.evaluate((element) => {
+    const style = getComputedStyle(element, '::before');
+    return { background: style.backgroundColor, height: style.height, width: style.width };
+  });
+  if (width >= 768) {
+    if (marker.width !== '20px' || marker.height !== '1px') fail(`${label}: marker geometry ${JSON.stringify(marker)}`);
+  } else if (marker.width === '20px') {
+    fail(`${label}: desktop marker is visible on mobile`);
+  }
+
+  const search = page.getByRole('combobox', { name: '搜索工具、任务或能力' });
+  await search.focus();
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('[data-search-shell]')).outlineWidth === '2px');
+  const searchOutline = await page.locator('[data-search-shell]').evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { color: style.outlineColor, offset: style.outlineOffset, width: style.outlineWidth };
+  });
+  if (searchOutline.color !== themes[theme].focus || searchOutline.offset !== '2px' || searchOutline.width !== '2px') {
+    fail(`${label}: search outline ${JSON.stringify(searchOutline)}`);
+  }
+
+  const firstRowRadius = await page.locator('[data-decision-list] [data-tool-decision-row]').first()
+    .evaluate((element) => getComputedStyle(element).borderRadius);
+  if (firstRowRadius !== '0px') fail(`${label}: compact row radius is ${firstRowRadius}`);
 }
 
 async function assertTokens(page, theme, label) {
@@ -781,6 +859,7 @@ async function captureScenario(browser, viewport, scenario, theme, qaDir) {
     await assertScenarioIdentity(page, scenario, `${label} setup`);
     await setTheme(page, theme);
     await assertHomeHover(page, scenario, theme, `${label} themed`);
+    await assertInstrumentConsole(page, scenario, theme, label);
     await assertScenarioIdentity(page, scenario, `${label} themed identity`);
     await assertTokens(page, theme, label);
     await assertNoOverflow(page, label);
@@ -878,6 +957,7 @@ async function main() {
   const sharp = await loadSharp();
   const browser = await chromium.launch();
   try {
+    await assertInitialTheme(browser);
     await assertAuthoritativeRatingFlow(browser);
     for (let index = 0; index < capturePlan.length; index += 1) {
       const { viewport, scenario, theme } = capturePlan[index];

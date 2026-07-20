@@ -1072,7 +1072,7 @@ test('wires the complete carbon route, state, geometry, focus, and evidence guar
 
   const viewportPairs = [...viewportsBlock.matchAll(/width: (\d+), height: (\d+)/g)]
     .map((match) => [Number(match[1]), Number(match[2])]);
-  assert.deepEqual(viewportPairs, [[1440, 900], [1280, 720], [768, 1024], [390, 844], [320, 700]]);
+  assert.deepEqual(viewportPairs, [[1440, 900], [1280, 720], [768, 1024], [390, 844], [320, 844]]);
   assert.equal((scenarioNames.length * 2) + (4 * 4 * 2), 50);
   assert.match(guard, /capturePlan\.length !== 50/);
 
@@ -1109,6 +1109,8 @@ test('wires the complete carbon route, state, geometry, focus, and evidence guar
     'assertFocusColors',
     'assertThemeLayoutInvariant',
     'assertAuthoritativeRatingFlow',
+    'assertInitialTheme',
+    'assertInstrumentConsole',
     'prepareScreenshot',
     'auditEvidence',
   ]) functionBody(name);
@@ -1133,6 +1135,13 @@ test('wires the complete carbon route, state, geometry, focus, and evidence guar
   assert.match(functionBody('assertFocusColors'), /assertOutline/);
   assert.match(functionBody('assertOutline'), /outlineStyle/);
   assert.match(functionBody('assertOutline'), /outlineWidth/);
+  assert.match(capture, /await assertInstrumentConsole\(/);
+  assert.match(main, /await assertInitialTheme\(browser\)/);
+  assert.match(functionBody('assertInstrumentConsole'), /gridTemplateColumns/);
+  assert.match(functionBody('assertInstrumentConsole'), /data-instrument-section/);
+  assert.match(functionBody('assertInstrumentConsole'), /data-search-shell/);
+  assert.match(functionBody('assertInitialTheme'), /THEME_STORAGE_KEY/);
+  assert.match(functionBody('assertInitialTheme'), /DEFAULT_THEME/);
   assert.match(main, /await assertAuthoritativeRatingFlow\(browser\)/);
 
   assert.match(main, /await prepareQaDir\(/);
