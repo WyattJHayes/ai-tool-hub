@@ -53,6 +53,7 @@ jobs:
             next-src/tests/data-loading-contract.test.mjs \
             next-src/tests/search-suggestions.test.mjs \
             next-src/tests/editorial-ui-contract.test.mjs \
+            next-src/tests/carbon-theme-contract.test.mjs \
             next-src/tests/task-first-ui-contract.test.mjs
           npm --prefix next-src run lint
           npm --prefix next-src run build
@@ -129,6 +130,7 @@ jobs:
             sleep 1
           done
           TASK_FIRST_UI_URL=http://127.0.0.1:4181 node scripts/task-first-ui-guard.mjs
+          CARBON_THEME_URL=http://127.0.0.1:4181 CARBON_QA_DIR=/tmp/carbon-console-qa node scripts/carbon-theme-ui-guard.mjs
           kill "$next_pid" 2>/dev/null || true
           wait "$next_pid" 2>/dev/null || true
           next_pid=''

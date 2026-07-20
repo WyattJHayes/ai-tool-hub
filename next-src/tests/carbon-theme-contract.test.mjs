@@ -521,3 +521,22 @@ test('contains no legacy palette, raw status colors, or prohibited motion in app
     assert.equal(violation, undefined, `${file}: ${violation}`);
   }
 });
+
+test('wires the carbon route, viewport, theme, focus, and screenshot guard into CI', () => {
+  const guard = readRepo('scripts/carbon-theme-ui-guard.mjs');
+  const workflow = readRepo('.github/workflows/deploy.yml');
+
+  for (const route of ['/', '/tools?scene=research', '/tools/71', '/compare', '/scenes', '/scenes/research', '/leaderboard', '/user']) {
+    assert.ok(guard.includes(route), route);
+  }
+  for (const viewport of ['1440, height: 900', '1280, height: 720', '768, height: 1024', '390, height: 844', '320, height: 700']) {
+    assert.ok(guard.includes(viewport), viewport);
+  }
+  assert.match(guard, /data-carbon-surface/);
+  assert.match(guard, /data-selected/);
+  assert.match(guard, /outlineColor/);
+  assert.match(guard, /CARBON_QA_DIR/);
+  assert.match(guard, /page\.screenshot/);
+  assert.match(workflow, /next-src\/tests\/carbon-theme-contract\.test\.mjs/);
+  assert.match(workflow, /CARBON_THEME_URL=http:\/\/127\.0\.0\.1:4181 CARBON_QA_DIR=\/tmp\/carbon-console-qa node scripts\/carbon-theme-ui-guard\.mjs/);
+});
