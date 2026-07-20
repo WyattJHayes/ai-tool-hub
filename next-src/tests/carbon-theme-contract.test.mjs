@@ -224,12 +224,20 @@ test('uses carbon compare headers while keeping recoverable compare actions neut
   const header = compare.match(/selectedTools\.map\(\(tool\) => \(\s*(<div key=\{tool\.id\}[\s\S]*?<\/div>)\s*\)\)/)?.[1];
   const dataCell = compare.match(/values\.map\(\(value, index\) => (<div key=\{`\$\{row\.key\}-\$\{index\}`\}[\s\S]*?<\/div>)\)\}/)?.[1];
   const clearAction = compare.match(/<button type="button" onClick=\{clearAll\} className="([^"]*)">清除全部<\/button>/)?.[1];
+  const removeAction = header?.match(/<button type="button" onClick=\{\(\) => removeTool\(tool\.id\)\} className="([^"]*)"/)?.[1];
+  const carbonSurface = cssBlock('.carbon-tool-surface');
 
   assert.ok(header, 'missing selected-tool header block');
-  assert.match(header, /<div key=\{tool\.id\} data-carbon-surface className="carbon-tool-surface[^\"]*border-\[var\(--line-strong\)\][^\"]*">/);
-  assert.match(header, /<button type="button" onClick=\{\(\) => removeTool\(tool\.id\)\} className="[^\"]*h-11 w-11[^\"]*text-\[var\(--muted\)\][^\"]*hover:bg-\[var\(--surface-subtle\)\][^\"]*"/);
-  assert.match(cssBlock('.carbon-tool-surface'), /--on-accent:\s*var\(--tool-on-accent\)/);
+  assert.match(header, /<div key=\{tool\.id\} data-carbon-surface className="carbon-tool-surface[^\"]*border-\[var\(--line-strong\)\][^\"]*text-\[var\(--ink\)\][^\"]*">/);
+  assert.match(carbonSurface, /--ink:\s*var\(--tool-ink\)/);
+  assert.match(carbonSurface, /--on-accent:\s*var\(--tool-on-accent\)/);
   assert.doesNotMatch(header, /--danger|bg-red|border-red|text-red|text-white/);
+
+  assert.ok(removeAction, 'missing selected-tool remove action');
+  assert.match(removeAction, /h-11 w-11/);
+  assert.match(removeAction, /text-\[var\(--muted\)\]/);
+  assert.match(removeAction, /hover:bg-\[var\(--surface-subtle\)\]/);
+  assert.doesNotMatch(removeAction, /--(?:danger|signal)|(?:bg|border|text|ring|fill)-(?:red|amber|orange|signal)|\b(?:amber|orange|signal)\b|text-white/);
 
   assert.ok(dataCell, 'missing ordinary comparison data-cell block');
   assert.match(dataCell, /bg-\[var\(--surface\)\]/);
@@ -241,5 +249,5 @@ test('uses carbon compare headers while keeping recoverable compare actions neut
   assert.match(clearAction, /border-\[var\(--line-strong\)\]/);
   assert.match(clearAction, /text-\[var\(--muted\)\]/);
   assert.match(clearAction, /hover:bg-\[var\(--surface-hover\)\]/);
-  assert.doesNotMatch(clearAction, /--danger|bg-red|border-red|text-red|text-white/);
+  assert.doesNotMatch(clearAction, /--(?:danger|signal)|(?:bg|border|text|ring|fill)-(?:red|amber|orange|signal)|\b(?:amber|orange|signal)\b|text-white/);
 });
