@@ -176,6 +176,7 @@ test('homepage uses instrument sections and one continuous task-first list', () 
   assert.match(tasks, /data-task-entry-list/);
   assert.match(tasks, /data-task-entry/);
   assert.match(tasks, /focus-visible:border-l-\[var\(--accent\)\]/);
+  assert.match(tasks, /group-focus-visible:text-\[var\(--accent\)\]/);
   assert.match(list, /data-decision-list/);
   assert.doesNotMatch(row, /rounded-md border md:grid-cols/);
 });
