@@ -65,14 +65,15 @@ export default function CompareTray() {
             <span className="text-sm font-medium text-[var(--ink)]">已选 {selectedTools.length}/4 款</span>
             <div
               data-compare-selected-tools
-              className="mt-0.5 flex min-w-0 gap-1 overflow-hidden sm:mt-1 sm:gap-2 sm:overflow-x-auto"
+              className="mt-0.5 flex min-w-0 gap-1 overflow-x-auto sm:mt-1 sm:gap-2"
             >
               {selectedTools.map((tool) => (
                 <span
                   key={tool.id}
-                  className="inline-flex min-w-0 flex-1 items-center gap-0.5 text-xs text-[var(--muted)] sm:flex-none sm:shrink-0 sm:gap-1 sm:rounded sm:border sm:border-[var(--line)] sm:px-2 sm:py-1 sm:text-[var(--ink)]"
+                  data-compare-selected-tool
+                  className="inline-flex max-w-[180px] shrink-0 items-center gap-0.5 text-xs text-[var(--muted)] sm:max-w-none sm:gap-1 sm:rounded sm:border sm:border-[var(--line)] sm:px-2 sm:py-1 sm:text-[var(--ink)]"
                 >
-                  <span className="truncate">{tool.name}</span>
+                  <span className="min-w-0 truncate">{tool.name}</span>
                   <button
                     ref={(node) => {
                       if (node) removeButtonRefs.current.set(tool.id, node);
@@ -100,7 +101,7 @@ export default function CompareTray() {
             ref={compareButtonRef}
             type="button"
             onClick={() => router.push('/compare')}
-            className="min-h-11 rounded-md bg-[var(--accent)] px-4 text-sm font-medium text-[var(--on-accent)] hover:bg-[var(--accent-hover)]"
+            className="min-h-11 shrink-0 rounded-md bg-[var(--accent)] px-4 text-sm font-medium text-[var(--on-accent)] hover:bg-[var(--accent-hover)]"
           >
             比较 {selectedTools.length} 款
           </button>

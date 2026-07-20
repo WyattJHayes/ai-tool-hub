@@ -666,14 +666,25 @@ test('root layout mounts one compare tray and no alternate shell duplicates it',
 
 test('mobile compare tray preserves the accepted inset anatomy and visible selected names', () => {
   const tray = read('src/components/compare/CompareTray.tsx');
+  const selectedRail = tray.match(/data-compare-selected-tools\s+className="([^"]*)"/)?.[1];
+  const selectedItem = tray.match(/<span\s+key=\{tool\.id\}[\s\S]*?className="([^"]*)"/)?.[1];
+  const compareAction = tray.match(/ref=\{compareButtonRef\}[\s\S]*?className="([^"]*)"/)?.[1];
   assert.match(tray, /carbon-tool-surface/);
   assert.match(tray, /data-carbon-surface/);
   assert.match(tray, /fixed inset-x-2/);
   assert.match(tray, /rounded-md border border-\[var\(--line-strong\)\]/);
   assert.match(tray, /md:inset-x-0/);
   assert.match(tray, /data-compare-selected-tools/);
-  assert.match(tray, /className="truncate"/);
+  assert.match(tray, /className="[^"]*truncate"/);
   assert.doesNotMatch(tray, /mt-1 hidden gap-2 overflow-x-auto sm:flex/);
+  assert.ok(selectedRail, 'missing selected-tool rail');
+  assert.match(selectedRail, /(?:^|\s)overflow-x-auto(?:\s|$)/);
+  assert.doesNotMatch(selectedRail, /(?:^|\s)overflow-hidden(?:\s|$)/);
+  assert.ok(selectedItem, 'missing selected-tool item');
+  assert.match(selectedItem, /(?:^|\s)shrink-0(?:\s|$)/);
+  assert.doesNotMatch(selectedItem, /(?:^|\s)flex-1(?:\s|$)/);
+  assert.ok(compareAction, 'missing compare action');
+  assert.match(compareAction, /(?:^|\s)shrink-0(?:\s|$)/);
 });
 
 test('mobile navigation recognizes nested tool routes', () => {

@@ -801,6 +801,7 @@ test('wires the complete carbon route, state, geometry, focus, and evidence guar
     'assertHomeHover',
     'assertResponsiveGeometry',
     'assertCarbonSurfaces',
+    'assertFourToolCompareTrayGeometry',
     'assertSelectedRails',
     'assertFocusColors',
     'assertThemeLayoutInvariant',
@@ -814,6 +815,13 @@ test('wires the complete carbon route, state, geometry, focus, and evidence guar
   assert.match(functionBody('assertResponsiveGeometry'), /assertTargetSize/);
   assert.match(functionBody('assertResponsiveGeometry'), /assertContainerGeometry/);
   assert.match(functionBody('assertResponsiveGeometry'), /assertFixedSurfaceGeometry/);
+  assert.match(functionBody('assertResponsiveGeometry'), /assertFourToolCompareTrayGeometry/);
+  const fourToolGeometry = functionBody('assertFourToolCompareTrayGeometry');
+  assert.match(fourToolGeometry, /scrollWidth/);
+  assert.match(fourToolGeometry, /clientWidth/);
+  assert.match(fourToolGeometry, /assertTargetSize/);
+  assert.match(fourToolGeometry, /overlap/i);
+  assert.match(fourToolGeometry, /intendedTools/);
   assert.match(functionBody('assertTargetSize'), /44/);
   assert.match(functionBody('assertContainerGeometry'), /overlap/i);
   assert.match(functionBody('assertFixedSurfaceGeometry'), /overlap/i);

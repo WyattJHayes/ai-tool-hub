@@ -158,7 +158,11 @@ async function assertAuthoritativeRatingFlow(browser) {
       });
       return;
     }
-    await route.abort('failed');
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'refresh unavailable' }),
+    });
   });
   await page.route('**/api/ratings', async (route) => {
     postRequests += 1;
@@ -491,6 +495,100 @@ async function assertContainerGeometry(locator, label, allowOverlap = false) {
   }
 }
 
+async function assertFourToolCompareTrayGeometry(page, label) {
+  await assertIntendedSelections(page, `${label} initial four-tool check`);
+  const initialTrayNames = await selectedTrayNames(page);
+  if (JSON.stringify(initialTrayNames) !== JSON.stringify(intendedTools)) {
+    throw new Error(`${label}: initial tray order is ${JSON.stringify(initialTrayNames)}`);
+  }
+
+  const addedNames = [];
+  for (let index = 0; index < 2; index += 1) {
+    const checkbox = page.getByRole('checkbox', { name: /^加入对比 / }).first();
+    await requireCount(checkbox, 1, `${label} additional selection ${index + 1}`);
+    const accessibleName = await checkbox.getAttribute('aria-label');
+    const name = accessibleName?.replace(/^加入对比 /, '');
+    if (!name) throw new Error(`${label}: additional selection ${index + 1} has no tool name`);
+    addedNames.push(name);
+    await checkbox.check();
+  }
+
+  const expectedOrder = [...intendedTools, ...addedNames];
+  const selectedNames = await selectedTrayNames(page);
+  if (JSON.stringify(selectedNames) !== JSON.stringify(expectedOrder)) {
+    throw new Error(`${label}: four-tool tray order is ${JSON.stringify(selectedNames)}, expected ${JSON.stringify(expectedOrder)}`);
+  }
+  const rail = page.locator('[data-compare-selected-tools]');
+  const geometry = await rail.evaluate((element) => {
+    const children = Array.from(element.children).map((child, index) => ({
+      index,
+      left: child.offsetLeft,
+      right: child.offsetLeft + child.offsetWidth,
+      top: child.offsetTop,
+      bottom: child.offsetTop + child.offsetHeight,
+    }));
+    const overlap = [];
+    for (let left = 0; left < children.length; left += 1) {
+      for (let right = left + 1; right < children.length; right += 1) {
+        const a = children[left];
+        const b = children[right];
+        if (Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1
+          && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1) overlap.push([a.index, b.index]);
+      }
+    }
+    const railRect = element.getBoundingClientRect();
+    const tray = element.closest('[data-compare-tray]');
+    const compare = Array.from(tray?.querySelectorAll('button') || [])
+      .find((button) => button.textContent?.trim() === '比较 4 款');
+    const compareRect = compare?.getBoundingClientRect();
+    const actionOverlap = compareRect
+      ? Math.min(railRect.right, compareRect.right) - Math.max(railRect.left, compareRect.left) > 1
+        && Math.min(railRect.bottom, compareRect.bottom) - Math.max(railRect.top, compareRect.top) > 1
+      : true;
+    return {
+      actionOverlap,
+      clientWidth: element.clientWidth,
+      overlap,
+      overflowX: getComputedStyle(element).overflowX,
+      scrollWidth: element.scrollWidth,
+    };
+  });
+  if (geometry.scrollWidth <= geometry.clientWidth + 1 || geometry.overflowX !== 'auto') {
+    throw new Error(`${label}: four-tool rail is not horizontally scrollable ${JSON.stringify(geometry)}`);
+  }
+  if (geometry.overlap.length || geometry.actionOverlap) {
+    throw new Error(`${label}: four-tool rail overlap ${JSON.stringify(geometry)}`);
+  }
+
+  const removeTargets = rail.getByRole('button', { name: /^移除 / });
+  if (await removeTargets.count() !== 4) throw new Error(`${label}: four-tool rail does not expose four remove targets`);
+  for (let index = 0; index < 4; index += 1) {
+    const target = removeTargets.nth(index);
+    await assertTargetSize(target, `${label} remove target ${index + 1}`);
+    await target.scrollIntoViewIfNeeded();
+    const reachable = await target.evaluate((button) => {
+      const viewport = button.closest('[data-compare-selected-tools]')?.getBoundingClientRect();
+      const rect = button.getBoundingClientRect();
+      return Boolean(viewport)
+        && rect.left >= viewport.left - 1
+        && rect.right <= viewport.right + 1
+        && rect.top >= viewport.top - 1
+        && rect.bottom <= viewport.bottom + 1;
+    });
+    if (!reachable) throw new Error(`${label}: remove target ${index + 1} is clipped after scrolling`);
+  }
+
+  for (const name of [...addedNames].reverse()) {
+    await page.getByRole('button', { name: `移除 ${name}`, exact: true }).click();
+  }
+  await rail.evaluate((element) => { element.scrollLeft = 0; });
+  await assertIntendedSelections(page, `${label} restored four-tool check`);
+  const restoredTrayNames = await selectedTrayNames(page);
+  if (JSON.stringify(restoredTrayNames) !== JSON.stringify(intendedTools)) {
+    throw new Error(`${label}: restored tray order is ${JSON.stringify(restoredTrayNames)}, expected ${JSON.stringify(intendedTools)}`);
+  }
+}
+
 async function assertFixedSurfaceGeometry(page, scenario, label) {
   const fixed = await page.evaluate(() => {
     const rectOf = (selector) => {
@@ -553,6 +651,7 @@ async function assertResponsiveGeometry(page, scenario, theme, label) {
     if (await filter.isVisible()) await assertTargetSize(filter, `${label} mobile filter target`);
     await assertContainerGeometry(page.locator('[data-directory-controls]'), `${label} directory controls`);
     await assertContainerGeometry(page.locator('[data-tool-decision-row]').first(), `${label} first decision row`);
+    if (await page.evaluate(() => innerWidth === 320)) await assertFourToolCompareTrayGeometry(page, label);
   } else if (scenario.name === 'detail') {
     await assertTargetSize(page.getByRole('link', { name: '访问官网' }).first(), `${label} official target`);
     await assertTargetSize(page.getByRole('button', { name: '加入比较' }).first(), `${label} detail compare target`);
