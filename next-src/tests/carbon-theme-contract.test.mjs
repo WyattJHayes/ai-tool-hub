@@ -714,6 +714,10 @@ test('uses precision navigation rails and outline-only search focus', () => {
   assert.match(css, /\.instrument-nav-item\[data-orientation='desktop'\]::after/);
   assert.match(css, /\.instrument-nav-item\[data-orientation='mobile'\]::after/);
   assert.match(css, /\.instrument-nav-item\[data-active='true'\]::after/);
+  assert.match(css, /\.instrument-section::before/);
+  assert.match(css, /\.instrument-section::after/);
+  assert.match(css, /@media \(min-width: 768px\)/);
+  assert.doesNotMatch(css, /repeating-(?:linear|radial)-gradient/);
   assert.match(navbar, /data-orientation="desktop"/);
   assert.match(navbar, /data-active=\{active \? 'true' : undefined\}/);
   assert.match(navbar, /aria-current=\{active \? 'page' : undefined\}/);

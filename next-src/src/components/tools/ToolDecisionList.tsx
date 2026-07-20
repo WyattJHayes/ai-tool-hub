@@ -46,7 +46,7 @@ export function ToolDecisionList({
   }
 
   return (
-    <div>
+    <div data-decision-list>
       <p className="sr-only" aria-live="polite">{announcement}</p>
       {groups.map((group) => (
         <section key={group.id} className="mb-8" aria-labelledby={group.title ? `group-${group.id}` : undefined}>

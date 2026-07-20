@@ -190,6 +190,31 @@ summary {
   background: var(--accent);
 }
 
+.instrument-section {
+  position: relative;
+}
+
+@media (min-width: 768px) {
+  .instrument-section::before,
+  .instrument-section::after {
+    position: absolute;
+    top: -1px;
+    width: 20px;
+    height: 1px;
+    background: var(--line-strong);
+    content: '';
+    pointer-events: none;
+  }
+
+  .instrument-section::before {
+    left: max(16px, calc((100% - 1160px) / 2));
+  }
+
+  .instrument-section::after {
+    right: max(16px, calc((100% - 1160px) / 2));
+  }
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;
