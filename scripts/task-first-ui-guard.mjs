@@ -107,7 +107,10 @@ async function assertThemeToggle(page, label) {
 
   await page.getByRole('button', { name: toggleName }).click();
   const toggledDark = await page.locator('html.dark').count() === 1;
-  if (toggledDark === initiallyDark) fail(`${label}: theme did not change`);
+  if (toggledDark === initiallyDark) {
+    fail(`${label}: theme did not change`);
+    return;
+  }
 
   await page.getByRole('button', { name: restoreName }).click();
   const restoredDark = await page.locator('html.dark').count() === 1;

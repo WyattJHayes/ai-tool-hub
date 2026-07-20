@@ -760,7 +760,7 @@ test('task-first guard toggles away from and restores the current theme in both 
   assert.match(helper, /const initiallyDark = await page\.locator\('html\.dark'\)\.count\(\) === 1/);
   assert.match(helper, /initiallyDark \? '切换到亮色主题' : '切换到暗色主题'/);
   assert.match(helper, /initiallyDark \? '切换到暗色主题' : '切换到亮色主题'/);
-  assert.match(helper, /toggledDark === initiallyDark/);
+  assert.match(helper, /if \(toggledDark === initiallyDark\) \{\s*fail\(`\$\{label\}: theme did not change`\);\s*return;\s*\}/);
   assert.match(helper, /restoredDark !== initiallyDark/);
   assert.match(keyboardPath, /await assertThemeToggle\(page,/);
   assert.match(responsivePath, /await assertThemeToggle\(page,/);
