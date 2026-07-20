@@ -693,6 +693,7 @@ test('legacy tool surfaces use canonical platform and accessible compare limits'
 test('detail route resolves async params outside the client and uses decision evidence', () => {
   const page = read('src/app/tools/[slug]/page.tsx');
   const client = read('src/components/tools/ToolDetailClient.tsx');
+  const summary = read('src/components/tools/ToolDecisionSummary.tsx');
   assert.match(page, /await Promise\.all\(\[params, searchParams\]\)/);
   assert.match(page, /<ToolDetailClient slug=\{slug\} from=\{from\}/);
   assert.match(client, /ToolDecisionSummary/);
@@ -701,6 +702,12 @@ test('detail route resolves async params outside the client and uses decision ev
   assert.doesNotMatch(client, /<ToolCard/);
   assert.match(client, /lg:sticky lg:top-\[/);
   assert.match(client, /error.*retryLoadData/);
+  assert.match(client, /data-carbon-surface/);
+  assert.match(client, /carbon-tool-surface h-fit border border-\[var\(--line-strong\)\]/);
+  assert.match(client, /适用任务[\s\S]*核心能力[\s\S]*价格[\s\S]*平台/);
+  assert.equal((client.match(/min-h-11/g) || []).length >= 3, true);
+  assert.match(summary, /grid-cols-\[minmax\(0,1fr\)_44px\]/);
+  assert.match(summary, /className="inline-flex h-11 w-11/);
 });
 
 test('zero-review evidence exposes a compact accessible rating disclosure', () => {

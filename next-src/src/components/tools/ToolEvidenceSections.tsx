@@ -87,7 +87,7 @@ export function ToolEvidenceSections({ model, currentRating, ratingState, onRate
         {ratingState.status === 'loading' ? (
           <div role="status" className="border-y border-[var(--line)] py-3 text-sm text-[var(--muted)]">正在加载评分…</div>
         ) : ratingState.status === 'error' ? (
-          <div role="alert" className="border-y border-[var(--line)] py-3 text-sm text-[var(--muted)]">评分暂时无法加载，当前无法确认评价状态。</div>
+          <div role="alert" className="rounded-md border border-[var(--signal-ink)] bg-[var(--signal-soft)] px-3 py-2 text-sm text-[var(--signal-ink)]">评分暂时无法加载，当前无法确认评价状态。</div>
         ) : ratingState.status === 'ready' && ratingData !== null && ratingData.rating_count === 0 ? (
           <details className="group border-y border-[var(--line)]">
             <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2 [&::-webkit-details-marker]:hidden">
@@ -116,7 +116,7 @@ export function ToolEvidenceSections({ model, currentRating, ratingState, onRate
             {ratingData.reviews.slice(0, 5).map((review, index) => (
               <li key={`${review.score}-${index}`} className="py-3">
                 <span className="sr-only">{review.score} / 5 分</span>
-                <div aria-hidden="true" className="flex gap-0.5">{[1, 2, 3, 4, 5].map((score) => <Star key={score} className={cn('h-3.5 w-3.5', score <= review.score ? 'fill-amber-400 text-amber-400' : 'text-[var(--line-strong)]')} />)}</div>
+                <div aria-hidden="true" className="flex gap-0.5">{[1, 2, 3, 4, 5].map((score) => <Star key={score} className={cn('h-3.5 w-3.5', score <= review.score ? 'fill-[var(--accent)] text-[var(--accent)]' : 'text-[var(--line-strong)]')} />)}</div>
                 {review.tags.length ? <p className="mt-2 text-xs text-[var(--muted)]">{review.tags.join(' · ')}</p> : null}
                 {review.comment ? <p className="mt-2 text-sm text-[var(--muted)]">{review.comment}</p> : null}
               </li>

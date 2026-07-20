@@ -198,3 +198,23 @@ test('uses stable selected rails and a scoped carbon compare tray', () => {
   assert.match(tray, /border-\[var\(--line-strong\)\]/);
   assert.match(tray, /text-\[var\(--on-accent\)\]/);
 });
+
+test('uses a carbon detail rail and keeps ratings, favorites, and ordinary success out of signal orange', () => {
+  const summary = read('src/components/tools/ToolDecisionSummary.tsx');
+  const detail = read('src/components/tools/ToolDetailClient.tsx');
+  const evidence = read('src/components/tools/ToolEvidenceSections.tsx');
+  const rating = read('src/components/ratings/RatingWidget.tsx');
+
+  assert.match(detail, /data-carbon-surface/);
+  assert.match(detail, /carbon-tool-surface/);
+  assert.match(detail, /border-\[var\(--signal\)\]/);
+  assert.match(detail, /border-\[var\(--signal-ink\)\]/);
+  assert.match(detail, /bg-\[var\(--signal-soft\)\]/);
+  assert.match(summary, /fill-current text-\[var\(--accent\)\]/);
+  assert.match(summary, /text-\[var\(--on-accent\)\]/);
+  assert.doesNotMatch(summary, /--danger|text-white/);
+  assert.doesNotMatch(evidence, /amber|--danger|--warning/);
+  assert.doesNotMatch(rating, /amber|--danger|--warning|text-white/);
+  assert.match(rating, /fill-\[var\(--accent\)\] text-\[var\(--accent\)\]/);
+  assert.match(rating, /text-\[var\(--signal-ink\)\]/);
+});

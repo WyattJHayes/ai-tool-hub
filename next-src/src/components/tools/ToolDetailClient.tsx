@@ -123,15 +123,15 @@ export function ToolDetailClient({ slug, from }: ToolDetailClientProps) {
   if (!tool && error) {
     return (
       <main className="mx-auto flex min-h-[70vh] max-w-xl items-center px-4">
-        <div role="alert" className="w-full border-l-4 border-[var(--danger)] bg-[var(--surface)] p-5">
+        <div role="alert" className="w-full border-l-4 border-[var(--signal)] bg-[var(--signal-soft)] p-5 text-[var(--signal-ink)]">
           <h1 className="text-lg font-semibold">工具数据暂时无法加载</h1>
-          <button type="button" onClick={retryLoadData} className="mt-4 min-h-11 rounded-md border border-[var(--line)] px-4 text-sm">重新加载</button>
+          <button type="button" onClick={retryLoadData} className="mt-4 min-h-11 rounded-md border border-[var(--signal-ink)] px-4 text-sm text-[var(--signal-ink)]">重新加载</button>
         </div>
       </main>
     );
   }
   if (!tool || !model) {
-    return <main className="flex min-h-[70vh] flex-col items-center justify-center gap-4 px-4 text-center"><h1 className="text-2xl font-semibold">工具未找到</h1><Link href={returnPath} className="inline-flex min-h-11 items-center rounded-md bg-[var(--accent)] px-5 text-sm text-white">返回工具目录</Link></main>;
+    return <main className="flex min-h-[70vh] flex-col items-center justify-center gap-4 px-4 text-center"><h1 className="text-2xl font-semibold">工具未找到</h1><Link href={returnPath} className="inline-flex min-h-11 items-center rounded-md bg-[var(--accent)] px-5 text-sm text-[var(--on-accent)]">返回工具目录</Link></main>;
   }
 
   const favorite = isFavorite(tool.id);
@@ -187,14 +187,14 @@ export function ToolDetailClient({ slug, from }: ToolDetailClientProps) {
   return (
     <main className="mx-auto max-w-[1230px] px-4 pb-32 text-[var(--ink)] sm:px-6">
       <Link href={returnPath} className="inline-flex min-h-11 items-center gap-2 text-sm text-[var(--muted)] hover:text-[var(--ink)]"><ArrowLeft className="h-4 w-4" />返回工具目录</Link>
-      {scenesError ? <div role="alert" className="mt-2 border-l-4 border-[var(--warning)] bg-[var(--surface)] p-4 text-sm"><p>{scenesError}，当前仅显示分类回退。</p><button type="button" onClick={retryScenes} className="mt-2 min-h-11 rounded-md border border-[var(--line)] px-3">重新加载任务</button></div> : null}
+      {scenesError ? <div role="alert" className="mt-2 border-l-4 border-[var(--signal)] bg-[var(--signal-soft)] p-4 text-sm text-[var(--signal-ink)]"><p>{scenesError}，当前仅显示分类回退。</p><button type="button" onClick={retryScenes} className="mt-2 min-h-11 rounded-md border border-[var(--signal-ink)] px-3 text-[var(--signal-ink)]">重新加载任务</button></div> : null}
       <ToolDecisionSummary model={model} favorite={favorite} compared={compared} compareDisabled={compareDisabled} compareAnnouncement={announcement} onToggleFavorite={handleFavorite} onToggleCompare={handleCompare} onVisit={handleVisit} />
       <div className="mt-1 grid gap-8 lg:grid-cols-[minmax(0,1fr)_260px]">
         <div className="min-w-0">
           <ToolEvidenceSections model={model} currentRating={getRating(model.tool.id)} ratingState={ratingState} onRated={handleRated} />
           {alternatives.length ? <section className="mt-3" aria-labelledby="alternatives-title"><h2 id="alternatives-title" className="mb-1 text-lg font-semibold leading-6">替代方案</h2><ToolDecisionList groups={[{ id: 'alternatives', items: alternatives }]} variant="compact" returnPath={returnPath} /></section> : null}
         </div>
-        <aside className="h-fit border border-[var(--line)] bg-[var(--surface)] p-4 lg:sticky lg:top-[88px]">
+        <aside data-carbon-surface className="carbon-tool-surface h-fit border border-[var(--line-strong)] bg-[var(--surface)] p-4 text-[var(--ink)] lg:sticky lg:top-[88px]">
           <h2 className="border-b border-[var(--line)] pb-3 text-base font-semibold">决策摘要</h2>
           <dl className="text-sm">
             <div className="border-b border-[var(--line)] py-3"><dt className="text-xs text-[var(--muted)]">适用任务</dt><dd className="mt-1 font-semibold">{model.tasks.map((task) => task.label).join('、')}</dd></div>
@@ -202,7 +202,7 @@ export function ToolDetailClient({ slug, from }: ToolDetailClientProps) {
             <div className="border-b border-[var(--line)] py-3"><dt className="text-xs text-[var(--muted)]">价格</dt><dd className="mt-1 font-semibold">{model.price.summary || model.price.valueTag || '查看官网'}</dd></div>
             <div className="py-3"><dt className="text-xs text-[var(--muted)]">平台</dt><dd className="mt-1 font-semibold">{model.platforms.map((platform) => platformLabels[platform]).join('、') || '查看官网'}</dd></div>
           </dl>
-          <a href={model.tool.url} target="_blank" rel="noopener noreferrer" onClick={handleVisit} className="mt-2 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-[var(--accent)] px-4 text-sm font-medium text-white hover:bg-[var(--accent-hover)]">访问官网 <ExternalLink className="h-4 w-4" /></a>
+          <a href={model.tool.url} target="_blank" rel="noopener noreferrer" onClick={handleVisit} className="mt-2 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-[var(--accent)] px-4 text-sm font-medium text-[var(--on-accent)] hover:bg-[var(--accent-hover)]">访问官网 <ExternalLink className="h-4 w-4" /></a>
           <button type="button" aria-pressed={compared} aria-disabled={compareDisabled && !compared} onClick={handleCompare} className="mt-2 inline-flex min-h-11 w-full items-center justify-center rounded-md border border-[var(--line-strong)] px-4 text-sm font-medium hover:bg-[var(--surface-subtle)]">{compared ? '移出比较' : '加入比较'}</button>
         </aside>
       </div>

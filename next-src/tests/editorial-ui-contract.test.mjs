@@ -291,6 +291,9 @@ test('rating evidence renders accessible loading, error, empty, and populated st
 
     await renderEvidence(root, { status: 'error' });
     assert.equal(container.querySelector('[role="alert"]')?.textContent, '评分暂时无法加载，当前无法确认评价状态。');
+    assert.match(container.querySelector('[role="alert"]')?.className, /border-\[var\(--signal-ink\)\]/);
+    assert.match(container.querySelector('[role="alert"]')?.className, /bg-\[var\(--signal-soft\)\]/);
+    assert.match(container.querySelector('[role="alert"]')?.className, /text-\[var\(--signal-ink\)\]/);
     assert.equal(container.querySelector('[data-rating-widget]'), null);
 
     await renderEvidence(root, {
