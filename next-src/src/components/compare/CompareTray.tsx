@@ -1,24 +1,54 @@
 'use client';
 
 import { usePathname, useRouter } from 'next/navigation';
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { useFixedSurfaceGeometry } from '@/hooks/useFixedSurfaceGeometry';
 import { useCompareStore } from '@/stores/useCompareStore';
+
+export function getNextRemovalToolId(
+  selectedTools: readonly { id: number }[],
+  removedToolId: number,
+): number | null {
+  const removedIndex = selectedTools.findIndex((tool) => tool.id === removedToolId);
+  if (removedIndex < 0 || selectedTools.length <= 2) return null;
+  return selectedTools[removedIndex + 1]?.id ?? selectedTools[removedIndex - 1]?.id ?? null;
+}
 
 export default function CompareTray() {
   const pathname = usePathname();
   const router = useRouter();
   const { selectedTools, removeTool, clearAll } = useCompareStore();
   const trayRef = useRef<HTMLElement>(null);
+  const compareButtonRef = useRef<HTMLButtonElement>(null);
+  const removeButtonRefs = useRef(new Map<number, HTMLButtonElement>());
+  const [announcement, setAnnouncement] = useState('');
   const onComparePage = pathname === '/compare';
   const visible = !onComparePage && selectedTools.length >= 2;
   useFixedSurfaceGeometry(trayRef, '--compare-tray-block-size', visible);
 
-  if (!visible) return null;
+  const handleRemove = (toolId: number, toolName: string) => {
+    const nextRemovalToolId = getNextRemovalToolId(selectedTools, toolId);
+    removeTool(toolId);
+    setAnnouncement(`已移除 ${toolName}`);
+    requestAnimationFrame(() => {
+      if (nextRemovalToolId !== null) {
+        (removeButtonRefs.current.get(nextRemovalToolId) || compareButtonRef.current)?.focus({ preventScroll: true });
+        return;
+      }
+      const main = document.querySelector<HTMLElement>('main');
+      if (main) {
+        main.tabIndex = -1;
+        main.focus({ preventScroll: true });
+      }
+    });
+  };
+
+  if (!visible) return <p className="sr-only" aria-live="polite">{announcement}</p>;
 
   return (
     <>
+      <p className="sr-only" aria-live="polite">{announcement}</p>
       <div
         aria-hidden="true"
         className="h-[calc(var(--compare-tray-block-size)+var(--mobile-nav-block-size))] md:h-[var(--compare-tray-block-size)]"
@@ -43,10 +73,14 @@ export default function CompareTray() {
                 >
                   <span className="truncate">{tool.name}</span>
                   <button
+                    ref={(node) => {
+                      if (node) removeButtonRefs.current.set(tool.id, node);
+                      else removeButtonRefs.current.delete(tool.id);
+                    }}
                     type="button"
-                    onClick={() => removeTool(tool.id)}
+                    onClick={() => handleRemove(tool.id, tool.name)}
                     aria-label={`移除 ${tool.name}`}
-                    className="flex h-6 w-6 shrink-0 items-center justify-center"
+                    className="flex h-11 w-11 shrink-0 items-center justify-center"
                   >
                     <X className="h-3 w-3" />
                   </button>
@@ -62,6 +96,7 @@ export default function CompareTray() {
             清除
           </button>
           <button
+            ref={compareButtonRef}
             type="button"
             onClick={() => router.push('/compare')}
             className="min-h-11 rounded-md bg-[var(--accent)] px-4 text-sm font-medium text-white"

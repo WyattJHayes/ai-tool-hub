@@ -28,6 +28,8 @@ interface ToolStore {
 }
 
 const MAX_HISTORY = 5;
+let catalogLoadGeneration = 0;
+let catalogLoadPromise: Promise<void> | null = null;
 
 export const useToolStore = create<ToolStore>((set, get) => ({
   tools: [],
@@ -77,43 +79,61 @@ export const useToolStore = create<ToolStore>((set, get) => ({
 
   loadData: async () => {
     if (get().dataLoaded) return;
+    if (catalogLoadPromise) return catalogLoadPromise;
+
+    const generation = catalogLoadGeneration;
     set({ isLoading: true, error: null });
-    const load = async (url: string) => {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`Failed to load ${url}`);
-      const data = await res.json();
-      if (!Array.isArray(data.tools) || !Array.isArray(data.categories)) {
-        throw new Error(`Invalid tools payload from ${url}`);
-      }
-      return data;
-    };
-    try {
-      let data;
+    const loadPromise = (async () => {
+      const load = async (url: string) => {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Failed to load ${url}`);
+        const data = await res.json();
+        if (!Array.isArray(data.tools) || !Array.isArray(data.categories)) {
+          throw new Error(`Invalid tools payload from ${url}`);
+        }
+        return data;
+      };
       try {
-        data = await load('/api/tools');
+        let data;
+        try {
+          data = await load('/api/tools');
+        } catch {
+          data = await load('/data/tools.json');
+        }
+        if (generation !== catalogLoadGeneration) return;
+        set({
+          tools: data.tools,
+          categories: data.categories,
+          filteredTools: data.tools,
+          isLoading: false,
+          dataLoaded: true,
+          error: null,
+        });
       } catch {
-        data = await load('/data/tools.json');
+        if (generation !== catalogLoadGeneration) return;
+        set({ isLoading: false, dataLoaded: false, error: '工具数据暂时无法加载' });
       }
-      set({
-        tools: data.tools,
-        categories: data.categories,
-        filteredTools: data.tools,
-        isLoading: false,
-        dataLoaded: true,
-        error: null,
-      });
-    } catch {
-      set({ isLoading: false, dataLoaded: false, error: '工具数据暂时无法加载' });
-    }
+      try {
+        const res = await fetch('/api/track/click');
+        const data = await res.json();
+        if (generation === catalogLoadGeneration && data.clicks) {
+          set({ clickStats: data.clicks });
+        }
+      } catch {
+        // Analytics failure must not block catalog data.
+      }
+    })();
+
+    catalogLoadPromise = loadPromise;
     try {
-      const res = await fetch('/api/track/click');
-      const data = await res.json();
-      if (data.clicks) set({ clickStats: data.clicks });
-    } catch {
-      // Analytics failure must not block catalog data.
+      await loadPromise;
+    } finally {
+      if (catalogLoadPromise === loadPromise) catalogLoadPromise = null;
     }
   },
   retryLoadData: async () => {
+    catalogLoadGeneration += 1;
+    catalogLoadPromise = null;
     set({ dataLoaded: false, error: null });
     await get().loadData();
   },

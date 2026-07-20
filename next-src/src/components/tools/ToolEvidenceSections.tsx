@@ -9,16 +9,22 @@ export interface RatingData {
   reviews: { score: number; tags: string[]; comment: string }[];
 }
 
+export type RatingState =
+  | { status: 'loading' }
+  | { status: 'error' }
+  | { status: 'ready'; data: RatingData };
+
 interface ToolEvidenceSectionsProps {
   model: ToolDecisionModel;
   currentRating: number;
-  ratingData: RatingData;
+  ratingState: RatingState;
   onRated: (score: number) => void;
 }
 
-export function ToolEvidenceSections({ model, currentRating, ratingData, onRated }: ToolEvidenceSectionsProps) {
+export function ToolEvidenceSections({ model, currentRating, ratingState, onRated }: ToolEvidenceSectionsProps) {
   const tool = model.tool;
   const metadataTags = tool.toolTags?.length ? tool.toolTags : tool.tags;
+  const ratingData = ratingState.status === 'ready' ? ratingState.data : null;
   return (
     <div className="space-y-3">
       {model.capabilities.length ? (
@@ -78,7 +84,11 @@ export function ToolEvidenceSections({ model, currentRating, ratingData, onRated
 
       <section aria-labelledby="rating-title">
         <h2 id="rating-title" className="mb-1 text-lg font-semibold leading-6">评分与评论</h2>
-        {ratingData.rating_count === 0 ? (
+        {ratingState.status === 'loading' ? (
+          <div role="status" className="border-y border-[var(--line)] py-3 text-sm text-[var(--muted)]">正在加载评分…</div>
+        ) : ratingState.status === 'error' ? (
+          <div role="alert" className="border-y border-[var(--line)] py-3 text-sm text-[var(--muted)]">评分暂时无法加载，当前无法确认评价状态。</div>
+        ) : ratingState.status === 'ready' && ratingData !== null && ratingData.rating_count === 0 ? (
           <details className="group border-y border-[var(--line)]">
             <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2 [&::-webkit-details-marker]:hidden">
               <span className="min-w-0">
@@ -98,7 +108,7 @@ export function ToolEvidenceSections({ model, currentRating, ratingData, onRated
         )}
       </section>
 
-      {ratingData.rating_count > 0 ? (
+      {ratingState.status === 'ready' && ratingData !== null && ratingData.rating_count > 0 ? (
         <section aria-labelledby="reviews-title">
           <h2 id="reviews-title" className="mb-1 text-lg font-semibold leading-6">用户评价</h2>
           <div className="mb-3 flex items-center gap-3"><span className="text-3xl font-semibold">{ratingData.avg_rating.toFixed(1)}</span><span className="text-sm text-[var(--muted)]">{ratingData.rating_count} 条评价</span></div>

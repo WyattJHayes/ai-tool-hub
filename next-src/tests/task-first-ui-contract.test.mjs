@@ -113,6 +113,29 @@ test('homepage tasks use canonical scene ids and search preserves the query', ()
   assert.match(search, /params\.set\('q', term\)/);
 });
 
+test('search combobox supports active-option keyboard navigation and explicit submission', () => {
+  const search = read('src/components/hero/SearchBar.tsx');
+  assert.match(search, /useId/);
+  assert.match(search, /<form[^>]+onSubmit=/);
+  assert.match(search, /type="submit"/);
+  assert.match(search, /aria-label="提交搜索"/);
+  assert.match(search, /h-11 w-11/);
+  assert.match(search, /compact \? <ArrowRight[^>]*\/> : '搜索'/);
+  assert.match(search, /bg-\[var\(--accent\)\]/);
+  assert.match(search, /text-\[var\(--surface\)\]/);
+  assert.doesNotMatch(search, /bg-\[var\(--accent\)\][^'"\n]*text-white/);
+  assert.match(search, /aria-activedescendant=\{activeOptionId\}/);
+  assert.match(search, /event\.key === 'ArrowDown'/);
+  assert.match(search, /event\.key === 'ArrowUp'/);
+  assert.match(search, /event\.key === 'Enter'/);
+  assert.match(search, /event\.key === 'Escape'/);
+  assert.match(search, /role="option"/);
+  assert.match(search, /aria-selected=\{activeIndex === index\}/);
+  assert.match(search, /tabIndex=\{-1\}/);
+  assert.match(search, /onClick=\{\(\) => submitTerm\(option\.value\)\}/);
+  assert.match(search, /onPointerDown=\{\(event\) => event\.preventDefault\(\)\}/);
+});
+
 test('reference-locked discovery copy and compact composition stay normalized', () => {
   const home = read('src/app/page.tsx');
   const tasks = read('src/components/home/TaskEntryList.tsx');

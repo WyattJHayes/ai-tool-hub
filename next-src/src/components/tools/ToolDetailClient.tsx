@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { ArrowLeft, ExternalLink } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { getRatings, trackClick } from '@/lib/api';
+import { trackClick } from '@/lib/api';
 import { createToolDecisionModel, selectAlternativeTools } from '@/lib/tool-decision.mjs';
 import { sanitizeToolsReturnPath } from '@/lib/tools-query-state.mjs';
 import { getToolSlug } from '@/lib/tools-data';
@@ -13,7 +13,7 @@ import { useToolStore } from '@/stores/useToolStore';
 import { useUserStore } from '@/stores/useUserStore';
 import { ToolDecisionList } from './ToolDecisionList';
 import { ToolDecisionSummary } from './ToolDecisionSummary';
-import { ToolEvidenceSections, type RatingData } from './ToolEvidenceSections';
+import { ToolEvidenceSections, type RatingData, type RatingState } from './ToolEvidenceSections';
 
 interface ToolDetailClientProps {
   slug: string;
@@ -23,12 +23,47 @@ interface ToolDetailClientProps {
 const EMPTY_RATINGS: RatingData = { avg_rating: 0, rating_count: 0, reviews: [] };
 const platformLabels = { web: '网页版', local: '本地', cli: '命令行', desktop: '桌面端' } as const;
 
+export function isRatingData(value: unknown): value is RatingData {
+  if (!value || typeof value !== 'object') return false;
+  const data = value as Record<string, unknown>;
+  if (
+    typeof data.avg_rating !== 'number' ||
+    !Number.isFinite(data.avg_rating) ||
+    data.avg_rating < 0 ||
+    data.avg_rating > 5
+  ) return false;
+  if (typeof data.rating_count !== 'number' || !Number.isInteger(data.rating_count) || data.rating_count < 0) return false;
+  if (!Array.isArray(data.reviews)) return false;
+  const reviewsAreValid = data.reviews.every((value) => {
+    if (!value || typeof value !== 'object') return false;
+    const review = value as Record<string, unknown>;
+    return typeof review.score === 'number' &&
+      Number.isInteger(review.score) &&
+      review.score >= 1 &&
+      review.score <= 5 &&
+      Array.isArray(review.tags) &&
+      review.tags.every((tag) => typeof tag === 'string') &&
+      typeof review.comment === 'string';
+  });
+  if (!reviewsAreValid) return false;
+  if (data.rating_count === 0) return data.avg_rating === 0 && data.reviews.length === 0;
+  return data.avg_rating >= 1;
+}
+
+async function getRatings(toolId: number): Promise<RatingData> {
+  const response = await fetch(`/api/ratings?tool_id=${toolId}`);
+  if (!response.ok) throw new Error('Failed to load ratings');
+  const data: unknown = await response.json();
+  if (!isRatingData(data)) throw new Error('Invalid ratings payload');
+  return data;
+}
+
 export function ToolDetailClient({ slug, from }: ToolDetailClientProps) {
   const { tools, categories, isLoading, dataLoaded, loadData, error, retryLoadData } = useToolStore();
   const { scenes, isLoading: scenesLoading, error: scenesError, retry: retryScenes } = useSceneData();
   const { isFavorite, toggleFavorite, getRating } = useUserStore();
   const { selectedTools, addTool, removeTool } = useCompareStore();
-  const [ratingState, setRatingState] = useState<{ toolId: number; data: RatingData } | null>(null);
+  const [storedRatingState, setRatingState] = useState<{ toolId: number; state: RatingState } | null>(null);
   const [announcement, setAnnouncement] = useState('');
   const returnPath = sanitizeToolsReturnPath(from);
   const tool = useMemo(
@@ -41,7 +76,9 @@ export function ToolDetailClient({ slug, from }: ToolDetailClientProps) {
     () => tool ? createToolDecisionModel(tool, scenes, categories) : null,
     [categories, scenes, tool]
   );
-  const ratingData = ratingState && ratingState.toolId === tool?.id ? ratingState.data : EMPTY_RATINGS;
+  const ratingState: RatingState = storedRatingState && storedRatingState.toolId === tool?.id
+    ? storedRatingState.state
+    : { status: 'loading' };
   const alternatives = useMemo(
     () => tool
       ? selectAlternativeTools(tool, tools, scenes, 6)
@@ -67,12 +104,12 @@ export function ToolDetailClient({ slug, from }: ToolDetailClientProps) {
     getRatings(tool.id)
       .then((data) => {
         if (active && ratingRequestGeneration.current === generation) {
-          setRatingState({ toolId: tool.id, data: data as RatingData });
+          setRatingState({ toolId: tool.id, state: { status: 'ready', data } });
         }
       })
       .catch(() => {
         if (active && ratingRequestGeneration.current === generation) {
-          setRatingState({ toolId: tool.id, data: EMPTY_RATINGS });
+          setRatingState({ toolId: tool.id, state: { status: 'error' } });
         }
       });
     return () => {
@@ -116,26 +153,30 @@ export function ToolDetailClient({ slug, from }: ToolDetailClientProps) {
     const generation = ratingRequestGeneration.current + 1;
     ratingRequestGeneration.current = generation;
     setRatingState((current) => {
-      const currentData = current?.toolId === toolId ? current.data : EMPTY_RATINGS;
+      const currentData = current?.toolId === toolId && current.state.status === 'ready'
+        ? current.state.data
+        : EMPTY_RATINGS;
       const currentCount = currentData.rating_count;
       return {
         toolId,
-        data: {
-          ...currentData,
-          avg_rating: ((currentData.avg_rating * currentCount) + score) / (currentCount + 1),
-          rating_count: currentCount + 1,
+        state: {
+          status: 'ready',
+          data: {
+            ...currentData,
+            avg_rating: ((currentData.avg_rating * currentCount) + score) / (currentCount + 1),
+            rating_count: currentCount + 1,
+          },
         },
       };
     });
     getRatings(toolId)
-      .then((data) => {
-        const refreshed = data as RatingData;
+      .then((refreshed) => {
         if (
           activeToolIdRef.current !== toolId ||
           ratingRequestGeneration.current !== generation
         ) return;
         if (refreshed.rating_count > 0) {
-          setRatingState({ toolId, data: refreshed });
+          setRatingState({ toolId, state: { status: 'ready', data: refreshed } });
         }
       })
       .catch(() => {
@@ -150,7 +191,7 @@ export function ToolDetailClient({ slug, from }: ToolDetailClientProps) {
       <ToolDecisionSummary model={model} favorite={favorite} compared={compared} compareDisabled={compareDisabled} compareAnnouncement={announcement} onToggleFavorite={handleFavorite} onToggleCompare={handleCompare} onVisit={handleVisit} />
       <div className="mt-1 grid gap-8 lg:grid-cols-[minmax(0,1fr)_260px]">
         <div className="min-w-0">
-          <ToolEvidenceSections model={model} currentRating={getRating(model.tool.id)} ratingData={ratingData} onRated={handleRated} />
+          <ToolEvidenceSections model={model} currentRating={getRating(model.tool.id)} ratingState={ratingState} onRated={handleRated} />
           {alternatives.length ? <section className="mt-3" aria-labelledby="alternatives-title"><h2 id="alternatives-title" className="mb-1 text-lg font-semibold leading-6">替代方案</h2><ToolDecisionList groups={[{ id: 'alternatives', items: alternatives }]} variant="compact" returnPath={returnPath} /></section> : null}
         </div>
         <aside className="h-fit border border-[var(--line)] bg-[var(--surface)] p-4 lg:sticky lg:top-[88px]">

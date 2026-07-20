@@ -70,7 +70,7 @@ export function ToolDecisionRow({
         </span>
         <span className="min-w-0">
           <strong className="block break-words text-sm leading-5 text-[var(--ink)]">{model.tool.name}</strong>
-          <span className="block truncate text-xs text-[var(--muted-subtle)]">
+          <span className="block truncate text-xs text-[var(--muted)]">
             {[model.origin ? originLabels[model.origin] : null, ...model.platforms.map((platform) => platformLabels[platform])].filter(Boolean).join(' · ')}
           </span>
         </span>
@@ -78,7 +78,7 @@ export function ToolDecisionRow({
 
       <div data-field="task" className={cn('min-w-0 max-md:flex max-md:items-center max-md:gap-2', variant === 'compact' ? 'col-span-2 md:col-span-1 md:col-start-3 md:row-start-1' : 'max-md:col-span-2')}>
         <span className="block text-sm font-medium text-[var(--accent)] max-md:inline">{task?.label || '工具目录'}</span>
-        <span className="text-xs text-[var(--muted-subtle)]">
+        <span className="text-xs text-[var(--muted)]">
           {model.taskCell ? relation : model.tasks[0]?.source === 'scene' ? '任务映射' : '同类工具'}
           {additionalTaskCount ? ` +${additionalTaskCount}` : ''}
         </span>

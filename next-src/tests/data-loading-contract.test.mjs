@@ -36,6 +36,33 @@ const getScenesData = (...args) => globalThis.__sceneHookData.getScenesData(...a
   return import(`data:text/javascript;base64,${Buffer.from(output).toString('base64')}`);
 }
 
+async function loadToolStoreModule() {
+  const source = read('src/stores/useToolStore.ts')
+    .replace(
+      "import { create } from 'zustand';",
+      `const create = (initializer) => {
+  let state;
+  const get = () => state;
+  const set = (update) => {
+    const next = typeof update === 'function' ? update(state) : update;
+    state = { ...state, ...next };
+  };
+  const store = () => state;
+  state = initializer(set, get);
+  store.getState = get;
+  return store;
+};`,
+    )
+    .replace(
+      "import { trackClick } from '@/lib/api';",
+      'const trackClick = () => Promise.resolve();',
+    );
+  const output = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  return import(`data:text/javascript;base64,${Buffer.from(output).toString('base64')}`);
+}
+
 function createHookHarness(hook) {
   const state = [];
   const refs = [];
@@ -99,6 +126,47 @@ test('tool loading validates responses and exposes retryable terminal errors', (
   assert.match(store, /retryLoadData: \(\) => Promise<void>/);
   assert.match(store, /if \(!res\.ok\) throw new Error/);
   assert.match(store, /error: '工具数据暂时无法加载'/);
+});
+
+test('catalog retry keeps its success when the superseded load later fails', async () => {
+  const { useToolStore } = await loadToolStoreModule();
+  const originalFetch = globalThis.fetch;
+  const firstCatalogRequest = deferred();
+  const freshData = {
+    tools: [{ id: 2, name: 'fresh' }],
+    categories: [{ id: 'fresh' }],
+  };
+  let catalogRequestCount = 0;
+
+  globalThis.fetch = (url) => {
+    if (url === '/api/tools') {
+      catalogRequestCount += 1;
+      if (catalogRequestCount === 1) return firstCatalogRequest.promise;
+      return Promise.resolve({ ok: true, json: async () => freshData });
+    }
+    if (url === '/data/tools.json') {
+      return Promise.resolve({ ok: false });
+    }
+    return Promise.resolve({ ok: true, json: async () => ({ clicks: {} }) });
+  };
+
+  try {
+    const firstLoad = useToolStore.getState().loadData();
+    const retry = useToolStore.getState().retryLoadData();
+    await retry;
+
+    firstCatalogRequest.resolve({ ok: false });
+    await firstLoad;
+
+    const state = useToolStore.getState();
+    assert.equal(state.error, null);
+    assert.equal(state.dataLoaded, true);
+    assert.equal(state.isLoading, false);
+    assert.deepEqual(state.tools, freshData.tools);
+    assert.deepEqual(state.categories, freshData.categories);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('canonical scenes load through a focused retryable hook', () => {

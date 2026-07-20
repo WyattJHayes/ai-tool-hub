@@ -5,6 +5,51 @@ import { existsSync, readFileSync } from 'node:fs';
 const read = (relativePath) =>
   readFileSync(new URL(`../${relativePath}`, import.meta.url), 'utf8');
 
+async function loadTypeScriptModule(path, mocks) {
+  const ts = await import('typescript');
+  const { outputText } = ts.transpileModule(read(path), {
+    compilerOptions: {
+      esModuleInterop: true,
+      jsx: ts.JsxEmit.ReactJSX,
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+    },
+  });
+  const loadedModule = { exports: {} };
+  const requireMock = (id) => {
+    if (Object.hasOwn(mocks, id)) return mocks[id];
+    throw new Error(`Unexpected test module import: ${id}`);
+  };
+  const execute = new Function('require', 'module', 'exports', outputText);
+  execute(requireMock, loadedModule, loadedModule.exports);
+  return loadedModule.exports;
+}
+
+const inertComponentMocks = {
+  'next/link': { default: () => null },
+  'next/navigation': { usePathname: () => '/', useRouter: () => ({}) },
+  'lucide-react': {},
+  react: {
+    useEffect: () => {},
+    useMemo: (factory) => factory(),
+    useRef: (value) => ({ current: value }),
+    useState: (value) => [value, () => {}],
+  },
+  '@/hooks/useFixedSurfaceGeometry': { useFixedSurfaceGeometry: () => {} },
+  '@/hooks/useSceneData': { useSceneData: () => ({}) },
+  '@/lib/api': {},
+  '@/lib/tool-decision.mjs': {},
+  '@/lib/tools-query-state.mjs': {},
+  '@/lib/tools-data': {},
+  '@/stores/useCompareStore': { useCompareStore: () => ({}) },
+  '@/stores/useToolStore': { useToolStore: () => ({}) },
+  '@/stores/useUserStore': { useUserStore: () => ({}) },
+  './ToolDecisionList': {},
+  './ToolDecisionSummary': {},
+  './ToolEvidenceSections': {},
+  'react/jsx-runtime': { jsx: () => null, jsxs: () => null, Fragment: Symbol('Fragment') },
+};
+
 test('uses the neutral editorial color system without animated grid decoration', () => {
   const css = read('src/app/globals.css');
 
@@ -91,6 +136,57 @@ test('uses aligned decision rows and quiet URL-driven controls', () => {
   assert.doesNotMatch(context, /rounded-full|bg-gradient/);
   assert.doesNotMatch(search, /backdrop-blur|rounded-2xl|shadow-\[0_0/);
   assert.match(search, /params\.set\('q', term\)/);
+});
+
+test('decision-row metadata uses the contrast-compliant muted token', () => {
+  const row = read('src/components/tools/ToolDecisionRow.tsx');
+
+  assert.doesNotMatch(row, /text-\[var\(--muted-subtle\)\]/);
+  assert.match(row, /text-xs text-\[var\(--muted\)\]/);
+});
+
+test('rating evidence distinguishes loading, transport failure, and verified empty data', async () => {
+  const client = read('src/components/tools/ToolDetailClient.tsx');
+  const evidence = read('src/components/tools/ToolEvidenceSections.tsx');
+  const loaded = await loadTypeScriptModule('src/components/tools/ToolDetailClient.tsx', inertComponentMocks);
+
+  assert.equal(typeof loaded.isRatingData, 'function', 'detail ratings need a runtime payload validator');
+  assert.equal(loaded.isRatingData({ avg_rating: 0, rating_count: 0, reviews: [] }), true);
+  assert.equal(loaded.isRatingData({ error: 'unavailable' }), false);
+  assert.equal(loaded.isRatingData({ avg_rating: 0, rating_count: 0, reviews: null }), false);
+  assert.equal(loaded.isRatingData({ avg_rating: 6, rating_count: 1, reviews: [] }), false);
+  assert.equal(loaded.isRatingData({
+    avg_rating: 0,
+    rating_count: 0,
+    reviews: [{ score: 5, tags: [], comment: '' }],
+  }), false);
+  assert.match(client, /status: 'loading'/);
+  assert.match(client, /status: 'error'/);
+  assert.match(client, /if \(!response\.ok\) throw new Error/);
+  assert.match(evidence, /ratingState\.status === 'loading'/);
+  assert.match(evidence, /role="status"/);
+  assert.match(evidence, /ratingState\.status === 'error'/);
+  assert.match(evidence, /role="alert"/);
+  assert.match(evidence, /const ratingData = ratingState\.status === 'ready'/);
+  assert.match(evidence, /ratingState\.status === 'ready' && ratingData !== null && ratingData\.rating_count === 0/);
+});
+
+test('compare-tray removal has deterministic focus, live feedback, and a mobile touch target', async () => {
+  const tray = read('src/components/compare/CompareTray.tsx');
+  const loaded = await loadTypeScriptModule('src/components/compare/CompareTray.tsx', inertComponentMocks);
+
+  assert.equal(typeof loaded.getNextRemovalToolId, 'function', 'compare removal needs a deterministic focus target');
+  const selected = [{ id: 1 }, { id: 2 }, { id: 3 }];
+  assert.equal(loaded.getNextRemovalToolId(selected, 2), 3);
+  assert.equal(loaded.getNextRemovalToolId(selected, 3), 2);
+  assert.equal(loaded.getNextRemovalToolId(selected.slice(0, 2), 1), null);
+  assert.match(tray, /aria-live="polite"/);
+  assert.match(tray, /className="flex h-11 w-11/);
+  assert.match(tray, /removeButtonRefs/);
+  assert.match(tray, /requestAnimationFrame/);
+  assert.match(tray, /querySelector<HTMLElement>\('main'\)/);
+  assert.match(tray, /focus\(\{ preventScroll: true \}\)/);
+  assert.match(tray, /ref=\{compareButtonRef\}[^>]*onClick=\{\(\) => router\.push\('\/compare'\)\}/);
 });
 
 test('keeps tool detail and scene routes in the same editorial system', () => {
