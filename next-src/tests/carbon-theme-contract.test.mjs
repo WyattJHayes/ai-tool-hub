@@ -4,6 +4,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const readRepo = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
@@ -25,6 +26,9 @@ const largeRadiusClass = /(?<![A-Za-z0-9_-])rounded(?:-[trblse]{1,2})?-(?:xl|2xl
 const arbitraryRadiusClass = /(?<![A-Za-z0-9_-])rounded(?:-[trblse]{1,2})?-\[([^\]]+)\](?![A-Za-z0-9_-])/g;
 const approvedArbitraryRadius = /^(\d*\.?\d+)(px|rem)$/;
 const negativeTracking = /(?<![A-Za-z0-9_-])tracking-(?:tight|tighter)(?![A-Za-z0-9_-])|(?<![A-Za-z0-9_-])tracking-\[\s*-|letter-spacing\s*:\s*-/;
+const javaScriptExtension = /^\.(?:cjs|cts|js|jsx|mjs|mts|ts|tsx)$/;
+const prohibitedStyleProperties = new Set(['rotate', 'scale', 'transform']);
+const motionObjectProps = new Set(['animate', 'exit', 'initial', 'style', 'variants', 'whileDrag', 'whileFocus', 'whileHover', 'whileTap']);
 
 function hasProhibitedRadius(content) {
   if (largeRadiusClass.test(content)) return true;
@@ -37,14 +41,148 @@ function hasProhibitedRadius(content) {
   });
 }
 
+function scriptKind(file) {
+  const extension = path.extname(file).toLowerCase();
+  if (extension === '.tsx') return ts.ScriptKind.TSX;
+  if (extension === '.jsx') return ts.ScriptKind.JSX;
+  if (extension === '.ts' || extension === '.mts' || extension === '.cts') return ts.ScriptKind.TS;
+  return ts.ScriptKind.JS;
+}
+
+function parseJavaScript(content, file) {
+  if (!javaScriptExtension.test(path.extname(file).toLowerCase())) return null;
+  const source = /^\s*style\s*=/.test(content) ? `<div ${content} />` : content;
+  return ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, scriptKind(file));
+}
+
+function accessName(node) {
+  if (ts.isPropertyAccessExpression(node)) return node.name.text;
+  if (ts.isElementAccessExpression(node) && node.argumentExpression && ts.isStringLiteralLike(node.argumentExpression)) {
+    return node.argumentExpression.text;
+  }
+  return null;
+}
+
+function accessReceiver(node) {
+  if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) return node.expression;
+  return null;
+}
+
+function propertyName(node, sourceFile) {
+  if (!node) return null;
+  if (ts.isIdentifier(node) || ts.isStringLiteralLike(node)) return node.text;
+  if (ts.isComputedPropertyName(node) && ts.isStringLiteralLike(node.expression)) return node.expression.text;
+  return node.getText(sourceFile);
+}
+
+function containsProhibitedObjectProperty(node, sourceFile) {
+  let found = false;
+  const visit = (current) => {
+    if (found) return;
+    if ((ts.isPropertyAssignment(current) || ts.isShorthandPropertyAssignment(current))
+      && prohibitedStyleProperties.has(propertyName(current.name, sourceFile))) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(current, visit);
+  };
+  visit(node);
+  return found;
+}
+
+function hasProhibitedJavaScriptMotion(content, file) {
+  const sourceFile = parseJavaScript(content, file);
+  if (!sourceFile) return false;
+  let found = false;
+  const visit = (node) => {
+    if (found) return;
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+      const property = accessName(node.left);
+      const styleAccess = accessReceiver(node.left);
+      if (prohibitedStyleProperties.has(property) && accessName(styleAccess) === 'style') {
+        found = true;
+        return;
+      }
+    }
+    if (ts.isJsxOpeningLikeElement(node) && /^motion(?:\.|$)/i.test(node.tagName.getText(sourceFile))) {
+      for (const attribute of node.attributes.properties) {
+        if (ts.isJsxSpreadAttribute(attribute)) {
+          if (containsProhibitedObjectProperty(attribute.expression, sourceFile)) found = true;
+          continue;
+        }
+        const name = attribute.name.getText(sourceFile);
+        if (prohibitedStyleProperties.has(name)) {
+          found = true;
+          break;
+        }
+        if (!motionObjectProps.has(name) || !attribute.initializer) continue;
+        const value = ts.isJsxExpression(attribute.initializer)
+          ? attribute.initializer.expression
+          : attribute.initializer;
+        if (value && containsProhibitedObjectProperty(value, sourceFile)) {
+          found = true;
+          break;
+        }
+      }
+      if (found) return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return found;
+}
+
+function literalText(node) {
+  if (ts.isStringLiteralLike(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
+  if (!ts.isTemplateExpression(node)) return null;
+  return node.head.text + node.templateSpans.map((span) => `__EXPRESSION__${span.literal.text}`).join('');
+}
+
+function isCssLiteralContext(node, sourceFile) {
+  const parent = node.parent;
+  if (ts.isTaggedTemplateExpression(parent) && parent.template === node) {
+    return /(?:^|\.)(?:css|styled(?:\.[A-Za-z0-9_$]+)?)$/i.test(parent.tag.getText(sourceFile));
+  }
+  if (ts.isVariableDeclaration(parent) && parent.initializer === node) {
+    return /(?:css|style|styles)$/i.test(parent.name.getText(sourceFile));
+  }
+  if (ts.isBinaryExpression(parent) && parent.right === node) {
+    return /^(?:cssText|innerHTML|textContent)$/i.test(accessName(parent.left) || '');
+  }
+  if (ts.isCallExpression(parent) && parent.arguments.includes(node)) {
+    return /^(?:insertRule|replaceSync)$/i.test(accessName(parent.expression) || '');
+  }
+  return false;
+}
+
+function getJavaScriptStyleContexts(content, file) {
+  const sourceFile = parseJavaScript(content, file);
+  if (!sourceFile) return [];
+  const contexts = [];
+  const cssDeclaration = /(?:^|[;{]\s*)(?:box-shadow|filter|rotate|scale|text-shadow|transform)\s*:/i;
+  const visit = (node) => {
+    if (ts.isJsxAttribute(node) && node.name.getText(sourceFile) === 'style'
+      && node.initializer && ts.isJsxExpression(node.initializer) && node.initializer.expression) {
+      contexts.push(node.initializer.expression.getText(sourceFile));
+    }
+    const value = literalText(node);
+    if (value !== null && cssDeclaration.test(value)
+      && (/[{}]/.test(value) || isCssLiteralContext(node, sourceFile))) {
+      contexts.push(value);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return contexts;
+}
+
 function getStyleContexts(content, file) {
   const extension = path.extname(file).toLowerCase();
   if (extension === '.css') return [content];
-
-  const inlineStyles = [...content.matchAll(/style\s*=\s*\{\{([\s\S]*?)\}\}/g)].map((match) => match[1]);
-  if (extension === '.jsx' || extension === '.tsx') return inlineStyles;
+  if (javaScriptExtension.test(extension)) return getJavaScriptStyleContexts(content, file);
   if (extension !== '.mdx') return [];
 
+  const inlineStyles = [...content.matchAll(/style\s*=\s*\{\{([\s\S]*?)\}\}/g)].map((match) => match[1]);
   const styleTags = [...content.matchAll(/<style(?:\s[^>]*)?>([\s\S]*?)<\/style\s*>/gi)].map((match) => match[1]);
   return [...styleTags, ...inlineStyles];
 }
@@ -122,6 +260,7 @@ const sourceRules = [
     || scaleOrRotate.test(content)
     || arbitraryTransform.test(content)
     || variantTranslate.test(content)
+    || hasProhibitedJavaScriptMotion(content, file)
     || hasProhibitedCssMotion(content, file)],
   ['negative tracking', (content) => negativeTracking.test(content)],
 ];
@@ -446,6 +585,14 @@ test('source scanner rejects reviewed palette, effect, motion, radius, and track
     ['standalone CSS rotate property', 'rotate: 3deg;', 'fixture.css'],
     ['standalone CSS scale property', 'scale: 1.05;', 'fixture.css'],
     ['inline style scale property', 'style={{ scale: 1.1 }}', 'fixture.tsx'],
+    ['imperative transform assignment', "element.style.transform = 'scale(1.05)';", 'fixture.ts'],
+    ['imperative rotate assignment', "element.style.rotate = '3deg';", 'fixture.js'],
+    ['imperative scale assignment', "element.style.scale = '1.05';", 'fixture.mjs'],
+    ['motion JSX scale prop', '<motion.div whileHover={{ scale: 1.05 }} />', 'fixture.tsx'],
+    ['motion JSX rotate prop', '<motion.div animate={{ rotate: 3 }} />', 'fixture.jsx'],
+    ['injected transform CSS string', "const injectedCss = '.card { transform: scale(1.05); }';", 'fixture.ts'],
+    ['injected rotate CSS template', 'const injectedCss = `.card { rotate: 3deg; }`;', 'fixture.mjs'],
+    ['injected centered glow CSS', "styleElement.textContent = '.card { box-shadow: 0 0 12px #fff; }';", 'fixture.js'],
     ['active translate utility', 'active:translate-x-1'],
     ['focus translate utility', 'focus:-translate-y-1'],
     ['group data translate utility', 'group-data-[state=open]:translate-x-1'],
@@ -503,6 +650,11 @@ test('source scanner allows precise identifiers, approved radii, and static posi
     ['similar custom property', '--dangerous: 1; color: var(--warning-label);'],
     ['similar transform identifiers', 'rotate-icon scale-factor transition-transformation'],
     ['ordinary scale object key', 'const options = { scale: 2 };', 'fixture.ts'],
+    ['ordinary transform object keys', "const options = { rotate: false, transform: 'raw' };", 'fixture.ts'],
+    ['ordinary JSX scale prop', '<Chart scale={2} rotate={0} />', 'fixture.tsx'],
+    ['non-CSS scale string', "const note = 'Rotate credentials regularly at enterprise scale.';", 'fixture.ts'],
+    ['non-CSS transform label', "const label = 'transform: data normalization';", 'fixture.js'],
+    ['injected non-glow CSS string', "const css = '.card { box-shadow: 0 1px 2px #000; }';", 'fixture.ts'],
     ['MDX prose with scale label', 'Enterprise scale: built for teams', 'fixture.mdx'],
     ['MDX ordinary scale expression', '{ scale: 2 }', 'fixture.mdx'],
   ];
