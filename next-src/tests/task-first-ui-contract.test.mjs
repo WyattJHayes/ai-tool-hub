@@ -717,7 +717,7 @@ test('zero-review evidence exposes a compact accessible rating disclosure', () =
   assert.match(evidence, /还没有用户评价/);
   assert.match(evidence, /提交评价/);
   assert.match(evidence, /<details/);
-  assert.match(evidence, /<summary className="[^"]*min-h-11/);
+  assert.match(evidence, /<summary className=\{cn\('flex min-h-11/);
   assert.match(evidence, /<RatingWidget/);
   assert.match(evidence, />信息<\/h2>/);
   assert.match(evidence, />评分与评论<\/h2>/);
@@ -730,15 +730,27 @@ test('persisted review scores are textual while star icons are decorative', () =
   assert.match(evidence, /<div aria-hidden="true" className="flex gap-0\.5">/);
 });
 
-test('successful detail ratings update evidence immediately and refresh only the current tool', () => {
+test('successful detail ratings use the validated POST aggregate and refresh only the current tool', () => {
+  const route = read('src/app/api/ratings/route.ts');
+  const store = read('src/stores/useUserStore.ts');
+  const rating = read('src/components/ratings/RatingWidget.tsx');
   const evidence = read('src/components/tools/ToolEvidenceSections.tsx');
   const client = read('src/components/tools/ToolDetailClient.tsx');
-  assert.match(evidence, /onRated: \(score: number\) => void/);
-  assert.equal((evidence.match(/onRated=\{onRated\}/g) || []).length, 2);
+  assert.doesNotMatch(route, /avg_rating: tool\?\.avg_rating \|\| score/);
+  assert.doesNotMatch(route, /rating_count: tool\?\.rating_count \|\| 1/);
+  assert.match(store, /Promise<RatingAggregate \| null>/);
+  assert.match(store, /isRatingAggregate\(result\)/);
+  assert.match(rating, /onRated\?: \(aggregate: RatingAggregate\) => void/);
+  assert.match(rating, /onRated\?\.\(aggregate\)/);
+  assert.match(evidence, /onRated: \(aggregate: RatingAggregate\) => void/);
+  assert.equal((evidence.match(/onRated=\{onRated\}/g) || []).length, 1);
   assert.match(client, /activeToolIdRef/);
-  assert.match(client, /const handleRated = \(score: number\) =>/);
+  assert.match(client, /const handleRated = \(aggregate: RatingAggregate\) =>/);
+  assert.match(client, /isRatingAggregate\(aggregate\)/);
   assert.match(client, /setRatingState\(\(current\) =>/);
-  assert.match(client, /rating_count: currentCount \+ 1/);
+  assert.match(client, /avg_rating: aggregate\.avg_rating/);
+  assert.match(client, /rating_count: aggregate\.rating_count/);
+  assert.doesNotMatch(client, /currentCount \+ 1/);
   assert.match(client, /getRatings\(toolId\)/);
   assert.match(client, /activeToolIdRef\.current !== toolId/);
   assert.match(client, /refreshed\.rating_count > 0/);

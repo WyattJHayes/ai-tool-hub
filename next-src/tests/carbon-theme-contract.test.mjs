@@ -804,6 +804,7 @@ test('wires the complete carbon route, state, geometry, focus, and evidence guar
     'assertSelectedRails',
     'assertFocusColors',
     'assertThemeLayoutInvariant',
+    'assertAuthoritativeRatingFlow',
     'prepareScreenshot',
     'auditEvidence',
   ]) functionBody(name);
@@ -821,6 +822,7 @@ test('wires the complete carbon route, state, geometry, focus, and evidence guar
   assert.match(functionBody('assertFocusColors'), /assertOutline/);
   assert.match(functionBody('assertOutline'), /outlineStyle/);
   assert.match(functionBody('assertOutline'), /outlineWidth/);
+  assert.match(main, /await assertAuthoritativeRatingFlow\(browser\)/);
 
   assert.match(main, /await prepareQaDir\(/);
   assert.match(main, /await cleanupGeneratedEvidence\(qaDir\)/);

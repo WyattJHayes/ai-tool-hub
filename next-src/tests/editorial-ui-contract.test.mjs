@@ -111,6 +111,7 @@ const runtimeComponentMocks = {
   'lucide-react': {
     Calendar: () => React.createElement('svg'),
     Check: () => React.createElement('svg'),
+    Send: () => React.createElement('svg'),
     Star: () => React.createElement('svg'),
     X: () => React.createElement('svg'),
   },
@@ -144,6 +145,7 @@ const inertComponentMocks = {
   '@/hooks/useFixedSurfaceGeometry': { useFixedSurfaceGeometry: () => {} },
   '@/hooks/useSceneData': { useSceneData: () => ({}) },
   '@/lib/api': {},
+  '@/lib/ratings': { isRatingAggregate: () => true },
   '@/lib/tool-decision.mjs': {},
   '@/lib/tools-query-state.mjs': {},
   '@/lib/tools-data': {},
@@ -269,6 +271,17 @@ test('rating payload validator distinguishes malformed payloads from verified em
   }), false);
 });
 
+test('rating aggregate validator rejects malformed POST results', async () => {
+  const loaded = await loadTypeScriptModule('src/lib/ratings.ts', {});
+
+  assert.equal(typeof loaded.isRatingAggregate, 'function');
+  assert.equal(loaded.isRatingAggregate({ avg_rating: 4.25, rating_count: 8 }), true);
+  assert.equal(loaded.isRatingAggregate({ avg_rating: 0, rating_count: 0 }), true);
+  assert.equal(loaded.isRatingAggregate({ avg_rating: 6, rating_count: 1 }), false);
+  assert.equal(loaded.isRatingAggregate({ avg_rating: 4, rating_count: 1.5 }), false);
+  assert.equal(loaded.isRatingAggregate({ ok: true, avg_rating: '4', rating_count: 1 }), false);
+});
+
 test('rating evidence renders accessible loading, error, empty, and populated states', async () => {
   const { ToolEvidenceSections } = await loadTypeScriptModule(
     'src/components/tools/ToolEvidenceSections.tsx',
@@ -312,7 +325,8 @@ test('rating evidence renders accessible loading, error, empty, and populated st
         reviews: [{ score: 5, tags: ['上手快'], comment: '好用' }],
       },
     });
-    assert.equal(container.querySelector('details'), null);
+    assert.equal(container.querySelector('details')?.open, true);
+    assert.equal(container.querySelector('summary')?.classList.contains('hidden'), true);
     assert.match(container.textContent, /4\.0/);
     assert.match(container.textContent, /1 条评价/);
     assert.match(container.textContent, /5 \/ 5 分/);
@@ -320,6 +334,127 @@ test('rating evidence renders accessible loading, error, empty, and populated st
     assert.match(container.textContent, /好用/);
     assert.equal(container.querySelector('[data-rating-widget]')?.getAttribute('data-on-rated'), 'function');
   });
+});
+
+test('authoritative rating and submitted acknowledgement survive refresh failure', async () => {
+  const authoritativeAggregate = { avg_rating: 4.25, rating_count: 8 };
+  const tool = {
+    id: 42,
+    name: 'Evidence Tool',
+    tags: ['research'],
+    toolTags: [],
+    url: 'https://example.com',
+  };
+  const model = {
+    tool,
+    capabilities: [],
+    capabilitySummary: ['可信回答'],
+    tasks: [{ label: '搜索调研' }],
+    price: { summary: '免费' },
+    platforms: ['web'],
+  };
+  const icon = () => React.createElement('svg');
+  const userState = {
+    isFavorite: () => false,
+    toggleFavorite: () => {},
+    getRating: () => 0,
+    setRating: async () => authoritativeAggregate,
+  };
+  const useUserStore = (selector) => typeof selector === 'function' ? selector(userState) : userState;
+  const ratingsModule = await loadTypeScriptModule('src/lib/ratings.ts', {});
+  const { RatingWidget } = await loadTypeScriptModule('src/components/ratings/RatingWidget.tsx', {
+    'lucide-react': { Send: icon, Star: icon },
+    '@/lib/utils': { cn: (...classes) => classes.filter(Boolean).join(' ') },
+    '@/lib/ratings': ratingsModule,
+    '@/stores/useUserStore': { useUserStore },
+  });
+  const { ToolEvidenceSections } = await loadTypeScriptModule('src/components/tools/ToolEvidenceSections.tsx', {
+    'lucide-react': { Calendar: icon, Check: icon, Star: icon },
+    '@/components/ratings/RatingWidget': { RatingWidget },
+    '@/lib/utils': { cn: (...classes) => classes.filter(Boolean).join(' ') },
+  });
+  const tools = [tool];
+  const scenes = [];
+  const { ToolDetailClient } = await loadTypeScriptModule('src/components/tools/ToolDetailClient.tsx', {
+    'next/link': {
+      __esModule: true,
+      default: ({ children, href, ...props }) => React.createElement('a', { ...props, href }, children),
+    },
+    'lucide-react': { ArrowLeft: icon, ExternalLink: icon },
+    '@/lib/api': { trackClick: async () => {} },
+    '@/lib/ratings': ratingsModule,
+    '@/lib/tool-decision.mjs': {
+      createToolDecisionModel: () => model,
+      selectAlternativeTools: () => [],
+    },
+    '@/lib/tools-query-state.mjs': { sanitizeToolsReturnPath: () => '/tools' },
+    '@/lib/tools-data': { getToolSlug: () => 'evidence-tool' },
+    '@/hooks/useSceneData': {
+      useSceneData: () => ({ scenes, isLoading: false, error: null, retry: () => {} }),
+    },
+    '@/stores/useCompareStore': {
+      useCompareStore: () => ({ selectedTools: [], addTool: () => 'added', removeTool: () => {} }),
+    },
+    '@/stores/useToolStore': {
+      useToolStore: () => ({
+        tools,
+        categories: [],
+        isLoading: false,
+        dataLoaded: true,
+        loadData: () => {},
+        error: null,
+        retryLoadData: () => {},
+      }),
+    },
+    '@/stores/useUserStore': { useUserStore },
+    './ToolDecisionList': { ToolDecisionList: () => null },
+    './ToolDecisionSummary': { ToolDecisionSummary: () => null },
+    './ToolEvidenceSections': { ToolEvidenceSections },
+  });
+  const originalFetch = globalThis.fetch;
+  let ratingFetches = 0;
+  globalThis.fetch = async () => {
+    ratingFetches += 1;
+    if (ratingFetches === 1) {
+      return new Response(JSON.stringify({ avg_rating: 0, rating_count: 0, reviews: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    throw new Error('refresh unavailable');
+  };
+
+  try {
+    await withDom(async ({ dom, root, container }) => {
+      await act(async () => {
+        root.render(React.createElement(ToolDetailClient, { slug: 'evidence-tool' }));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+
+      const disclosure = container.querySelector('details');
+      assert.ok(disclosure, 'verified-empty rating disclosure must render');
+      disclosure.open = true;
+      const fiveStar = container.querySelector('button[aria-label="5 星"]');
+      assert.ok(fiveStar);
+      await act(async () => fiveStar.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
+      const submit = [...container.querySelectorAll('button')]
+        .find((button) => button.textContent?.trim() === '提交评价');
+      assert.ok(submit);
+      await act(async () => {
+        submit.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+
+      assert.match(container.textContent, /感谢评价/);
+      assert.match(container.textContent, /4\.3/);
+      assert.match(container.textContent, /8 条评价/);
+      assert.equal(ratingFetches, 2, 'initial GET and failed post-submit refresh must both run');
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('compare tray removal moves focus and announces the removed tool', async () => {

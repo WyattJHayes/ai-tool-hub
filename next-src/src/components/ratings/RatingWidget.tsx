@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Send, Star } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import type { RatingAggregate } from '@/lib/ratings';
 import { useUserStore } from '@/stores/useUserStore';
 
 const RATING_TAGS = ['上手快', '功能强', '价格贵', '中文友好', 'API 好用', '效果出色', '响应慢', '免费够用', '需翻墙', '推荐'];
@@ -10,7 +11,7 @@ const RATING_TAGS = ['上手快', '功能强', '价格贵', '中文友好', 'API
 interface RatingWidgetProps {
   toolId: number;
   currentRating?: number;
-  onRated?: (score: number) => void;
+  onRated?: (aggregate: RatingAggregate) => void;
 }
 
 export function RatingWidget({ toolId, currentRating = 0, onRated }: RatingWidgetProps) {
@@ -33,10 +34,10 @@ export function RatingWidget({ toolId, currentRating = 0, onRated }: RatingWidge
     setSubmitting(true);
     setError('');
     try {
-      const saved = await setRating(toolId, score, selectedTags, comment);
-      if (!saved) { setError('评价提交失败，请稍后重试'); return; }
+      const aggregate = await setRating(toolId, score, selectedTags, comment);
+      if (!aggregate) { setError('评价提交失败，请稍后重试'); return; }
       setSubmitted(true);
-      onRated?.(score);
+      onRated?.(aggregate);
     } finally {
       setSubmitting(false);
     }

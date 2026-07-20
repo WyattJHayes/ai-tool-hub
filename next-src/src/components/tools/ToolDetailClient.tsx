@@ -7,6 +7,7 @@ import { trackClick } from '@/lib/api';
 import { createToolDecisionModel, selectAlternativeTools } from '@/lib/tool-decision.mjs';
 import { sanitizeToolsReturnPath } from '@/lib/tools-query-state.mjs';
 import { getToolSlug } from '@/lib/tools-data';
+import { isRatingAggregate, type RatingAggregate } from '@/lib/ratings';
 import { useSceneData } from '@/hooks/useSceneData';
 import { useCompareStore } from '@/stores/useCompareStore';
 import { useToolStore } from '@/stores/useToolStore';
@@ -20,7 +21,6 @@ interface ToolDetailClientProps {
   from?: string;
 }
 
-const EMPTY_RATINGS: RatingData = { avg_rating: 0, rating_count: 0, reviews: [] };
 const platformLabels = { web: '网页版', local: '本地', cli: '命令行', desktop: '桌面端' } as const;
 
 export function isRatingData(value: unknown): value is RatingData {
@@ -148,23 +148,25 @@ export function ToolDetailClient({ slug, from }: ToolDetailClientProps) {
   };
   const handleFavorite = () => toggleFavorite(tool.id);
   const handleVisit = () => trackClick(tool.id, getToolSlug(tool), 'detail', 'primary-action');
-  const handleRated = (score: number) => {
+  const handleRated = (aggregate: RatingAggregate) => {
+    if (!isRatingAggregate(aggregate) || aggregate.rating_count === 0) return;
     const toolId = tool.id;
     const generation = ratingRequestGeneration.current + 1;
     ratingRequestGeneration.current = generation;
     setRatingState((current) => {
-      const currentData = current?.toolId === toolId && current.state.status === 'ready'
-        ? current.state.data
-        : EMPTY_RATINGS;
-      const currentCount = currentData.rating_count;
+      if (
+        activeToolIdRef.current !== toolId ||
+        current?.toolId !== toolId ||
+        current.state.status !== 'ready'
+      ) return current;
       return {
         toolId,
         state: {
           status: 'ready',
           data: {
-            ...currentData,
-            avg_rating: ((currentData.avg_rating * currentCount) + score) / (currentCount + 1),
-            rating_count: currentCount + 1,
+            ...current.state.data,
+            avg_rating: aggregate.avg_rating,
+            rating_count: aggregate.rating_count,
           },
         },
       };
@@ -180,7 +182,7 @@ export function ToolDetailClient({ slug, from }: ToolDetailClientProps) {
         }
       })
       .catch(() => {
-        // The successful optimistic rating remains visible when refresh is unavailable.
+        // The authoritative POST aggregate remains visible when review refresh is unavailable.
       });
   };
 

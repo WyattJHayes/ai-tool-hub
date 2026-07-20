@@ -36,8 +36,13 @@ test('anonymous favorites remain isolated by browser session', async () => {
 
 test('repeated anonymous ratings replace the prior rating instead of inflating the count', async () => {
   const sessionId = 'rating-session-a';
-  await post('/api/ratings', { tool_id: 61, score: 5 }, sessionId);
-  await post('/api/ratings', { tool_id: 61, score: 1 }, sessionId);
+  const first = await post('/api/ratings', { tool_id: 61, score: 5 }, sessionId);
+  assert.equal(first.status, 200);
+  assert.deepEqual(await first.json(), { ok: true, avg_rating: 5, rating_count: 1 });
+
+  const repeated = await post('/api/ratings', { tool_id: 61, score: 1 }, sessionId);
+  assert.equal(repeated.status, 200);
+  assert.deepEqual(await repeated.json(), { ok: true, avg_rating: 1, rating_count: 1 });
 
   const response = await fetch(`${baseUrl}/api/ratings?tool_id=61`);
   const body = await response.json();

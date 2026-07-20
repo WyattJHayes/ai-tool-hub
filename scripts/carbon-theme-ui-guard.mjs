@@ -138,6 +138,58 @@ async function openScenario(page, scenario) {
   }
 }
 
+async function assertAuthoritativeRatingFlow(browser) {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  const page = await context.newPage();
+  const consoleIssues = [];
+  let getRequests = 0;
+  let postRequests = 0;
+  page.on('console', (message) => {
+    if (['error', 'warning'].includes(message.type())) consoleIssues.push(message.text());
+  });
+  page.on('pageerror', (error) => consoleIssues.push(error.message));
+  await page.route('**/api/ratings?*', async (route) => {
+    getRequests += 1;
+    if (getRequests === 1) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ avg_rating: 0, rating_count: 0, reviews: [] }),
+      });
+      return;
+    }
+    await route.abort('failed');
+  });
+  await page.route('**/api/ratings', async (route) => {
+    postRequests += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ok: true, avg_rating: 4.25, rating_count: 8 }),
+    });
+  });
+
+  try {
+    const response = await page.goto(`${baseUrl}/tools/71`, { waitUntil: 'networkidle' });
+    if (!response || !response.ok()) throw new Error(`rating flow navigation failed: ${response?.status() || 'no response'}`);
+    const disclosure = page.locator('summary').filter({ hasText: '提交评价' });
+    await requireCount(disclosure, 1, 'verified-empty rating disclosure');
+    await disclosure.click();
+    await page.getByRole('button', { name: '5 星', exact: true }).click();
+    await page.getByRole('button', { name: '提交评价', exact: true }).click();
+    await page.getByText('感谢评价', { exact: true }).waitFor();
+    await page.getByText('4.3', { exact: true }).waitFor();
+    await page.getByText('8 条评价', { exact: true }).waitFor();
+    await page.waitForTimeout(50);
+    if (getRequests !== 2 || postRequests !== 1) {
+      throw new Error(`rating flow requests GET=${getRequests} POST=${postRequests}, expected GET=2 POST=1`);
+    }
+    if (consoleIssues.length) throw new Error(`rating flow console issues: ${consoleIssues.slice(0, 5).join(' | ')}`);
+  } finally {
+    await context.close();
+  }
+}
+
 async function assertScenarioIdentity(page, scenario, label) {
   const url = new URL(page.url());
   if (url.pathname !== scenario.expectedPath) {
@@ -727,6 +779,7 @@ async function main() {
   const sharp = await loadSharp();
   const browser = await chromium.launch();
   try {
+    await assertAuthoritativeRatingFlow(browser);
     for (let index = 0; index < capturePlan.length; index += 1) {
       const { viewport, scenario, theme } = capturePlan[index];
       console.log(`[carbon ${index + 1}/${capturePlan.length}] ${viewport.width}x${viewport.height} ${theme} ${scenario.name}`);

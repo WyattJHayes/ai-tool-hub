@@ -1,6 +1,7 @@
 import { Calendar, Check, Star } from 'lucide-react';
 import { RatingWidget } from '@/components/ratings/RatingWidget';
 import { cn } from '@/lib/utils';
+import type { RatingAggregate } from '@/lib/ratings';
 import type { ToolDecisionModel } from '@/types/tool';
 
 export interface RatingData {
@@ -18,7 +19,7 @@ interface ToolEvidenceSectionsProps {
   model: ToolDecisionModel;
   currentRating: number;
   ratingState: RatingState;
-  onRated: (score: number) => void;
+  onRated: (aggregate: RatingAggregate) => void;
 }
 
 export function ToolEvidenceSections({ model, currentRating, ratingState, onRated }: ToolEvidenceSectionsProps) {
@@ -88,24 +89,20 @@ export function ToolEvidenceSections({ model, currentRating, ratingState, onRate
           <div role="status" className="border-y border-[var(--line)] py-3 text-sm text-[var(--muted)]">正在加载评分…</div>
         ) : ratingState.status === 'error' ? (
           <div role="alert" className="rounded-md border border-[var(--signal-ink)] bg-[var(--signal-soft)] px-3 py-2 text-sm text-[var(--signal-ink)]">评分暂时无法加载，当前无法确认评价状态。</div>
-        ) : ratingState.status === 'ready' && ratingData !== null && ratingData.rating_count === 0 ? (
-          <details className="group border-y border-[var(--line)]">
-            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2 [&::-webkit-details-marker]:hidden">
+        ) : ratingState.status === 'ready' && ratingData !== null ? (
+          <details open={ratingData.rating_count > 0 ? true : undefined} className="group border-y border-[var(--line)]">
+            <summary className={cn('flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2 [&::-webkit-details-marker]:hidden', ratingData.rating_count > 0 && 'hidden')}>
               <span className="min-w-0">
                 <strong className="block text-sm">暂无评分</strong>
                 <span className="block text-xs text-[var(--muted)]">还没有用户评价</span>
               </span>
               <span className="inline-flex min-h-11 shrink-0 items-center rounded-md border border-[var(--line-strong)] px-4 text-sm font-medium group-open:bg-[var(--surface-subtle)]">提交评价</span>
             </summary>
-            <div className="border-t border-[var(--line)] py-2 [&>div]:min-h-0 [&>div]:rounded-none [&>div]:border-0 [&>div]:bg-transparent [&>div]:p-0">
+            <div className={cn('py-1 [&>div]:min-h-0 [&>div]:rounded-none [&>div]:border-0 [&>div]:bg-transparent [&>div]:p-0', ratingData.rating_count === 0 && 'border-t border-[var(--line)] py-2')}>
               <RatingWidget toolId={tool.id} currentRating={currentRating} onRated={onRated} />
             </div>
           </details>
-        ) : (
-          <div className="border-y border-[var(--line)] py-1 [&>div]:min-h-0 [&>div]:rounded-none [&>div]:border-0 [&>div]:bg-transparent [&>div]:p-0">
-            <RatingWidget toolId={tool.id} currentRating={currentRating} onRated={onRated} />
-          </div>
-        )}
+        ) : null}
       </section>
 
       {ratingState.status === 'ready' && ratingData !== null && ratingData.rating_count > 0 ? (

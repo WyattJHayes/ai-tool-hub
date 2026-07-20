@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { isRatingAggregate } from '@/lib/ratings';
 
 // In-memory fallback
 type Review = { score: number; tags: string[]; comment: string };
@@ -70,8 +71,19 @@ export async function POST(req: NextRequest) {
           if (writeError) return NextResponse.json({ error: 'Failed to save rating' }, { status: 502 });
 
           // Fetch updated aggregate
-          const { data: tool } = await supabase.from('tools').select('avg_rating, rating_count').eq('id', tool_id).maybeSingle();
-          return NextResponse.json({ ok: true, avg_rating: tool?.avg_rating || score, rating_count: tool?.rating_count || 1 });
+          const { data: tool, error: aggregateError } = await supabase
+            .from('tools')
+            .select('avg_rating, rating_count')
+            .eq('id', tool_id)
+            .maybeSingle();
+          const aggregate = {
+            avg_rating: Number(tool?.avg_rating),
+            rating_count: Number(tool?.rating_count),
+          };
+          if (aggregateError || aggregate.rating_count === 0 || !isRatingAggregate(aggregate)) {
+            return NextResponse.json({ error: 'Failed to load rating aggregate' }, { status: 502 });
+          }
+          return NextResponse.json({ ok: true, ...aggregate });
         }
       } catch {
         return NextResponse.json({ error: 'Authentication service unavailable' }, { status: 503 });
