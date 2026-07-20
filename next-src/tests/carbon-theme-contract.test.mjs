@@ -7,13 +7,58 @@ import { fileURLToPath } from 'node:url';
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const readRepo = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
 const css = read('src/app/globals.css');
+const sourceExtension = /\.(?:css|cjs|cts|js|jsx|mjs|mts|ts|tsx)$/;
+const forbiddenHex = /#(?:f6f7f4|eef1ec|e8ede7|171a17|5f675f|858c85|dce1da|c8cfc6|176b4d|105b40|e4f0e9|b54747|9a6700|171917|202320|292d29|303530|f2f4ef|b2b9b0|858d84|373d36|4a5148|72b897|8cc8aa|203c30|e08080|d8ad58)\b/i;
+const rawPaletteClass = /(?<![A-Za-z0-9_-])(?:bg|border|text|fill|stroke|ring|outline|divide|decoration|from|via|to)-(?:red|amber|yellow|green|emerald|teal|cyan|sky|blue|purple|violet)-\d+(?:\/\d+)?(?![A-Za-z0-9_/-])/;
+const aliasDefinition = /(?<![A-Za-z0-9_-])--(?:danger|warning)\s*:/;
+const aliasUse = /var\(\s*--(?:danger|warning)\s*(?:,|\))/;
+const whiteForegroundClass = /(?<![A-Za-z0-9_-])text-white(?:\/\d+)?(?![A-Za-z0-9_/-])/;
+const gradientEffect = /(?:repeating-)?(?:linear|radial|conic)-gradient\s*\(|(?<![A-Za-z0-9_-])bg-(?:gradient|linear|radial|conic)(?:-[A-Za-z0-9_[\]./%-]+)?(?![A-Za-z0-9_-])/;
+const cssGlow = /(?:box-shadow|text-shadow)\s*:\s*(?:inset\s+)?0(?:px|rem|em)?\s+0(?:px|rem|em)?(?=\s|[,;])/;
+const arbitraryGlow = /(?<![A-Za-z0-9_-])(?:text-)?shadow-\[(?:inset_)?0(?:px|rem|em)?_0(?:px|rem|em)?(?:_|\])/;
+const spinningAnimation = /(?<![A-Za-z0-9_-])animate-spin(?![A-Za-z0-9_-])/;
+const transformTransition = /(?<![A-Za-z0-9_-])transition-transform(?![A-Za-z0-9_-])/;
+const scaleOrRotate = /(?<![A-Za-z0-9_-])-?(?:scale(?:-[xy])?|rotate(?:-[xyz])?)-(?:\[[^\]]+\]|\d+(?:\.\d+)?(?:\/\d+)?)(?![A-Za-z0-9_-])/;
+const interactiveTranslate = /(?<![A-Za-z0-9_-])(?:hover|focus(?:-visible)?|active|data-\[[^\]]+\]|aria-\[[^\]]+\]|group-[^:\s"'`]+|peer-[^:\s"'`]+):-?translate-[xy]-(?:\[[^\]]+\]|\d+(?:\.\d+)?(?:\/\d+)?|full|px)(?![A-Za-z0-9_-])/;
+const largeRadiusClass = /(?<![A-Za-z0-9_-])rounded(?:-[trblse]{1,2})?-(?:xl|2xl|3xl|full)(?![A-Za-z0-9_-])/;
+const arbitraryRadiusClass = /(?<![A-Za-z0-9_-])rounded(?:-[trblse]{1,2})?-\[\s*(\d*\.?\d+)(px|rem)\s*\](?![A-Za-z0-9_-])/g;
+const negativeTracking = /(?<![A-Za-z0-9_-])tracking-(?:tight|tighter)(?![A-Za-z0-9_-])|(?<![A-Za-z0-9_-])tracking-\[\s*-|letter-spacing\s*:\s*-/;
+
+function hasProhibitedRadius(content) {
+  if (largeRadiusClass.test(content)) return true;
+  return [...content.matchAll(arbitraryRadiusClass)].some((match) => {
+    const value = Number.parseFloat(match[1]);
+    const pixels = match[2] === 'rem' ? value * 16 : value;
+    return pixels > 6;
+  });
+}
+
+const sourceRules = [
+  ['legacy hex', (content) => forbiddenHex.test(content)],
+  ['raw palette class', (content) => rawPaletteClass.test(content)],
+  ['legacy alias', (content) => aliasDefinition.test(content) || aliasUse.test(content)],
+  ['white foreground', (content) => whiteForegroundClass.test(content)],
+  ['prohibited radius', (content) => hasProhibitedRadius(content)],
+  ['legacy rgba', (content) => /rgba\(23,\s*26,\s*23(?!\d)/.test(content)],
+  ['gradient', (content) => gradientEffect.test(content)],
+  ['glow', (content) => cssGlow.test(content) || arbitraryGlow.test(content)],
+  ['prohibited motion', (content) => spinningAnimation.test(content)
+    || transformTransition.test(content)
+    || scaleOrRotate.test(content)
+    || interactiveTranslate.test(content)],
+  ['negative tracking', (content) => negativeTracking.test(content)],
+];
+
+function findSourceViolation(content) {
+  return sourceRules.find(([, matches]) => matches(content))?.[0];
+}
 
 function collectSourceFiles(directory) {
   return readdirSync(directory).flatMap((entry) => {
     const absolute = path.join(directory, entry);
     return statSync(absolute).isDirectory()
       ? collectSourceFiles(absolute)
-      : /\.(css|ts|tsx)$/.test(entry) ? [absolute] : [];
+      : sourceExtension.test(entry) ? [absolute] : [];
   });
 }
 
@@ -263,20 +308,89 @@ test('uses carbon compare headers while keeping recoverable compare actions neut
   assert.doesNotMatch(clearAction, /--(?:danger|signal)|(?:bg|border|text|ring|fill)-(?:red|amber|orange|signal)|\b(?:amber|orange|signal)\b|text-white/);
 });
 
+test('source scanner collects existing JavaScript source modules', () => {
+  const sourceRoot = fileURLToPath(new URL('../src/', import.meta.url));
+  const modules = collectSourceFiles(sourceRoot)
+    .filter((file) => file.endsWith('.mjs'))
+    .map((file) => path.basename(file))
+    .sort();
+
+  assert.deepEqual(modules, [
+    'compare-selection.mjs',
+    'search-suggestions.mjs',
+    'tool-decision.mjs',
+    'tools-query-state.mjs',
+  ]);
+});
+
+test('source scanner rejects reviewed palette, effect, motion, radius, and tracking escapes', async (t) => {
+  const cases = [
+    ['danger alias definition', '--danger: #b54747;'],
+    ['warning alias definition', '--warning : var(--signal-ink);'],
+    ['danger alias use', 'color: var( --danger );'],
+    ['stroke palette utility', 'stroke-red-500'],
+    ['outline palette utility', 'outline-amber-400'],
+    ['divide palette utility', 'divide-green-300'],
+    ['decoration palette utility', 'decoration-cyan-400'],
+    ['gradient stop palette utility', 'hover:from-purple-500/50'],
+    ['ordinary linear gradient', 'background: linear-gradient(90deg, #000, #fff);'],
+    ['repeating radial gradient', 'background: repeating-radial-gradient(circle, #000, #fff);'],
+    ['conic gradient', 'background: conic-gradient(from 45deg, #000, #fff);'],
+    ['arbitrary Tailwind gradient', 'bg-[linear-gradient(90deg,#000,#fff)]'],
+    ['box shadow glow', 'box-shadow: 0 0 12px rgb(0 0 0 / 20%);'],
+    ['text shadow glow', 'text-shadow: 0px 0rem 4px #000;'],
+    ['arbitrary Tailwind glow', 'shadow-[0_0_12px_rgba(0,0,0,0.2)]'],
+    ['unprefixed scale utility', 'scale-95'],
+    ['responsive scale utility', 'md:scale-x-105'],
+    ['group rotate utility', 'group-hover:-rotate-3'],
+    ['data scale utility', 'data-[state=open]:scale-100'],
+    ['active translate utility', 'active:translate-x-1'],
+    ['focus translate utility', 'focus:-translate-y-1'],
+    ['group data translate utility', 'group-data-[state=open]:translate-x-1'],
+    ['large radius utility', 'rounded-xl'],
+    ['directional large radius utility', 'md:rounded-t-2xl'],
+    ['full radius utility', 'rounded-full'],
+    ['arbitrary pixel radius above limit', 'rounded-[7px]'],
+    ['arbitrary rem radius above limit', 'rounded-[0.5rem]'],
+    ['tight tracking utility', 'tracking-tight'],
+    ['tighter tracking utility', 'sm:tracking-tighter'],
+    ['negative arbitrary tracking', 'tracking-[-0.01em]'],
+    ['negative CSS tracking', 'letter-spacing: -0.01em;'],
+  ];
+
+  for (const [name, source] of cases) {
+    await t.test(name, () => assert.ok(findSourceViolation(source), source));
+  }
+});
+
+test('source scanner allows precise identifiers, approved radii, and static positioning', async (t) => {
+  const cases = [
+    ['white prefix identifier', 'text-whitespace'],
+    ['spin prefix identifier', 'animate-spinach'],
+    ['palette prefix identifier', 'text-red-500ish'],
+    ['approved large token radius', 'rounded-lg'],
+    ['approved arbitrary pixel radius', 'rounded-[6px]'],
+    ['approved arbitrary rem radius', 'rounded-[0.375rem]'],
+    ['static positioning translate', '-translate-y-1/2'],
+    ['static positive translate', 'translate-x-1'],
+    ['non-glow shadow', 'box-shadow: 0 1px 2px rgb(0 0 0 / 20%);'],
+    ['nonnegative tracking', 'letter-spacing: 0; tracking-wide'],
+    ['similar custom property', '--dangerous: 1; color: var(--warning-label);'],
+    ['similar transform identifiers', 'rotate-icon scale-factor transition-transformation'],
+  ];
+
+  for (const [name, source] of cases) {
+    await t.test(name, () => assert.equal(findSourceViolation(source), undefined, source));
+  }
+});
+
 test('contains no legacy palette, raw status colors, or prohibited motion in application source', () => {
   const sourceRoot = fileURLToPath(new URL('../src/', import.meta.url));
   const files = collectSourceFiles(sourceRoot);
-  const forbiddenHex = /#(?:f6f7f4|eef1ec|e8ede7|171a17|5f675f|858c85|dce1da|c8cfc6|176b4d|105b40|e4f0e9|b54747|9a6700|171917|202320|292d29|303530|f2f4ef|b2b9b0|858d84|373d36|4a5148|72b897|8cc8aa|203c30|e08080|d8ad58)\b/i;
-  const rawPaletteClass = /\b(?:bg|border|text|fill|ring)-(?:red|amber|yellow|green|emerald|teal|cyan|sky|blue|purple|violet)-\d+\b/;
-  const prohibitedEffect = /\bbg-gradient-|\b(?:from|via|to)-[a-z]+-\d+|repeating-linear-gradient|shadow-\[[^\]]*0_0|animate-spin|transition-transform|(?:group-)?hover:(?:-?translate|scale|rotate)/;
 
   for (const file of files) {
     const content = readFileSync(file, 'utf8');
-    assert.doesNotMatch(content, forbiddenHex, file);
-    assert.doesNotMatch(content, rawPaletteClass, file);
-    assert.doesNotMatch(content, /var\(--(?:danger|warning)\)|text-white|rounded-full/, file);
-    assert.doesNotMatch(content, /rgba\(23,\s*26,\s*23/, file);
-    assert.doesNotMatch(content, prohibitedEffect, file);
-    assert.doesNotMatch(content, /tracking-\[-|letter-spacing:\s*-/, file);
+    const violation = findSourceViolation(content);
+    assert.equal(violation, undefined, `${file}: ${violation}`);
   }
 });
