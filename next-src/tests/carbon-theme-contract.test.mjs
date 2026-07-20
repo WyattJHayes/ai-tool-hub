@@ -14,13 +14,12 @@ const aliasDefinition = /(?<![A-Za-z0-9_-])--(?:danger|warning)\s*:/;
 const aliasUse = /var\(\s*--(?:danger|warning)\s*(?:,|\))/;
 const whiteForegroundClass = /(?<![A-Za-z0-9_-])text-white(?:\/\d+)?(?![A-Za-z0-9_/-])/;
 const gradientEffect = /(?:repeating-)?(?:linear|radial|conic)-gradient\s*\(|(?<![A-Za-z0-9_-])bg-(?:gradient|linear|radial|conic)(?:-[A-Za-z0-9_[\]./%-]+)?(?![A-Za-z0-9_-])/;
-const cssGlow = /(?:box-shadow|text-shadow)\s*:\s*(?:inset\s+)?(?:#[0-9a-f]{3,8}\s+)?0(?:px|rem|em)?\s+0(?:px|rem|em)?(?=\s|[,;])/i;
-const arbitraryGlow = /(?<![A-Za-z0-9_-])(?:text-)?shadow-\[(?:inset_)?(?:#[0-9a-f]{3,8}_)?0(?:px|rem|em)?_0(?:px|rem|em)?(?:_|\])/i;
 const spinningAnimation = /(?<![A-Za-z0-9_-])animate-spin(?![A-Za-z0-9_-])/;
 const transformTransition = /(?<![A-Za-z0-9_-])transition-transform(?![A-Za-z0-9_-])/;
 const scaleOrRotate = /(?<![A-Za-z0-9_-])-?(?:scale(?:-[xy])?|rotate(?:-[xyz])?)-(?:\[[^\]]+\]|\d+(?:\.\d+)?(?:\/\d+)?)(?![A-Za-z0-9_-])/;
 const cssScaleOrRotate = /transform\s*:[^;}\n]*(?:rotate|scale)\s*\(|(?<![A-Za-z0-9_-])(?:rotate|scale)\s*:/;
-const interactiveTranslate = /(?<![A-Za-z0-9_-])(?:hover|focus(?:-visible)?|active|data-\[[^\]]+\]|aria-\[[^\]]+\]|group-[^:\s"'`]+|peer-[^:\s"'`]+|\[[^\]]*:(?:hover|focus(?:-visible)?|active)[^\]]*\]):-?translate-[xy]-(?:\[[^\]]+\]|\d+(?:\.\d+)?(?:\/\d+)?|full|px)(?![A-Za-z0-9_-])/;
+const arbitraryTransform = /(?<![A-Za-z0-9_-])transform-\[[^\]]*(?:rotate|scale)\s*\([^\]]*\)[^\]]*\](?![A-Za-z0-9_-])/;
+const variantTranslate = /(?<![A-Za-z0-9_-])(?:[^\s"'`]+:)+-?translate-[xy]-(?:\[[^\]]+\]|\d+(?:\.\d+)?(?:\/\d+)?|full|px)(?![A-Za-z0-9_-])/;
 const largeRadiusClass = /(?<![A-Za-z0-9_-])rounded(?:-[trblse]{1,2})?-(?:xl|2xl|3xl|full)(?![A-Za-z0-9_-])/;
 const arbitraryRadiusClass = /(?<![A-Za-z0-9_-])rounded(?:-[trblse]{1,2})?-\[([^\]]+)\](?![A-Za-z0-9_-])/g;
 const approvedArbitraryRadius = /^(\d*\.?\d+)(px|rem)$/;
@@ -37,6 +36,72 @@ function hasProhibitedRadius(content) {
   });
 }
 
+function getStyleContexts(content, file) {
+  const extension = path.extname(file).toLowerCase();
+  if (extension === '.css' || extension === '.mdx') return [content];
+  if (extension !== '.jsx' && extension !== '.tsx') return [];
+  return [...content.matchAll(/style\s*=\s*\{\{([\s\S]*?)\}\}/g)].map((match) => match[1]);
+}
+
+function maskFunctionContents(value) {
+  let depth = 0;
+  return [...value].map((character) => {
+    if (character === '(') {
+      depth += 1;
+      return ' ';
+    }
+    if (character === ')') {
+      depth = Math.max(0, depth - 1);
+      return ' ';
+    }
+    return depth > 0 ? ' ' : character;
+  }).join('');
+}
+
+function hasCenteredShadowOffsets(value) {
+  const normalized = maskFunctionContents(value.replaceAll('_', ' '));
+  return normalized.split(',').some((shadow) => {
+    const lengths = shadow.trim().split(/\s+/).filter((token) => /^-?(?:\d*\.)?\d+(?:px|rem|em)?$/.test(token));
+    return lengths.length >= 2
+      && /^-?0(?:\.0+)?(?:px|rem|em)?$/.test(lengths[0])
+      && /^-?0(?:\.0+)?(?:px|rem|em)?$/.test(lengths[1]);
+  });
+}
+
+function collectFunctionArguments(content, name) {
+  const argumentsList = [];
+  const startPattern = new RegExp(`${name}\\s*\\(`, 'gi');
+  let match;
+  while ((match = startPattern.exec(content)) !== null) {
+    let depth = 1;
+    let index = startPattern.lastIndex;
+    const start = index;
+    while (index < content.length && depth > 0) {
+      if (content[index] === '(') depth += 1;
+      if (content[index] === ')') depth -= 1;
+      index += 1;
+    }
+    if (depth === 0) argumentsList.push(content.slice(start, index - 1));
+    startPattern.lastIndex = index;
+  }
+  return argumentsList;
+}
+
+function hasProhibitedGlow(content, file) {
+  const arbitraryShadows = [...content.matchAll(/(?<![A-Za-z0-9_-])(?:shadow|text-shadow|drop-shadow)-\[([^\]]+)\]/gi)];
+  if (arbitraryShadows.some((match) => hasCenteredShadowOffsets(match[1]))) return true;
+
+  return getStyleContexts(content, file).some((context) => {
+    const declarations = [...context.matchAll(/(?:box-shadow|text-shadow)\s*:\s*([^;}\n]+)/gi)];
+    return declarations.some((match) => hasCenteredShadowOffsets(match[1]))
+      || collectFunctionArguments(context, 'drop-shadow').some(hasCenteredShadowOffsets);
+  });
+}
+
+function hasProhibitedCssMotion(content, file) {
+  return getStyleContexts(content, file).some((context) => cssScaleOrRotate.test(context));
+}
+
 const sourceRules = [
   ['legacy hex', (content) => forbiddenHex.test(content)],
   ['raw palette class', (content) => rawPaletteClass.test(content)],
@@ -45,17 +110,18 @@ const sourceRules = [
   ['prohibited radius', (content) => hasProhibitedRadius(content)],
   ['legacy rgba', (content) => /rgba\(23,\s*26,\s*23(?!\d)/.test(content)],
   ['gradient', (content) => gradientEffect.test(content)],
-  ['glow', (content) => cssGlow.test(content) || arbitraryGlow.test(content)],
-  ['prohibited motion', (content) => spinningAnimation.test(content)
+  ['glow', (content, file) => hasProhibitedGlow(content, file)],
+  ['prohibited motion', (content, file) => spinningAnimation.test(content)
     || transformTransition.test(content)
     || scaleOrRotate.test(content)
-    || cssScaleOrRotate.test(content)
-    || interactiveTranslate.test(content)],
+    || arbitraryTransform.test(content)
+    || variantTranslate.test(content)
+    || hasProhibitedCssMotion(content, file)],
   ['negative tracking', (content) => negativeTracking.test(content)],
 ];
 
-function findSourceViolation(content) {
-  return sourceRules.find(([, matches]) => matches(content))?.[0];
+function findSourceViolation(content, file) {
+  return sourceRules.find(([, matches]) => matches(content, file))?.[0];
 }
 
 function collectSourceFiles(directory) {
@@ -345,25 +411,36 @@ test('source scanner rejects reviewed palette, effect, motion, radius, and track
     ['repeating radial gradient', 'background: repeating-radial-gradient(circle, #000, #fff);'],
     ['conic gradient', 'background: conic-gradient(from 45deg, #000, #fff);'],
     ['arbitrary Tailwind gradient', 'bg-[linear-gradient(90deg,#000,#fff)]'],
-    ['box shadow glow', 'box-shadow: 0 0 12px rgb(0 0 0 / 20%);'],
-    ['text shadow glow', 'text-shadow: 0px 0rem 4px #000;'],
+    ['box shadow glow', 'box-shadow: 0 0 12px rgb(0 0 0 / 20%);', 'fixture.css'],
+    ['text shadow glow', 'text-shadow: 0px 0rem 4px #000;', 'fixture.css'],
     ['arbitrary Tailwind glow', 'shadow-[0_0_12px_rgba(0,0,0,0.2)]'],
-    ['color-first box shadow glow', 'box-shadow: #fff 0 0 12px;'],
-    ['color-first text shadow glow', 'text-shadow: #fff 0 0 12px;'],
+    ['color-first box shadow glow', 'box-shadow: #fff 0 0 12px;', 'fixture.css'],
+    ['color-first text shadow glow', 'text-shadow: #fff 0 0 12px;', 'fixture.css'],
     ['color-first arbitrary Tailwind glow', 'shadow-[#fff_0_0_12px]'],
     ['color-first arbitrary Tailwind text glow', 'text-shadow-[#fff_0_0_12px]'],
+    ['rgb color-first CSS glow', 'box-shadow: rgb(255 255 255) 0 0 12px;', 'fixture.css'],
+    ['variable color-first CSS glow', 'text-shadow: var(--glow) 0 0 12px;', 'fixture.css'],
+    ['later comma-separated CSS glow', 'box-shadow: 0 1px 2px #000, #fff 0 0 12px;', 'fixture.css'],
+    ['arbitrary Tailwind drop shadow glow', 'drop-shadow-[0_0_12px_#fff]'],
+    ['CSS filter drop shadow glow', 'filter: drop-shadow(0 0 12px #fff);', 'fixture.css'],
     ['unprefixed scale utility', 'scale-95'],
     ['responsive scale utility', 'md:scale-x-105'],
     ['group rotate utility', 'group-hover:-rotate-3'],
     ['data scale utility', 'data-[state=open]:scale-100'],
-    ['CSS transform rotate function', 'transform: rotate(3deg);'],
-    ['CSS transform scale function', 'transform: scale(1.05);'],
-    ['standalone CSS rotate property', 'rotate: 3deg;'],
-    ['standalone CSS scale property', 'scale: 1.05;'],
+    ['CSS transform rotate function', 'transform: rotate(3deg);', 'fixture.css'],
+    ['CSS transform scale function', 'transform: scale(1.05);', 'fixture.css'],
+    ['standalone CSS rotate property', 'rotate: 3deg;', 'fixture.css'],
+    ['standalone CSS scale property', 'scale: 1.05;', 'fixture.css'],
+    ['inline style scale property', 'style={{ scale: 1.1 }}', 'fixture.tsx'],
     ['active translate utility', 'active:translate-x-1'],
     ['focus translate utility', 'focus:-translate-y-1'],
     ['group data translate utility', 'group-data-[state=open]:translate-x-1'],
     ['arbitrary hover translate utility', '[&:hover]:translate-x-1'],
+    ['disabled translate utility', 'disabled:translate-x-1'],
+    ['checked translate utility', 'checked:-translate-y-1'],
+    ['arbitrary selector translate utility', '[&[data-state=open]]:translate-x-1'],
+    ['arbitrary transform rotate utility', 'transform-[rotate(3deg)]'],
+    ['arbitrary transform scale utility', 'transform-[scale(1.05)]'],
     ['large radius utility', 'rounded-xl'],
     ['directional large radius utility', 'md:rounded-t-2xl'],
     ['full radius utility', 'rounded-full'],
@@ -380,8 +457,8 @@ test('source scanner rejects reviewed palette, effect, motion, radius, and track
     ['negative CSS tracking', 'letter-spacing: -0.01em;'],
   ];
 
-  for (const [name, source] of cases) {
-    await t.test(name, () => assert.ok(findSourceViolation(source), source));
+  for (const [name, source, file = 'fixture.tsx'] of cases) {
+    await t.test(name, () => assert.ok(findSourceViolation(source, file), source));
   }
 });
 
@@ -395,14 +472,15 @@ test('source scanner allows precise identifiers, approved radii, and static posi
     ['approved arbitrary rem radius', 'rounded-[0.375rem]'],
     ['static positioning translate', '-translate-y-1/2'],
     ['static positive translate', 'translate-x-1'],
-    ['non-glow shadow', 'box-shadow: 0 1px 2px rgb(0 0 0 / 20%);'],
+    ['non-glow shadow', 'box-shadow: 0 1px 2px rgb(0 0 0 / 20%);', 'fixture.css'],
     ['nonnegative tracking', 'letter-spacing: 0; tracking-wide'],
     ['similar custom property', '--dangerous: 1; color: var(--warning-label);'],
     ['similar transform identifiers', 'rotate-icon scale-factor transition-transformation'],
+    ['ordinary scale object key', 'const options = { scale: 2 };', 'fixture.ts'],
   ];
 
-  for (const [name, source] of cases) {
-    await t.test(name, () => assert.equal(findSourceViolation(source), undefined, source));
+  for (const [name, source, file = 'fixture.tsx'] of cases) {
+    await t.test(name, () => assert.equal(findSourceViolation(source, file), undefined, source));
   }
 });
 
@@ -412,7 +490,7 @@ test('contains no legacy palette, raw status colors, or prohibited motion in app
 
   for (const file of files) {
     const content = readFileSync(file, 'utf8');
-    const violation = findSourceViolation(content);
+    const violation = findSourceViolation(content, file);
     assert.equal(violation, undefined, `${file}: ${violation}`);
   }
 });
