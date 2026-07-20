@@ -37,9 +37,11 @@ export default function BottomNav() {
               key={item.href}
               href={item.href}
               className={cn(
-                'flex min-h-14 flex-col items-center justify-center gap-0.5 rounded-md text-[11px] transition-colors duration-150',
+                'instrument-nav-item flex min-h-14 flex-col items-center justify-center gap-0.5 rounded-md text-[11px] transition-colors',
                 active ? 'text-[var(--accent-ink)]' : 'text-[var(--muted-subtle)] hover:text-[var(--ink)]'
               )}
+              data-orientation="mobile"
+              data-active={active ? 'true' : undefined}
               aria-current={active ? 'page' : undefined}
             >
               <Icon className="h-5 w-5" aria-hidden="true" />

@@ -161,6 +161,35 @@ summary {
   background-clip: padding-box;
 }
 
+.instrument-nav-item {
+  position: relative;
+}
+
+.instrument-nav-item::after {
+  position: absolute;
+  height: 2px;
+  background: transparent;
+  content: '';
+  pointer-events: none;
+  transition: background-color var(--transition-duration) ease-out;
+}
+
+.instrument-nav-item[data-orientation='desktop']::after {
+  right: 0;
+  bottom: 0;
+  left: 0;
+}
+
+.instrument-nav-item[data-orientation='mobile']::after {
+  top: 0;
+  right: 16px;
+  left: 16px;
+}
+
+.instrument-nav-item[data-active='true']::after {
+  background: var(--accent);
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;

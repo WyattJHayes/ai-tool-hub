@@ -706,6 +706,24 @@ test('uses contrast-safe chrome, primary actions, active rails, and control bord
   assert.match(drawer, /border-l border-\[var\(--line-strong\)\]/);
 });
 
+test('uses precision navigation rails and outline-only search focus', () => {
+  const navbar = read('src/components/layout/Navbar.tsx');
+  const bottomNav = read('src/components/layout/BottomNav.tsx');
+  const search = read('src/components/hero/SearchBar.tsx');
+
+  assert.match(css, /\.instrument-nav-item\[data-orientation='desktop'\]::after/);
+  assert.match(css, /\.instrument-nav-item\[data-orientation='mobile'\]::after/);
+  assert.match(css, /\.instrument-nav-item\[data-active='true'\]::after/);
+  assert.match(navbar, /data-orientation="desktop"/);
+  assert.match(navbar, /data-active=\{active \? 'true' : undefined\}/);
+  assert.match(navbar, /aria-current=\{active \? 'page' : undefined\}/);
+  assert.match(bottomNav, /data-orientation="mobile"/);
+  assert.match(bottomNav, /data-active=\{active \? 'true' : undefined\}/);
+  assert.match(search, /data-search-shell/);
+  assert.match(search, /outline outline-2 outline-offset-2 outline-\[var\(--accent\)\]/);
+  assert.doesNotMatch(search, /ring-2 ring-\[var\(--accent-soft\)\]/);
+});
+
 test('uses stable selected rails and a scoped carbon compare tray', () => {
   const row = read('src/components/tools/ToolDecisionRow.tsx');
   const list = read('src/components/tools/ToolDecisionList.tsx');

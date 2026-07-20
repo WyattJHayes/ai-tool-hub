@@ -52,12 +52,14 @@ export default function Navbar() {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  'relative flex h-full items-center text-sm font-medium transition-colors duration-150',
+                  'instrument-nav-item flex h-full items-center text-sm font-medium transition-colors',
                   active ? 'text-[var(--accent-ink)]' : 'text-[var(--muted)] hover:text-[var(--ink)]'
                 )}
+                data-orientation="desktop"
+                data-active={active ? 'true' : undefined}
+                aria-current={active ? 'page' : undefined}
               >
                 {item.label}
-                {active ? <span className="absolute inset-x-0 bottom-0 h-0.5 bg-[var(--accent)]" /> : null}
               </Link>
             );
           })}
