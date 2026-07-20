@@ -43,7 +43,7 @@ export default function ComparePage() {
       <main className="flex min-h-[70vh] flex-col items-center justify-center gap-5 px-4 text-center">
         <span className="flex h-14 w-14 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface)] text-[var(--accent)]"><Plus className="h-6 w-6" /></span>
         <div><h1 className="text-2xl font-semibold">请先选择工具</h1><p className="mt-2 text-[var(--muted)]">在工具卡片中勾选 2 至 4 个工具后开始对比</p></div>
-        <Link href="/tools" className="flex min-h-11 items-center rounded-md bg-[var(--accent)] px-5 text-sm font-medium text-white hover:bg-[var(--accent-hover)]">前往工具目录</Link>
+        <Link href="/tools" className="flex min-h-11 items-center rounded-md bg-[var(--accent)] px-5 text-sm font-medium text-[var(--on-accent)] hover:bg-[var(--accent-hover)]">前往工具目录</Link>
       </main>
     );
   }
@@ -79,8 +79,8 @@ export default function ComparePage() {
         <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-4 sm:px-6">
           <button type="button" onClick={() => router.back()} className="flex h-11 w-11 items-center justify-center rounded-md text-[var(--muted)] hover:bg-[var(--surface-subtle)]" aria-label="返回上一页"><ArrowLeft className="h-4 w-4" /></button>
           <h1 className="min-w-0 flex-1 text-xl font-semibold">工具对比 <span className="text-sm font-normal text-[var(--muted)]">({selectedTools.length}/4)</span></h1>
-          {selectedTools.length < 4 ? <button type="button" onClick={() => setShowAddPanel(true)} className="flex min-h-11 items-center gap-1.5 rounded-md border border-[var(--line)] px-3 text-sm font-medium hover:bg-[var(--surface-subtle)]"><Plus className="h-4 w-4" />添加工具</button> : null}
-          <button type="button" onClick={clearAll} className="min-h-11 rounded-md px-3 text-sm text-[var(--danger)] hover:bg-red-50 dark:hover:bg-red-950/40">清除全部</button>
+          {selectedTools.length < 4 ? <button type="button" onClick={() => setShowAddPanel(true)} className="flex min-h-11 items-center gap-1.5 rounded-md border border-[var(--line-strong)] px-3 text-sm font-medium hover:bg-[var(--surface-subtle)]"><Plus className="h-4 w-4" />添加工具</button> : null}
+          <button type="button" onClick={clearAll} className="min-h-11 rounded-md border border-[var(--line-strong)] px-3 text-sm text-[var(--muted)] hover:bg-[var(--surface-hover)]">清除全部</button>
         </div>
       </header>
 
@@ -89,12 +89,12 @@ export default function ComparePage() {
           <div className="grid gap-3" style={{ gridTemplateColumns: `180px repeat(${selectedTools.length}, minmax(220px, 1fr))`, minWidth: 180 + selectedTools.length * 232 }}>
             <div />
             {selectedTools.map((tool) => (
-              <div key={tool.id} className="relative flex min-h-[190px] flex-col items-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--surface)] p-5 text-center">
+              <div key={tool.id} data-carbon-surface className="carbon-tool-surface relative flex min-h-[190px] flex-col items-center gap-2 rounded-lg border border-[var(--line-strong)] bg-[var(--surface)] p-5 text-center text-[var(--ink)]">
                 <button type="button" onClick={() => removeTool(tool.id)} className="absolute right-2 top-2 flex h-11 w-11 items-center justify-center rounded-md text-[var(--muted)] hover:bg-[var(--surface-subtle)]" aria-label={`移除 ${tool.name}`}><X className="h-4 w-4" /></button>
                 <span className="flex h-12 w-12 items-center justify-center rounded-md bg-[var(--surface-subtle)] text-[var(--accent)]"><ToolIcon name={tool.icon} className="h-6 w-6" /></span>
                 <h2 className="font-semibold">{tool.name}</h2>
                 <p className="line-clamp-2 text-xs text-[var(--muted)]">{tool.desc}</p>
-                <a href={tool.url} target="_blank" rel="noopener noreferrer" className="mt-auto flex min-h-11 items-center gap-1 text-xs font-medium text-[var(--accent)]">访问 <ExternalLink className="h-3.5 w-3.5" /></a>
+                <a href={tool.url} target="_blank" rel="noopener noreferrer" className="mt-auto flex min-h-11 items-center gap-1 text-xs font-medium text-[var(--accent-ink)]">访问 <ExternalLink className="h-3.5 w-3.5" /></a>
               </div>
             ))}
 
@@ -104,7 +104,7 @@ export default function ComparePage() {
               return (
                 <div key={row.key} className="contents">
                   <div className="flex items-center border-b border-[var(--line)] bg-[var(--surface-subtle)] px-4 py-3 text-sm font-medium">{row.label}</div>
-                  {values.map((value, index) => <div key={`${row.key}-${index}`} className={cn('flex items-center justify-center gap-1.5 border-b border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-center text-sm', freeValues[index] ? 'font-medium text-[var(--accent)]' : 'text-[var(--muted)]')}>{freeValues[index] ? <Check className="h-4 w-4" /> : null}{value}</div>)}
+                  {values.map((value, index) => <div key={`${row.key}-${index}`} className={cn('flex items-center justify-center gap-1.5 border-b border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-center text-sm', freeValues[index] ? 'font-medium text-[var(--accent-ink)]' : 'text-[var(--muted)]')}>{freeValues[index] ? <Check className="h-4 w-4" /> : null}{value}</div>)}
                 </div>
               );
             })}

@@ -218,3 +218,15 @@ test('uses a carbon detail rail and keeps ratings, favorites, and ordinary succe
   assert.match(rating, /fill-\[var\(--accent\)\] text-\[var\(--accent\)\]/);
   assert.match(rating, /text-\[var\(--signal-ink\)\]/);
 });
+
+test('uses carbon compare headers while keeping recoverable compare actions neutral', () => {
+  const compare = read('src/app/compare/page.tsx');
+
+  assert.match(compare, /data-carbon-surface/);
+  assert.match(compare, /carbon-tool-surface/);
+  assert.match(compare, /border-\[var\(--line-strong\)\]/);
+  assert.match(compare, /text-\[var\(--on-accent\)\]/);
+  assert.match(compare, /text-\[var\(--accent-ink\)\]/);
+  assert.doesNotMatch(compare, /--danger|bg-red|border-red|text-red|text-white/);
+  assert.match(compare, /onClick=\{clearAll\}[^>]+text-\[var\(--muted\)\]/);
+});
