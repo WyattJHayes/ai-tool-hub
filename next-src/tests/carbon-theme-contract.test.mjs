@@ -4,6 +4,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
 import ts from 'typescript';
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
@@ -30,6 +31,35 @@ const javaScriptExtension = /^\.(?:cjs|cts|js|jsx|mjs|mts|ts|tsx)$/;
 const prohibitedStyleProperties = new Set(['rotate', 'scale', 'transform']);
 const motionObjectProps = new Set(['animate', 'exit', 'initial', 'style', 'variants', 'whileDrag', 'whileFocus', 'whileHover', 'whileTap']);
 const prohibitedTransformFunction = /(?:^|[^A-Za-z0-9_-])(?:rotate(?:x|y|z|3d)?|scale(?:x|y|z|3d)?)\s*\(/i;
+
+function runThemeBootstrap(script, raw, storageError = false) {
+  const classNames = new Set();
+  let requestedKey = null;
+  const root = {
+    classList: {
+      contains: (name) => classNames.has(name),
+      toggle: (name, enabled) => enabled ? classNames.add(name) : classNames.delete(name),
+    },
+    style: {},
+  };
+  vm.runInNewContext(script, {
+    document: { documentElement: root },
+    window: {
+      localStorage: {
+        getItem(key) {
+          requestedKey = key;
+          if (storageError) throw new Error('storage unavailable');
+          return raw;
+        },
+      },
+    },
+  });
+  return {
+    colorScheme: root.style.colorScheme,
+    dark: root.classList.contains('dark'),
+    requestedKey,
+  };
+}
 
 function hasProhibitedRadius(content) {
   if (largeRadiusClass.test(content)) return true;
@@ -603,6 +633,50 @@ test('maps browser metadata, radii, and default motion to the approved system', 
   assert.match(tailwind, /lg:\s*'var\(--radius\)'/);
   assert.match(tailwind, /DEFAULT:\s*'140ms'/);
   assert.match(tailwind, /DEFAULT:\s*'ease-out'/);
+});
+
+test('boots dark before paint while honoring a persisted theme', async () => {
+  const layout = read('src/app/layout.tsx');
+  const store = read('src/stores/useUserStore.ts');
+  const moduleUrl = new URL('../src/lib/theme-bootstrap.mjs', import.meta.url);
+
+  assert.equal(existsSync(moduleUrl), true, 'missing theme bootstrap module');
+  const {
+    DEFAULT_THEME,
+    THEME_BOOTSTRAP_SCRIPT,
+    THEME_STORAGE_KEY,
+    resolveStoredTheme,
+  } = await import(`${moduleUrl.href}?contract=${Date.now()}`);
+
+  assert.equal(DEFAULT_THEME, 'dark');
+  assert.equal(THEME_STORAGE_KEY, 'ai-tool-hub-user');
+  assert.equal(resolveStoredTheme(null, DEFAULT_THEME), 'dark');
+  assert.equal(resolveStoredTheme('{bad json', DEFAULT_THEME), 'dark');
+  assert.equal(resolveStoredTheme(JSON.stringify({ state: { theme: 'light' } }), DEFAULT_THEME), 'light');
+  assert.equal(resolveStoredTheme(JSON.stringify({ state: { theme: 'dark' } }), DEFAULT_THEME), 'dark');
+  assert.equal(resolveStoredTheme(JSON.stringify({ state: { theme: 'green' } }), DEFAULT_THEME), 'dark');
+
+  assert.deepEqual(runThemeBootstrap(THEME_BOOTSTRAP_SCRIPT, null), {
+    colorScheme: 'dark',
+    dark: true,
+    requestedKey: 'ai-tool-hub-user',
+  });
+  assert.deepEqual(runThemeBootstrap(THEME_BOOTSTRAP_SCRIPT, JSON.stringify({ state: { theme: 'light' } })), {
+    colorScheme: 'light',
+    dark: false,
+    requestedKey: 'ai-tool-hub-user',
+  });
+  assert.deepEqual(runThemeBootstrap(THEME_BOOTSTRAP_SCRIPT, null, true), {
+    colorScheme: 'dark',
+    dark: true,
+    requestedKey: 'ai-tool-hub-user',
+  });
+  assert.match(store, /theme:\s*DEFAULT_THEME/);
+  assert.match(store, /name:\s*THEME_STORAGE_KEY/);
+  assert.match(store, /document\.documentElement\.style\.colorScheme = newTheme/);
+  assert.match(layout, /id="theme-bootstrap"/);
+  assert.match(layout, /dangerouslySetInnerHTML=\{\{ __html: THEME_BOOTSTRAP_SCRIPT \}\}/);
+  assert.ok(layout.indexOf('id="theme-bootstrap"') < layout.indexOf('<body'));
 });
 
 test('uses contrast-safe chrome, primary actions, active rails, and control borders', () => {

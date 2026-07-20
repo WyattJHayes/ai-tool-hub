@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { toggleFavoriteAPI, submitRating } from '@/lib/api';
 import { isRatingAggregate, type RatingAggregate } from '@/lib/ratings';
+import { DEFAULT_THEME, THEME_STORAGE_KEY } from '@/lib/theme-bootstrap.mjs';
 
 interface UserStore {
   favorites: number[];
@@ -25,7 +26,7 @@ export const useUserStore = create<UserStore>()(
     (set, get) => ({
       favorites: [],
       ratings: {},
-      theme: 'light',
+      theme: DEFAULT_THEME,
       isLoggedIn: false,
       pendingMigration: false,
 
@@ -65,6 +66,7 @@ export const useUserStore = create<UserStore>()(
         set({ theme: newTheme });
         if (typeof document !== 'undefined') {
           document.documentElement.classList.toggle('dark', newTheme === 'dark');
+          document.documentElement.style.colorScheme = newTheme;
         }
       },
 
@@ -87,7 +89,7 @@ export const useUserStore = create<UserStore>()(
       },
     }),
     {
-      name: 'ai-tool-hub-user',
+      name: THEME_STORAGE_KEY,
       // D-06: Add localStorage capacity monitoring
       onRehydrateStorage: () => {
         return (state) => {

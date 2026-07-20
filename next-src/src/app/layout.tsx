@@ -7,6 +7,7 @@ import Navbar from '@/components/layout/Navbar';
 import Footer from '@/components/layout/Footer';
 import CompareTray from '@/components/compare/CompareTray';
 import BottomNav from '@/components/layout/BottomNav';
+import { THEME_BOOTSTRAP_SCRIPT } from '@/lib/theme-bootstrap.mjs';
 
 const geistSans = localFont({
   src: './fonts/GeistVF.woff',
@@ -55,6 +56,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN" className={geistSans.variable} suppressHydrationWarning data-scroll-behavior="smooth">
+      <head>
+        <script
+          id="theme-bootstrap"
+          dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }}
+        />
+      </head>
       <body className="min-h-screen">
         <Navbar />
         <AuthProvider>
