@@ -180,3 +180,21 @@ test('uses contrast-safe chrome, primary actions, active rails, and control bord
   assert.match(filters, /border-\[var\(--line-strong\)\]/);
   assert.match(drawer, /border-l border-\[var\(--line-strong\)\]/);
 });
+
+test('uses stable selected rails and a scoped carbon compare tray', () => {
+  const row = read('src/components/tools/ToolDecisionRow.tsx');
+  const list = read('src/components/tools/ToolDecisionList.tsx');
+  const tray = read('src/components/compare/CompareTray.tsx');
+
+  assert.match(row, /data-selected=\{selected \? 'true' : undefined\}/);
+  assert.match(row, /before:w-\[3px\]/);
+  assert.match(row, /before:bg-transparent/);
+  assert.match(row, /selected && 'bg-\[var\(--accent-soft\)\] before:bg-\[var\(--accent\)\]'/);
+  assert.match(row, /text-\[var\(--accent-ink\)\]/);
+  assert.match(list, /border-\[var\(--signal\)\]/);
+  assert.match(list, /bg-\[var\(--signal-soft\)\]/);
+  assert.match(tray, /data-carbon-surface/);
+  assert.match(tray, /carbon-tool-surface/);
+  assert.match(tray, /border-\[var\(--line-strong\)\]/);
+  assert.match(tray, /text-\[var\(--on-accent\)\]/);
+});

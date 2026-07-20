@@ -39,10 +39,10 @@ export function ToolDecisionList({
     return <div role="status" aria-label="正在加载工具" className="space-y-2">{Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-[88px] border-b border-[var(--line)] bg-[var(--surface)]" />)}</div>;
   }
   if (error) {
-    return <div role="alert" className="border-l-4 border-[var(--danger)] bg-[var(--surface)] p-5"><p>{error}</p><button type="button" onClick={onRetry} className="mt-3 min-h-11 rounded-md border border-[var(--line)] px-4">重新加载</button></div>;
+    return <div role="alert" className="border-l-4 border-[var(--signal)] bg-[var(--signal-soft)] p-5 text-[var(--signal-ink)]"><p>{error}</p><button type="button" onClick={onRetry} className="mt-3 min-h-11 rounded-md border border-[var(--signal-ink)] px-4 text-[var(--signal-ink)]">重新加载</button></div>;
   }
   if (items.length === 0) {
-    return emptyState || <div className="py-16 text-center"><p className="text-base font-medium">没有符合这些条件的工具</p><button type="button" onClick={onClear} className="mt-3 min-h-11 rounded-md border border-[var(--line)] px-4">清除筛选</button></div>;
+    return emptyState || <div className="py-16 text-center"><p className="text-base font-medium">没有符合这些条件的工具</p><button type="button" onClick={onClear} className="mt-3 min-h-11 rounded-md border border-[var(--line-strong)] px-4">清除筛选</button></div>;
   }
 
   return (

@@ -666,8 +666,10 @@ test('root layout mounts one compare tray and no alternate shell duplicates it',
 
 test('mobile compare tray preserves the accepted inset anatomy and visible selected names', () => {
   const tray = read('src/components/compare/CompareTray.tsx');
+  assert.match(tray, /carbon-tool-surface/);
+  assert.match(tray, /data-carbon-surface/);
   assert.match(tray, /fixed inset-x-2/);
-  assert.match(tray, /rounded-md border border-\[var\(--line\)\]/);
+  assert.match(tray, /rounded-md border border-\[var\(--line-strong\)\]/);
   assert.match(tray, /md:inset-x-0/);
   assert.match(tray, /data-compare-selected-tools/);
   assert.match(tray, /className="truncate"/);

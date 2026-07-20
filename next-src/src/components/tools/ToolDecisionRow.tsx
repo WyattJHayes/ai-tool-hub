@@ -44,8 +44,11 @@ export function ToolDecisionRow({
   return (
     <li
       data-tool-decision-row
+      data-selected={selected ? 'true' : undefined}
       className={cn(
-        'grid min-w-0 items-center gap-1 border-b border-[var(--line)] bg-[var(--surface)] px-3 py-2 md:gap-3 md:py-3',
+        "relative grid min-w-0 items-center gap-1 border-b border-[var(--line)] bg-[var(--surface)] px-3 py-2 before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-transparent before:transition-colors before:content-[''] md:gap-3 md:py-3",
+        selected && 'bg-[var(--accent-soft)] before:bg-[var(--accent)]',
+        !selected && 'hover:bg-[var(--surface-hover)]',
         variant === 'matrix'
           ? 'grid-cols-[minmax(0,1fr)_44px] md:grid-cols-[44px_minmax(120px,.9fr)_minmax(110px,.75fr)_minmax(180px,1.25fr)_minmax(88px,.6fr)_44px] lg:grid-cols-[44px_minmax(150px,1fr)_minmax(130px,.85fr)_minmax(220px,1.35fr)_minmax(100px,.65fr)_44px]'
           : 'grid-cols-[minmax(0,1fr)_44px] rounded-md border md:grid-cols-[44px_minmax(120px,.9fr)_minmax(110px,.75fr)_minmax(180px,1.25fr)_minmax(88px,.6fr)_44px] md:rounded-none md:border-x-0 md:border-t-0 lg:grid-cols-[44px_minmax(150px,1fr)_minmax(130px,.85fr)_minmax(220px,1.35fr)_minmax(100px,.65fr)_44px]'
@@ -77,7 +80,7 @@ export function ToolDecisionRow({
       </div>
 
       <div data-field="task" className={cn('min-w-0 max-md:flex max-md:items-center max-md:gap-2', variant === 'compact' ? 'col-span-2 md:col-span-1 md:col-start-3 md:row-start-1' : 'max-md:col-span-2')}>
-        <span className="block text-sm font-medium text-[var(--accent)] max-md:inline">{task?.label || '工具目录'}</span>
+        <span className="block text-sm font-medium text-[var(--accent-ink)] max-md:inline">{task?.label || '工具目录'}</span>
         <span className="text-xs text-[var(--muted)]">
           {model.taskCell ? relation : model.tasks[0]?.source === 'scene' ? '任务映射' : '同类工具'}
           {additionalTaskCount ? ` +${additionalTaskCount}` : ''}

@@ -56,8 +56,9 @@ export default function CompareTray() {
       <aside
         ref={trayRef}
         data-compare-tray
+        data-carbon-surface
         aria-label="已选工具对比"
-        className="fixed inset-x-2 bottom-[var(--mobile-nav-block-size)] z-[90] overflow-hidden rounded-md border border-[var(--line)] bg-[var(--surface)] px-3 py-2 md:inset-x-0 md:bottom-0 md:rounded-none md:border-x-0 md:border-b-0 md:px-6"
+        className="carbon-tool-surface fixed inset-x-2 bottom-[var(--mobile-nav-block-size)] z-[90] overflow-hidden rounded-md border border-[var(--line-strong)] bg-[var(--surface)] px-3 py-2 text-[var(--ink)] shadow-[0_-8px_24px_rgba(0,0,0,0.18)] md:inset-x-0 md:bottom-0 md:rounded-none md:border-x-0 md:border-b-0 md:px-6"
       >
         <div className="mx-auto flex h-full max-w-7xl items-center justify-between gap-2 sm:gap-3">
           <div className="min-w-0 flex-1">
@@ -99,7 +100,7 @@ export default function CompareTray() {
             ref={compareButtonRef}
             type="button"
             onClick={() => router.push('/compare')}
-            className="min-h-11 rounded-md bg-[var(--accent)] px-4 text-sm font-medium text-white"
+            className="min-h-11 rounded-md bg-[var(--accent)] px-4 text-sm font-medium text-[var(--on-accent)] hover:bg-[var(--accent-hover)]"
           >
             比较 {selectedTools.length} 款
           </button>
