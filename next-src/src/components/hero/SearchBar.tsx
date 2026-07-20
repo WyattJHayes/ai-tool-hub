@@ -239,7 +239,7 @@ export function SearchBar({ value: controlledValue, placeholder = '搜索工具�
                 onMouseEnter={() => setActiveIndex(index)}
                 onClick={() => submitTerm(option.value)}
                 className={cn(
-                  'flex min-h-12 w-full border-l-[3px] border-l-transparent border-b border-[var(--line)] px-4 text-left last:border-b-0 hover:bg-[var(--surface-hover)]',
+                  'flex min-h-12 w-full items-center border-l-[3px] border-l-transparent border-b border-[var(--line)] px-4 text-left last:border-b-0 hover:bg-[var(--surface-hover)]',
                   option.kind === 'suggestion' ? 'min-h-[60px] gap-3' : 'justify-between',
                   activeIndex === index && 'border-l-[var(--accent)] bg-[var(--accent-soft)]'
                 )}

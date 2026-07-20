@@ -169,6 +169,7 @@ test('uses contrast-safe chrome, primary actions, active rails, and control bord
   assert.match(search, /text-\[var\(--on-accent\)\]/);
   assert.doesNotMatch(search, /rgba\(23,26,23/);
   assert.match(search, /border-l-\[3px\] border-l-transparent/);
+  assert.match(search, /flex min-h-12 w-full items-center border-l-\[3px\] border-l-transparent/);
   assert.match(search, /border-l-\[var\(--accent\)\]/);
   assert.match(tasks, /border-l-\[3px\] border-l-transparent/);
   assert.match(tasks, /hover:border-l-\[var\(--accent\)\]/);
