@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { JSDOM } from 'jsdom';
+import React, { act } from 'react';
+
+const runtimeRequire = createRequire(import.meta.url);
 
 const read = (relativePath) =>
   readFileSync(new URL(`../${relativePath}`, import.meta.url), 'utf8');
@@ -18,12 +23,113 @@ async function loadTypeScriptModule(path, mocks) {
   const loadedModule = { exports: {} };
   const requireMock = (id) => {
     if (Object.hasOwn(mocks, id)) return mocks[id];
-    throw new Error(`Unexpected test module import: ${id}`);
+    return runtimeRequire(id);
   };
   const execute = new Function('require', 'module', 'exports', outputText);
   execute(requireMock, loadedModule, loadedModule.exports);
   return loadedModule.exports;
 }
+
+async function withDom(run) {
+  const dom = new JSDOM('<!doctype html><html><body><main></main><div id="root"></div></body></html>', {
+    pretendToBeVisual: true,
+  });
+  const savedGlobals = new Map();
+  const globals = {
+    window: dom.window,
+    document: dom.window.document,
+    navigator: dom.window.navigator,
+    HTMLElement: dom.window.HTMLElement,
+    Node: dom.window.Node,
+    Event: dom.window.Event,
+    MouseEvent: dom.window.MouseEvent,
+    requestAnimationFrame: (callback) => {
+      callback(0);
+      return 0;
+    },
+    cancelAnimationFrame: () => {},
+    IS_REACT_ACT_ENVIRONMENT: true,
+  };
+  for (const [key, value] of Object.entries(globals)) {
+    savedGlobals.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
+    Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
+  }
+
+  const { createRoot } = await import('react-dom/client');
+  const root = createRoot(dom.window.document.getElementById('root'));
+  try {
+    await run({ dom, root, container: dom.window.document.getElementById('root') });
+  } finally {
+    await act(async () => root.unmount());
+    dom.window.close();
+    for (const [key, descriptor] of savedGlobals) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else delete globalThis[key];
+    }
+  }
+}
+
+function createCompareStore(selectedTools) {
+  let selected = selectedTools;
+  const listeners = new Set();
+  const notify = () => listeners.forEach((listener) => listener((version) => version + 1));
+  return {
+    useCompareStore: () => {
+      const [, setVersion] = React.useState(0);
+      React.useEffect(() => {
+        listeners.add(setVersion);
+        return () => listeners.delete(setVersion);
+      }, []);
+      return {
+        selectedTools: selected,
+        removeTool: (toolId) => {
+          selected = selected.filter((tool) => tool.id !== toolId);
+          notify();
+        },
+        clearAll: () => {
+          selected = [];
+          notify();
+        },
+      };
+    },
+  };
+}
+
+function createEvidenceModel() {
+  return {
+    tool: {
+      id: 42,
+      name: 'Evidence Tool',
+      tags: ['research'],
+      toolTags: [],
+    },
+    capabilities: [],
+  };
+}
+
+const runtimeComponentMocks = {
+  'lucide-react': {
+    Calendar: () => React.createElement('svg'),
+    Check: () => React.createElement('svg'),
+    Star: () => React.createElement('svg'),
+    X: () => React.createElement('svg'),
+  },
+  '@/components/ratings/RatingWidget': {
+    RatingWidget: ({ toolId, currentRating, onRated }) => React.createElement(
+      'button',
+      {
+        type: 'button',
+        'data-rating-widget': toolId,
+        'data-current-rating': currentRating,
+        'data-on-rated': typeof onRated,
+      },
+      '评分控件',
+    ),
+  },
+  '@/lib/utils': { cn: (...classes) => classes.filter(Boolean).join(' ') },
+  'next/navigation': { usePathname: () => '/', useRouter: () => ({ push: () => {} }) },
+  '@/hooks/useFixedSurfaceGeometry': { useFixedSurfaceGeometry: () => {} },
+};
 
 const inertComponentMocks = {
   'next/link': { default: () => null },
@@ -145,9 +251,7 @@ test('decision-row metadata uses the contrast-compliant muted token', () => {
   assert.match(row, /text-xs text-\[var\(--muted\)\]/);
 });
 
-test('rating evidence distinguishes loading, transport failure, and verified empty data', async () => {
-  const client = read('src/components/tools/ToolDetailClient.tsx');
-  const evidence = read('src/components/tools/ToolEvidenceSections.tsx');
+test('rating payload validator distinguishes malformed payloads from verified empty data', async () => {
   const loaded = await loadTypeScriptModule('src/components/tools/ToolDetailClient.tsx', inertComponentMocks);
 
   assert.equal(typeof loaded.isRatingData, 'function', 'detail ratings need a runtime payload validator');
@@ -160,19 +264,59 @@ test('rating evidence distinguishes loading, transport failure, and verified emp
     rating_count: 0,
     reviews: [{ score: 5, tags: [], comment: '' }],
   }), false);
-  assert.match(client, /status: 'loading'/);
-  assert.match(client, /status: 'error'/);
-  assert.match(client, /if \(!response\.ok\) throw new Error/);
-  assert.match(evidence, /ratingState\.status === 'loading'/);
-  assert.match(evidence, /role="status"/);
-  assert.match(evidence, /ratingState\.status === 'error'/);
-  assert.match(evidence, /role="alert"/);
-  assert.match(evidence, /const ratingData = ratingState\.status === 'ready'/);
-  assert.match(evidence, /ratingState\.status === 'ready' && ratingData !== null && ratingData\.rating_count === 0/);
 });
 
-test('compare-tray removal has deterministic focus, live feedback, and a mobile touch target', async () => {
-  const tray = read('src/components/compare/CompareTray.tsx');
+test('rating evidence renders accessible loading, error, empty, and populated states', async () => {
+  const { ToolEvidenceSections } = await loadTypeScriptModule(
+    'src/components/tools/ToolEvidenceSections.tsx',
+    runtimeComponentMocks,
+  );
+  const onRated = () => {};
+  const renderEvidence = (root, ratingState) => act(async () => {
+    root.render(React.createElement(ToolEvidenceSections, {
+      model: createEvidenceModel(),
+      currentRating: 3,
+      ratingState,
+      onRated,
+    }));
+  });
+
+  await withDom(async ({ root, container }) => {
+    await renderEvidence(root, { status: 'loading' });
+    assert.equal(container.querySelector('[role="status"]')?.textContent, '正在加载评分…');
+    assert.equal(container.querySelector('[data-rating-widget]'), null);
+
+    await renderEvidence(root, { status: 'error' });
+    assert.equal(container.querySelector('[role="alert"]')?.textContent, '评分暂时无法加载，当前无法确认评价状态。');
+    assert.equal(container.querySelector('[data-rating-widget]'), null);
+
+    await renderEvidence(root, {
+      status: 'ready',
+      data: { avg_rating: 0, rating_count: 0, reviews: [] },
+    });
+    assert.equal(container.querySelector('summary')?.textContent?.replace(/\s+/g, ''), '暂无评分还没有用户评价提交评价');
+    assert.equal(container.querySelector('[data-rating-widget]')?.getAttribute('data-current-rating'), '3');
+    assert.equal(container.querySelector('[data-rating-widget]')?.getAttribute('data-on-rated'), 'function');
+
+    await renderEvidence(root, {
+      status: 'ready',
+      data: {
+        avg_rating: 4,
+        rating_count: 1,
+        reviews: [{ score: 5, tags: ['上手快'], comment: '好用' }],
+      },
+    });
+    assert.equal(container.querySelector('details'), null);
+    assert.match(container.textContent, /4\.0/);
+    assert.match(container.textContent, /1 条评价/);
+    assert.match(container.textContent, /5 \/ 5 分/);
+    assert.match(container.textContent, /上手快/);
+    assert.match(container.textContent, /好用/);
+    assert.equal(container.querySelector('[data-rating-widget]')?.getAttribute('data-on-rated'), 'function');
+  });
+});
+
+test('compare tray removal moves focus and announces the removed tool', async () => {
   const loaded = await loadTypeScriptModule('src/components/compare/CompareTray.tsx', inertComponentMocks);
 
   assert.equal(typeof loaded.getNextRemovalToolId, 'function', 'compare removal needs a deterministic focus target');
@@ -180,13 +324,49 @@ test('compare-tray removal has deterministic focus, live feedback, and a mobile 
   assert.equal(loaded.getNextRemovalToolId(selected, 2), 3);
   assert.equal(loaded.getNextRemovalToolId(selected, 3), 2);
   assert.equal(loaded.getNextRemovalToolId(selected.slice(0, 2), 1), null);
-  assert.match(tray, /aria-live="polite"/);
-  assert.match(tray, /className="flex h-11 w-11/);
-  assert.match(tray, /removeButtonRefs/);
-  assert.match(tray, /requestAnimationFrame/);
-  assert.match(tray, /querySelector<HTMLElement>\('main'\)/);
-  assert.match(tray, /focus\(\{ preventScroll: true \}\)/);
-  assert.match(tray, /ref=\{compareButtonRef\}[^>]*onClick=\{\(\) => router\.push\('\/compare'\)\}/);
+
+  const compareStore = createCompareStore([
+    { id: 1, name: 'Alpha' },
+    { id: 2, name: 'Beta' },
+    { id: 3, name: 'Gamma' },
+  ]);
+  const { default: CompareTray } = await loadTypeScriptModule('src/components/compare/CompareTray.tsx', {
+    ...runtimeComponentMocks,
+    '@/stores/useCompareStore': compareStore,
+  });
+
+  await withDom(async ({ dom, root, container }) => {
+    await act(async () => root.render(React.createElement(CompareTray)));
+    const removeBeta = container.querySelector('[aria-label="移除 Beta"]');
+    assert.ok(removeBeta);
+    await act(async () => removeBeta.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
+
+    assert.equal(dom.window.document.activeElement?.getAttribute('aria-label'), '移除 Gamma');
+    assert.equal(container.querySelector('[aria-live="polite"]')?.textContent, '已移除 Beta');
+    assert.equal(container.querySelector('[aria-label="移除 Beta"]'), null);
+  });
+});
+
+test('compare tray focuses main when removal hides the tray', async () => {
+  const compareStore = createCompareStore([
+    { id: 1, name: 'Alpha' },
+    { id: 2, name: 'Beta' },
+  ]);
+  const { default: CompareTray } = await loadTypeScriptModule('src/components/compare/CompareTray.tsx', {
+    ...runtimeComponentMocks,
+    '@/stores/useCompareStore': compareStore,
+  });
+
+  await withDom(async ({ dom, root, container }) => {
+    await act(async () => root.render(React.createElement(CompareTray)));
+    const removeBeta = container.querySelector('[aria-label="移除 Beta"]');
+    assert.ok(removeBeta);
+    await act(async () => removeBeta.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
+
+    assert.equal(dom.window.document.activeElement, dom.window.document.querySelector('main'));
+    assert.equal(container.querySelector('[aria-live="polite"]')?.textContent, '已移除 Beta');
+    assert.equal(container.querySelector('[data-compare-tray]'), null);
+  });
 });
 
 test('keeps tool detail and scene routes in the same editorial system', () => {
