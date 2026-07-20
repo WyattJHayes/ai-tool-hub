@@ -29,6 +29,7 @@ const negativeTracking = /(?<![A-Za-z0-9_-])tracking-(?:tight|tighter)(?![A-Za-z
 const javaScriptExtension = /^\.(?:cjs|cts|js|jsx|mjs|mts|ts|tsx)$/;
 const prohibitedStyleProperties = new Set(['rotate', 'scale', 'transform']);
 const motionObjectProps = new Set(['animate', 'exit', 'initial', 'style', 'variants', 'whileDrag', 'whileFocus', 'whileHover', 'whileTap']);
+const prohibitedTransformFunction = /(?:^|[^A-Za-z0-9_-])(?:rotate(?:x|y|z|3d)?|scale(?:x|y|z|3d)?)\s*\(/i;
 
 function hasProhibitedRadius(content) {
   if (largeRadiusClass.test(content)) return true;
@@ -75,31 +76,154 @@ function propertyName(node, sourceFile) {
   return node.getText(sourceFile);
 }
 
-function containsProhibitedObjectProperty(node, sourceFile) {
-  let found = false;
-  const visit = (current) => {
-    if (found) return;
-    if ((ts.isPropertyAssignment(current) || ts.isShorthandPropertyAssignment(current))
-      && prohibitedStyleProperties.has(propertyName(current.name, sourceFile))) {
-      found = true;
-      return;
+function isLexicalScope(node) {
+  return ts.isSourceFile(node) || ts.isBlock(node) || ts.isModuleBlock(node) || ts.isCaseBlock(node);
+}
+
+function containingLexicalScope(node) {
+  let current = node;
+  while (current && !isLexicalScope(current)) current = current.parent;
+  return current;
+}
+
+function collectConstDeclarations(sourceFile) {
+  const declarations = new Map();
+  const visit = (node) => {
+    if (ts.isVariableDeclaration(node)
+      && ts.isIdentifier(node.name)
+      && node.initializer
+      && ts.isVariableDeclarationList(node.parent)
+      && (node.parent.flags & ts.NodeFlags.Const) !== 0) {
+      const entries = declarations.get(node.name.text) || [];
+      entries.push({ initializer: node.initializer, position: node.pos, scope: containingLexicalScope(node) });
+      declarations.set(node.name.text, entries);
     }
-    ts.forEachChild(current, visit);
+    ts.forEachChild(node, visit);
   };
-  visit(node);
-  return found;
+  visit(sourceFile);
+  return declarations;
+}
+
+function resolveConstInitializer(identifier, constDeclarations) {
+  const entries = constDeclarations.get(identifier.text) || [];
+  let scope = containingLexicalScope(identifier);
+  while (scope) {
+    const scoped = entries.filter((entry) => entry.scope === scope);
+    if (scoped.length) {
+      const preceding = scoped.filter((entry) => entry.position <= identifier.pos);
+      return (preceding.at(-1) || scoped[0]).initializer;
+    }
+    scope = containingLexicalScope(scope.parent);
+  }
+  return null;
+}
+
+function unwrapExpression(node) {
+  let current = node;
+  while (current && (ts.isParenthesizedExpression(current)
+    || ts.isAsExpression(current)
+    || ts.isTypeAssertionExpression(current)
+    || ts.isNonNullExpression(current))) {
+    current = current.expression;
+  }
+  return current;
+}
+
+function staticStyleValue(node, constDeclarations, seen = new Set()) {
+  const current = unwrapExpression(node);
+  if (!current) return null;
+  if (ts.isStringLiteralLike(current) || ts.isNoSubstitutionTemplateLiteral(current)) return current.text;
+  if (!ts.isIdentifier(current)) return null;
+  const initializer = resolveConstInitializer(current, constDeclarations);
+  if (!initializer || seen.has(initializer)) return null;
+  const nextSeen = new Set(seen);
+  nextSeen.add(initializer);
+  return staticStyleValue(initializer, constDeclarations, nextSeen);
+}
+
+function hasProhibitedStyleValue(property, node, constDeclarations) {
+  if (property !== 'transform') return true;
+  const value = staticStyleValue(node, constDeclarations);
+  return value === null || prohibitedTransformFunction.test(value);
+}
+
+function containsProhibitedObjectProperty(node, sourceFile, constDeclarations, seen = new Set()) {
+  const current = unwrapExpression(node);
+  if (!current) return false;
+  if (ts.isIdentifier(current)) {
+    const initializer = resolveConstInitializer(current, constDeclarations);
+    if (!initializer || seen.has(initializer)) return false;
+    const nextSeen = new Set(seen);
+    nextSeen.add(initializer);
+    return containsProhibitedObjectProperty(initializer, sourceFile, constDeclarations, nextSeen);
+  }
+  if (ts.isObjectLiteralExpression(current)) {
+    return current.properties.some((property) => {
+      if (ts.isSpreadAssignment(property)) {
+        return containsProhibitedObjectProperty(property.expression, sourceFile, constDeclarations, seen);
+      }
+      if (ts.isPropertyAssignment(property)) {
+        const name = propertyName(property.name, sourceFile);
+        return (prohibitedStyleProperties.has(name)
+          && hasProhibitedStyleValue(name, property.initializer, constDeclarations))
+          || containsProhibitedObjectProperty(property.initializer, sourceFile, constDeclarations, seen);
+      }
+      if (ts.isShorthandPropertyAssignment(property)) {
+        const name = propertyName(property.name, sourceFile);
+        return prohibitedStyleProperties.has(name)
+          || containsProhibitedObjectProperty(property.name, sourceFile, constDeclarations, seen);
+      }
+      return false;
+    });
+  }
+  return false;
+}
+
+function isStyleReceiver(node) {
+  return (ts.isIdentifier(node) && node.text === 'style') || accessName(node) === 'style';
+}
+
+function callName(node) {
+  return ts.isIdentifier(node) ? node.text : accessName(node);
 }
 
 function hasProhibitedJavaScriptMotion(content, file) {
   const sourceFile = parseJavaScript(content, file);
   if (!sourceFile) return false;
+  const constDeclarations = collectConstDeclarations(sourceFile);
   let found = false;
   const visit = (node) => {
     if (found) return;
     if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
       const property = accessName(node.left);
       const styleAccess = accessReceiver(node.left);
-      if (prohibitedStyleProperties.has(property) && accessName(styleAccess) === 'style') {
+      if (prohibitedStyleProperties.has(property)
+        && styleAccess
+        && accessName(styleAccess) === 'style'
+        && hasProhibitedStyleValue(property, node.right, constDeclarations)) {
+        found = true;
+        return;
+      }
+    }
+    if (ts.isCallExpression(node)) {
+      const receiver = accessReceiver(node.expression);
+      if (callName(node.expression) === 'setProperty'
+        && receiver
+        && isStyleReceiver(receiver)
+        && node.arguments.length >= 2) {
+        const property = staticStyleValue(node.arguments[0], constDeclarations);
+        if (prohibitedStyleProperties.has(property)
+          && hasProhibitedStyleValue(property, node.arguments[1], constDeclarations)) {
+          found = true;
+          return;
+        }
+      }
+      if (callName(node.expression) === 'css'
+        && node.arguments.some((argument) => containsProhibitedObjectProperty(
+          argument,
+          sourceFile,
+          constDeclarations,
+        ))) {
         found = true;
         return;
       }
@@ -107,7 +231,7 @@ function hasProhibitedJavaScriptMotion(content, file) {
     if (ts.isJsxOpeningLikeElement(node) && /^motion(?:\.|$)/i.test(node.tagName.getText(sourceFile))) {
       for (const attribute of node.attributes.properties) {
         if (ts.isJsxSpreadAttribute(attribute)) {
-          if (containsProhibitedObjectProperty(attribute.expression, sourceFile)) found = true;
+          if (containsProhibitedObjectProperty(attribute.expression, sourceFile, constDeclarations)) found = true;
           continue;
         }
         const name = attribute.name.getText(sourceFile);
@@ -119,7 +243,7 @@ function hasProhibitedJavaScriptMotion(content, file) {
         const value = ts.isJsxExpression(attribute.initializer)
           ? attribute.initializer.expression
           : attribute.initializer;
-        if (value && containsProhibitedObjectProperty(value, sourceFile)) {
+        if (value && containsProhibitedObjectProperty(value, sourceFile, constDeclarations)) {
           found = true;
           break;
         }
@@ -588,8 +712,21 @@ test('source scanner rejects reviewed palette, effect, motion, radius, and track
     ['imperative transform assignment', "element.style.transform = 'scale(1.05)';", 'fixture.ts'],
     ['imperative rotate assignment', "element.style.rotate = '3deg';", 'fixture.js'],
     ['imperative scale assignment', "element.style.scale = '1.05';", 'fixture.mjs'],
+    ['setProperty transform scale assignment', "element.style.setProperty('transform', 'scale(1.05)');", 'fixture.ts'],
+    ['setProperty transform rotate assignment', "element.style.setProperty('transform', 'rotateZ(3deg)');", 'fixture.ts'],
+    ['setProperty rotate assignment', "element.style.setProperty('rotate', '3deg');", 'fixture.js'],
+    ['setProperty scale assignment', "element.style.setProperty('scale', '1.05');", 'fixture.mjs'],
+    ['CSS-in-JS transform scale property', "css({ transform: 'scale(1.05)' });", 'fixture.ts'],
+    ['CSS-in-JS transform rotate property', "css({ transform: 'rotate(3deg)' });", 'fixture.ts'],
+    ['CSS-in-JS scale property', 'css({ scale: 1.05 });', 'fixture.ts'],
+    ['CSS-in-JS rotate property', "css({ rotate: '3deg' });", 'fixture.ts'],
     ['motion JSX scale prop', '<motion.div whileHover={{ scale: 1.05 }} />', 'fixture.tsx'],
     ['motion JSX rotate prop', '<motion.div animate={{ rotate: 3 }} />', 'fixture.jsx'],
+    ['motion variants identifier', "const variants = { hover: { scale: 1.05 } }; <motion.div variants={variants} />", 'fixture.tsx'],
+    ['motion prop identifier', "const hover = { rotate: 3 }; <motion.div whileHover={hover} />", 'fixture.tsx'],
+    ['motion nested object spread identifier', "const hover = { scale: 1.05 }; const variants = { hover: { ...hover } }; <motion.div variants={variants} />", 'fixture.tsx'],
+    ['motion prop object spread identifier', "const hover = { rotate: 3 }; <motion.div whileHover={{ ...hover }} />", 'fixture.tsx'],
+    ['motion JSX spread identifier', "const motionProps = { whileHover: { scale: 1.05 } }; <motion.div {...motionProps} />", 'fixture.tsx'],
     ['injected transform CSS string', "const injectedCss = '.card { transform: scale(1.05); }';", 'fixture.ts'],
     ['injected rotate CSS template', 'const injectedCss = `.card { rotate: 3deg; }`;', 'fixture.mjs'],
     ['injected centered glow CSS', "styleElement.textContent = '.card { box-shadow: 0 0 12px #fff; }';", 'fixture.js'],
@@ -651,6 +788,14 @@ test('source scanner allows precise identifiers, approved radii, and static posi
     ['similar transform identifiers', 'rotate-icon scale-factor transition-transformation'],
     ['ordinary scale object key', 'const options = { scale: 2 };', 'fixture.ts'],
     ['ordinary transform object keys', "const options = { rotate: false, transform: 'raw' };", 'fixture.ts'],
+    ['imperative transform translate assignment', "element.style.transform = 'translateX(4px)';", 'fixture.ts'],
+    ['imperative transform cleanup assignment', "element.style.transform = 'none';", 'fixture.ts'],
+    ['setProperty transform translate assignment', "style.setProperty('transform', 'translateX(4px)');", 'fixture.ts'],
+    ['setProperty transform cleanup assignment', "style.setProperty('transform', 'none');", 'fixture.ts'],
+    ['CSS-in-JS static translate property', "css({ transform: 'translateX(4px)' });", 'fixture.ts'],
+    ['CSS-in-JS transform cleanup property', "css({ transform: 'none' });", 'fixture.ts'],
+    ['motion variants with safe properties', "const variants = { hover: { opacity: 0.8, color: '#fff' } }; <motion.div variants={variants} />", 'fixture.tsx'],
+    ['motion spread with safe properties', "const hover = { opacity: 0.8 }; const variants = { hover: { ...hover } }; <motion.div variants={variants} />", 'fixture.tsx'],
     ['ordinary JSX scale prop', '<Chart scale={2} rotate={0} />', 'fixture.tsx'],
     ['non-CSS scale string', "const note = 'Rotate credentials regularly at enterprise scale.';", 'fixture.ts'],
     ['non-CSS transform label', "const label = 'transform: data normalization';", 'fixture.js'],
