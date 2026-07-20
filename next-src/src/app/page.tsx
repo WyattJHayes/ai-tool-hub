@@ -48,7 +48,7 @@ export default function Home() {
       <section className="mx-auto max-w-[1160px] px-4 py-9 sm:px-0 sm:py-12">
         <h2 className="mb-5 text-xl font-semibold sm:text-2xl">你要完成什么？</h2>
         {scenesLoading ? <div role="status" className="h-52 border-y border-[var(--line)]" /> : null}
-        {scenesError ? <div role="alert"><p>{scenesError}</p><button type="button" onClick={retryScenes} className="mt-3 min-h-11 rounded-md border border-[var(--line)] px-4">重新加载</button></div> : null}
+        {scenesError ? <div role="alert" className="border-l-4 border-[var(--signal)] bg-[var(--signal-soft)] p-4 text-[var(--signal-ink)]"><p>{scenesError}</p><button type="button" onClick={retryScenes} className="mt-3 min-h-11 rounded-md border border-[var(--signal-ink)] px-4">重新加载</button></div> : null}
         {!scenesLoading && !scenesError ? <TaskEntryList scenes={scenes} /> : null}
       </section>
       <section className="border-t border-[var(--line)]">

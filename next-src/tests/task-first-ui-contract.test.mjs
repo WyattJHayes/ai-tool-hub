@@ -122,7 +122,8 @@ test('search combobox supports active-option keyboard navigation and explicit su
   assert.match(search, /h-11 w-11/);
   assert.match(search, /compact \? <ArrowRight[^>]*\/> : '搜索'/);
   assert.match(search, /bg-\[var\(--accent\)\]/);
-  assert.match(search, /text-\[var\(--surface\)\]/);
+  assert.match(search, /text-\[var\(--on-accent\)\]/);
+  assert.doesNotMatch(search, /bg-\[var\(--accent\)\][^'"\n]*text-\[var\(--surface\)\]/);
   assert.doesNotMatch(search, /bg-\[var\(--accent\)\][^'"\n]*text-white/);
   assert.match(search, /aria-activedescendant=\{activeOptionId\}/);
   assert.match(search, /event\.key === 'ArrowDown'/);

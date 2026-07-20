@@ -212,7 +212,7 @@ export function SearchBar({ value: controlledValue, placeholder = '搜索工具�
             'mr-1 flex h-11 shrink-0 items-center justify-center rounded-md transition-colors',
             compact
               ? 'w-11 text-[var(--accent)] hover:bg-[var(--accent-soft)]'
-              : 'min-w-[64px] bg-[var(--accent)] px-5 text-sm font-medium text-[var(--surface)] hover:bg-[var(--accent-hover)]'
+              : 'min-w-[64px] bg-[var(--accent)] px-5 text-sm font-medium text-[var(--on-accent)] hover:bg-[var(--accent-hover)]'
           )}
         >
           {compact ? <ArrowRight className="h-4 w-4" aria-hidden="true" /> : '搜索'}
@@ -220,7 +220,7 @@ export function SearchBar({ value: controlledValue, placeholder = '搜索工具�
       </div>
 
       {showDropdown ? (
-        <div className="absolute inset-x-0 top-full z-50 mt-2 overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--surface)] shadow-[0_12px_30px_rgba(23,26,23,0.12)]">
+        <div className="absolute inset-x-0 top-full z-50 mt-2 overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--surface)] shadow-[0_12px_30px_rgba(0,0,0,0.16)]">
           {!value ? (
             <div className="flex items-center gap-2 border-b border-[var(--line)] px-4 py-2 text-xs font-medium text-[var(--muted)]">
               <Clock className="h-3.5 w-3.5" aria-hidden="true" /> 最近搜索
@@ -239,9 +239,9 @@ export function SearchBar({ value: controlledValue, placeholder = '搜索工具�
                 onMouseEnter={() => setActiveIndex(index)}
                 onClick={() => submitTerm(option.value)}
                 className={cn(
-                  'flex min-h-12 w-full items-center border-b border-[var(--line)] px-4 text-left last:border-b-0 hover:bg-[var(--surface-subtle)]',
+                  'flex min-h-12 w-full border-l-[3px] border-l-transparent border-b border-[var(--line)] px-4 text-left last:border-b-0 hover:bg-[var(--surface-hover)]',
                   option.kind === 'suggestion' ? 'min-h-[60px] gap-3' : 'justify-between',
-                  activeIndex === index && 'bg-[var(--surface-subtle)]'
+                  activeIndex === index && 'border-l-[var(--accent)] bg-[var(--accent-soft)]'
                 )}
                 aria-label={option.label}
               >

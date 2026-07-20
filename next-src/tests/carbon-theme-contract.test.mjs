@@ -153,3 +153,29 @@ test('maps browser metadata, radii, and default motion to the approved system', 
   assert.match(tailwind, /DEFAULT:\s*'140ms'/);
   assert.match(tailwind, /DEFAULT:\s*'ease-out'/);
 });
+
+test('uses contrast-safe chrome, primary actions, active rails, and control borders', () => {
+  const navbar = read('src/components/layout/Navbar.tsx');
+  const bottomNav = read('src/components/layout/BottomNav.tsx');
+  const search = read('src/components/hero/SearchBar.tsx');
+  const tasks = read('src/components/home/TaskEntryList.tsx');
+  const home = read('src/app/page.tsx');
+  const context = read('src/components/tools/TaskContextBar.tsx');
+  const filters = read('src/components/tools/FilterFields.tsx');
+  const drawer = read('src/components/tools/MobileFilterDrawer.tsx');
+
+  assert.match(navbar, /active \? 'text-\[var\(--accent-ink\)\]'/);
+  assert.match(bottomNav, /active \? 'text-\[var\(--accent-ink\)\]'/);
+  assert.match(search, /text-\[var\(--on-accent\)\]/);
+  assert.doesNotMatch(search, /rgba\(23,26,23/);
+  assert.match(search, /border-l-\[3px\] border-l-transparent/);
+  assert.match(search, /border-l-\[var\(--accent\)\]/);
+  assert.match(tasks, /border-l-\[3px\] border-l-transparent/);
+  assert.match(tasks, /hover:border-l-\[var\(--accent\)\]/);
+  assert.match(home, /border-\[var\(--signal\)\]/);
+  assert.match(home, /bg-\[var\(--signal-soft\)\]/);
+  assert.equal((context.match(/border-\[var\(--line-strong\)\]/g) || []).length, 4);
+  assert.match(filters, /accent-\[var\(--accent\)\]/);
+  assert.match(filters, /border-\[var\(--line-strong\)\]/);
+  assert.match(drawer, /border-l border-\[var\(--line-strong\)\]/);
+});
