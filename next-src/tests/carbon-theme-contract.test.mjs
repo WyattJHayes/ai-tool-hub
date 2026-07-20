@@ -76,44 +76,97 @@ function propertyName(node, sourceFile) {
   return node.getText(sourceFile);
 }
 
-function isLexicalScope(node) {
-  return ts.isSourceFile(node) || ts.isBlock(node) || ts.isModuleBlock(node) || ts.isCaseBlock(node);
+function isFunctionScope(node) {
+  return ts.isFunctionDeclaration(node)
+    || ts.isFunctionExpression(node)
+    || ts.isArrowFunction(node)
+    || ts.isMethodDeclaration(node)
+    || ts.isConstructorDeclaration(node)
+    || ts.isGetAccessorDeclaration(node)
+    || ts.isSetAccessorDeclaration(node);
 }
 
-function containingLexicalScope(node) {
+function isBindingScope(node) {
+  return ts.isSourceFile(node)
+    || ts.isBlock(node)
+    || ts.isModuleBlock(node)
+    || ts.isCaseBlock(node)
+    || ts.isCatchClause(node)
+    || ts.isForStatement(node)
+    || ts.isForInStatement(node)
+    || ts.isForOfStatement(node)
+    || isFunctionScope(node);
+}
+
+function containingBindingScope(node) {
   let current = node;
-  while (current && !isLexicalScope(current)) current = current.parent;
+  while (current && !isBindingScope(current)) current = current.parent;
   return current;
 }
 
-function collectConstDeclarations(sourceFile) {
-  const declarations = new Map();
+function bindingIdentifiers(name) {
+  if (ts.isIdentifier(name)) return [name];
+  if (!ts.isObjectBindingPattern(name) && !ts.isArrayBindingPattern(name)) return [];
+  return name.elements.flatMap((element) => ts.isBindingElement(element)
+    ? bindingIdentifiers(element.name)
+    : []);
+}
+
+function variableBindingScope(node) {
+  const declarationList = node.parent;
+  if (ts.isVariableDeclarationList(declarationList)
+    && (declarationList.flags & ts.NodeFlags.BlockScoped) !== 0) {
+    return containingBindingScope(declarationList.parent);
+  }
+  let current = node.parent;
+  while (current && !ts.isSourceFile(current) && !isFunctionScope(current)) current = current.parent;
+  return current;
+}
+
+function collectBindings(sourceFile) {
+  const bindings = new Map();
+  const add = (name, scope, initializer = null, position = name.pos) => {
+    if (!scope) return;
+    const entries = bindings.get(name.text) || [];
+    entries.push({ initializer, position, scope });
+    bindings.set(name.text, entries);
+  };
   const visit = (node) => {
-    if (ts.isVariableDeclaration(node)
-      && ts.isIdentifier(node.name)
-      && node.initializer
-      && ts.isVariableDeclarationList(node.parent)
-      && (node.parent.flags & ts.NodeFlags.Const) !== 0) {
-      const entries = declarations.get(node.name.text) || [];
-      entries.push({ initializer: node.initializer, position: node.pos, scope: containingLexicalScope(node) });
-      declarations.set(node.name.text, entries);
+    if (ts.isVariableDeclaration(node) && ts.isVariableDeclarationList(node.parent)) {
+      const scope = variableBindingScope(node);
+      for (const name of bindingIdentifiers(node.name)) {
+        add(name, scope, ts.isIdentifier(node.name) ? node.initializer || null : null, node.pos);
+      }
+    } else if (ts.isParameter(node)) {
+      for (const name of bindingIdentifiers(node.name)) add(name, node.parent);
+    } else if (ts.isCatchClause(node) && node.variableDeclaration) {
+      for (const name of bindingIdentifiers(node.variableDeclaration.name)) add(name, node);
+    } else if (ts.isImportClause(node) && node.name) {
+      add(node.name, sourceFile);
+    } else if (ts.isNamespaceImport(node) || ts.isImportSpecifier(node) || ts.isImportEqualsDeclaration(node)) {
+      add(node.name, sourceFile);
+    } else if ((ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node) || ts.isEnumDeclaration(node))
+      && node.name) {
+      add(node.name, containingBindingScope(node.parent));
+    } else if (ts.isFunctionExpression(node) && node.name) {
+      add(node.name, node);
     }
     ts.forEachChild(node, visit);
   };
   visit(sourceFile);
-  return declarations;
+  return bindings;
 }
 
-function resolveConstInitializer(identifier, constDeclarations) {
-  const entries = constDeclarations.get(identifier.text) || [];
-  let scope = containingLexicalScope(identifier);
+function resolveBinding(identifier, bindings) {
+  const entries = bindings.get(identifier.text) || [];
+  let scope = containingBindingScope(identifier);
   while (scope) {
     const scoped = entries.filter((entry) => entry.scope === scope);
     if (scoped.length) {
       const preceding = scoped.filter((entry) => entry.position <= identifier.pos);
-      return (preceding.at(-1) || scoped[0]).initializer;
+      return preceding.at(-1) || { initializer: null };
     }
-    scope = containingLexicalScope(scope.parent);
+    scope = containingBindingScope(scope.parent);
   }
   return null;
 }
@@ -129,49 +182,51 @@ function unwrapExpression(node) {
   return current;
 }
 
-function staticStyleValue(node, constDeclarations, seen = new Set()) {
+function staticStyleValue(node, bindings, seen = new Set()) {
   const current = unwrapExpression(node);
   if (!current) return null;
   if (ts.isStringLiteralLike(current) || ts.isNoSubstitutionTemplateLiteral(current)) return current.text;
   if (!ts.isIdentifier(current)) return null;
-  const initializer = resolveConstInitializer(current, constDeclarations);
+  const binding = resolveBinding(current, bindings);
+  const initializer = binding?.initializer;
   if (!initializer || seen.has(initializer)) return null;
   const nextSeen = new Set(seen);
   nextSeen.add(initializer);
-  return staticStyleValue(initializer, constDeclarations, nextSeen);
+  return staticStyleValue(initializer, bindings, nextSeen);
 }
 
-function hasProhibitedStyleValue(property, node, constDeclarations) {
+function hasProhibitedStyleValue(property, node, bindings) {
   if (property !== 'transform') return true;
-  const value = staticStyleValue(node, constDeclarations);
+  const value = staticStyleValue(node, bindings);
   return value === null || prohibitedTransformFunction.test(value);
 }
 
-function containsProhibitedObjectProperty(node, sourceFile, constDeclarations, seen = new Set()) {
+function containsProhibitedObjectProperty(node, sourceFile, bindings, seen = new Set()) {
   const current = unwrapExpression(node);
   if (!current) return false;
   if (ts.isIdentifier(current)) {
-    const initializer = resolveConstInitializer(current, constDeclarations);
+    const binding = resolveBinding(current, bindings);
+    const initializer = binding?.initializer;
     if (!initializer || seen.has(initializer)) return false;
     const nextSeen = new Set(seen);
     nextSeen.add(initializer);
-    return containsProhibitedObjectProperty(initializer, sourceFile, constDeclarations, nextSeen);
+    return containsProhibitedObjectProperty(initializer, sourceFile, bindings, nextSeen);
   }
   if (ts.isObjectLiteralExpression(current)) {
     return current.properties.some((property) => {
       if (ts.isSpreadAssignment(property)) {
-        return containsProhibitedObjectProperty(property.expression, sourceFile, constDeclarations, seen);
+        return containsProhibitedObjectProperty(property.expression, sourceFile, bindings, seen);
       }
       if (ts.isPropertyAssignment(property)) {
         const name = propertyName(property.name, sourceFile);
         return (prohibitedStyleProperties.has(name)
-          && hasProhibitedStyleValue(name, property.initializer, constDeclarations))
-          || containsProhibitedObjectProperty(property.initializer, sourceFile, constDeclarations, seen);
+          && hasProhibitedStyleValue(name, property.initializer, bindings))
+          || containsProhibitedObjectProperty(property.initializer, sourceFile, bindings, seen);
       }
       if (ts.isShorthandPropertyAssignment(property)) {
         const name = propertyName(property.name, sourceFile);
         return prohibitedStyleProperties.has(name)
-          || containsProhibitedObjectProperty(property.name, sourceFile, constDeclarations, seen);
+          || containsProhibitedObjectProperty(property.name, sourceFile, bindings, seen);
       }
       return false;
     });
@@ -190,7 +245,7 @@ function callName(node) {
 function hasProhibitedJavaScriptMotion(content, file) {
   const sourceFile = parseJavaScript(content, file);
   if (!sourceFile) return false;
-  const constDeclarations = collectConstDeclarations(sourceFile);
+  const bindings = collectBindings(sourceFile);
   let found = false;
   const visit = (node) => {
     if (found) return;
@@ -200,7 +255,7 @@ function hasProhibitedJavaScriptMotion(content, file) {
       if (prohibitedStyleProperties.has(property)
         && styleAccess
         && accessName(styleAccess) === 'style'
-        && hasProhibitedStyleValue(property, node.right, constDeclarations)) {
+        && hasProhibitedStyleValue(property, node.right, bindings)) {
         found = true;
         return;
       }
@@ -211,9 +266,9 @@ function hasProhibitedJavaScriptMotion(content, file) {
         && receiver
         && isStyleReceiver(receiver)
         && node.arguments.length >= 2) {
-        const property = staticStyleValue(node.arguments[0], constDeclarations);
+        const property = staticStyleValue(node.arguments[0], bindings);
         if (prohibitedStyleProperties.has(property)
-          && hasProhibitedStyleValue(property, node.arguments[1], constDeclarations)) {
+          && hasProhibitedStyleValue(property, node.arguments[1], bindings)) {
           found = true;
           return;
         }
@@ -222,7 +277,7 @@ function hasProhibitedJavaScriptMotion(content, file) {
         && node.arguments.some((argument) => containsProhibitedObjectProperty(
           argument,
           sourceFile,
-          constDeclarations,
+          bindings,
         ))) {
         found = true;
         return;
@@ -231,7 +286,7 @@ function hasProhibitedJavaScriptMotion(content, file) {
     if (ts.isJsxOpeningLikeElement(node) && /^motion(?:\.|$)/i.test(node.tagName.getText(sourceFile))) {
       for (const attribute of node.attributes.properties) {
         if (ts.isJsxSpreadAttribute(attribute)) {
-          if (containsProhibitedObjectProperty(attribute.expression, sourceFile, constDeclarations)) found = true;
+          if (containsProhibitedObjectProperty(attribute.expression, sourceFile, bindings)) found = true;
           continue;
         }
         const name = attribute.name.getText(sourceFile);
@@ -243,7 +298,7 @@ function hasProhibitedJavaScriptMotion(content, file) {
         const value = ts.isJsxExpression(attribute.initializer)
           ? attribute.initializer.expression
           : attribute.initializer;
-        if (value && containsProhibitedObjectProperty(value, sourceFile, constDeclarations)) {
+        if (value && containsProhibitedObjectProperty(value, sourceFile, bindings)) {
           found = true;
           break;
         }
@@ -727,6 +782,8 @@ test('source scanner rejects reviewed palette, effect, motion, radius, and track
     ['motion nested object spread identifier', "const hover = { scale: 1.05 }; const variants = { hover: { ...hover } }; <motion.div variants={variants} />", 'fixture.tsx'],
     ['motion prop object spread identifier', "const hover = { rotate: 3 }; <motion.div whileHover={{ ...hover }} />", 'fixture.tsx'],
     ['motion JSX spread identifier', "const motionProps = { whileHover: { scale: 1.05 } }; <motion.div {...motionProps} />", 'fixture.tsx'],
+    ['motion variants resolve nearest let binding', "const variants = { hover: { opacity: 0.8 } }; function Card() { let variants = { hover: { scale: 1.05 } }; return <motion.div variants={variants} />; }", 'fixture.tsx'],
+    ['motion variants resolve nearest var binding', "const variants = { hover: { opacity: 0.8 } }; function Card() { var variants = { hover: { rotate: 3 } }; return <motion.div variants={variants} />; }", 'fixture.tsx'],
     ['injected transform CSS string', "const injectedCss = '.card { transform: scale(1.05); }';", 'fixture.ts'],
     ['injected rotate CSS template', 'const injectedCss = `.card { rotate: 3deg; }`;', 'fixture.mjs'],
     ['injected centered glow CSS', "styleElement.textContent = '.card { box-shadow: 0 0 12px #fff; }';", 'fixture.js'],
@@ -796,6 +853,11 @@ test('source scanner allows precise identifiers, approved radii, and static posi
     ['CSS-in-JS transform cleanup property', "css({ transform: 'none' });", 'fixture.ts'],
     ['motion variants with safe properties', "const variants = { hover: { opacity: 0.8, color: '#fff' } }; <motion.div variants={variants} />", 'fixture.tsx'],
     ['motion spread with safe properties', "const hover = { opacity: 0.8 }; const variants = { hover: { ...hover } }; <motion.div variants={variants} />", 'fixture.tsx'],
+    ['motion function parameter shadows prohibited outer binding', "const variants = { hover: { scale: 1.05 } }; function Card(variants) { return <motion.div variants={variants} />; }", 'fixture.tsx'],
+    ['motion arrow parameter shadows prohibited outer binding', "const variants = { hover: { scale: 1.05 } }; const Card = (variants) => <motion.div variants={variants} />;", 'fixture.tsx'],
+    ['motion catch binding shadows prohibited outer binding', "const variants = { hover: { scale: 1.05 } }; try {} catch (variants) { <motion.div variants={variants} />; }", 'fixture.tsx'],
+    ['motion destructured binding shadows prohibited outer binding', "const variants = { hover: { scale: 1.05 } }; function Card(props) { const { variants } = props; return <motion.div variants={variants} />; }", 'fixture.tsx'],
+    ['motion uninitialized binding shadows prohibited outer binding', "const variants = { hover: { scale: 1.05 } }; function Card() { let variants; return <motion.div variants={variants} />; }", 'fixture.tsx'],
     ['ordinary JSX scale prop', '<Chart scale={2} rotate={0} />', 'fixture.tsx'],
     ['non-CSS scale string', "const note = 'Rotate credentials regularly at enterprise scale.';", 'fixture.ts'],
     ['non-CSS transform label', "const label = 'transform: data normalization';", 'fixture.js'],
