@@ -13,6 +13,7 @@ interface ToolStore {
   clickStats: Record<string, number>;
   searchHistory: string[];
   dataLoaded: boolean;
+  error: string | null;
 
   setTools: (tools: Tool[]) => void;
   setCategories: (categories: Category[]) => void;
@@ -22,10 +23,13 @@ interface ToolStore {
   setClickStats: (stats: Record<string, number>) => void;
   addSearchHistory: (term: string) => void;
   loadData: () => Promise<void>;
+  retryLoadData: () => Promise<void>;
   applyFilters: () => void;
 }
 
 const MAX_HISTORY = 5;
+let catalogLoadGeneration = 0;
+let catalogLoadPromise: Promise<void> | null = null;
 
 export const useToolStore = create<ToolStore>((set, get) => ({
   tools: [],
@@ -38,6 +42,7 @@ export const useToolStore = create<ToolStore>((set, get) => ({
   clickStats: {},
   searchHistory: [],
   dataLoaded: false,
+  error: null,
 
   setTools: (tools) => {
     set({ tools, filteredTools: tools, isLoading: false });
@@ -74,40 +79,63 @@ export const useToolStore = create<ToolStore>((set, get) => ({
 
   loadData: async () => {
     if (get().dataLoaded) return;
-    set({ isLoading: true });
-    try {
-      // E-05: Fetch from API instead of static file
-      const res = await fetch('/api/tools');
-      const data = await res.json();
-      set({
-        tools: data.tools,
-        categories: data.categories,
-        filteredTools: data.tools,
-        isLoading: false,
-        dataLoaded: true,
-      });
-    } catch {
-      // Fallback to static file if API fails
-      try {
-        const res = await fetch('/data/tools.json');
+    if (catalogLoadPromise) return catalogLoadPromise;
+
+    const generation = catalogLoadGeneration;
+    set({ isLoading: true, error: null });
+    const loadPromise = (async () => {
+      const load = async (url: string) => {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Failed to load ${url}`);
         const data = await res.json();
+        if (!Array.isArray(data.tools) || !Array.isArray(data.categories)) {
+          throw new Error(`Invalid tools payload from ${url}`);
+        }
+        return data;
+      };
+      try {
+        let data;
+        try {
+          data = await load('/api/tools');
+        } catch {
+          data = await load('/data/tools.json');
+        }
+        if (generation !== catalogLoadGeneration) return;
         set({
           tools: data.tools,
           categories: data.categories,
           filteredTools: data.tools,
           isLoading: false,
           dataLoaded: true,
+          error: null,
         });
       } catch {
-        set({ isLoading: false });
+        if (generation !== catalogLoadGeneration) return;
+        set({ isLoading: false, dataLoaded: false, error: '工具数据暂时无法加载' });
       }
-    }
-    // Load click stats
+      try {
+        const res = await fetch('/api/track/click');
+        const data = await res.json();
+        if (generation === catalogLoadGeneration && data.clicks) {
+          set({ clickStats: data.clicks });
+        }
+      } catch {
+        // Analytics failure must not block catalog data.
+      }
+    })();
+
+    catalogLoadPromise = loadPromise;
     try {
-      const res = await fetch('/api/track/click');
-      const data = await res.json();
-      if (data.clicks) set({ clickStats: data.clicks });
-    } catch { /* ignore */ }
+      await loadPromise;
+    } finally {
+      if (catalogLoadPromise === loadPromise) catalogLoadPromise = null;
+    }
+  },
+  retryLoadData: async () => {
+    catalogLoadGeneration += 1;
+    catalogLoadPromise = null;
+    set({ dataLoaded: false, error: null });
+    await get().loadData();
   },
 
   applyFilters: () => {

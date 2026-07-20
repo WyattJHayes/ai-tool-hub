@@ -53,7 +53,7 @@ export default function LeaderboardPage() {
               className={cn(
                 'flex min-h-11 flex-1 shrink-0 items-center justify-center gap-1.5 px-3 text-sm font-medium transition-colors',
                 index > 0 && 'border-l border-[var(--line)]',
-                active ? 'bg-[var(--accent-soft)] text-[var(--accent)]' : 'text-[var(--muted)] hover:bg-[var(--surface-subtle)] hover:text-[var(--ink)]'
+                active ? 'bg-[var(--accent-soft)] text-[var(--accent-ink)]' : 'text-[var(--muted)] hover:bg-[var(--surface-subtle)] hover:text-[var(--ink)]'
               )}
             >
               <Icon className="h-4 w-4" />{item.label}
@@ -75,12 +75,12 @@ export default function LeaderboardPage() {
           const showClicks = tab === 'clicks' && hasClickData && clicks > 0;
           return (
             <Link key={tool.id} href={`/tools/${getToolSlug(tool)}`} className="group flex min-h-[72px] items-center gap-3 border-b border-[var(--line)] px-4 py-3 last:border-b-0 hover:bg-[var(--surface-subtle)] sm:px-5">
-              <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center text-sm font-semibold', index < 3 ? 'text-[var(--accent)]' : 'text-[var(--muted-subtle)]')}>{index + 1}</span>
+              <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center text-sm font-semibold', index < 3 ? 'text-[var(--accent-ink)]' : 'text-[var(--muted-subtle)]')}>{index + 1}</span>
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-[var(--surface-subtle)] text-[var(--accent)]"><ToolIcon name={tool.icon} className="h-5 w-5" /></span>
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-2">
                   <span className="truncate text-sm font-semibold">{tool.name}</span>
-                  {tool.status === 'hot' ? <span className="rounded border border-red-100 bg-red-50 px-1.5 py-0.5 text-[10px] text-[var(--danger)] dark:border-red-950 dark:bg-red-950/40">常用</span> : null}
+                  {tool.status === 'hot' ? <span className="rounded border border-[var(--line)] bg-[var(--surface-subtle)] px-1.5 py-0.5 text-[10px] text-[var(--muted)]">常用</span> : null}
                 </span>
                 <span className="block truncate text-xs text-[var(--muted)]">{tool.desc}</span>
               </span>

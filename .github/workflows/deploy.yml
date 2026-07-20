@@ -46,6 +46,15 @@ jobs:
 
       - name: Verify Next.js application
         run: |
+          node --test \
+            next-src/tests/task-decision.test.mjs \
+            next-src/tests/tools-query-state.test.mjs \
+            next-src/tests/compare-selection.test.mjs \
+            next-src/tests/data-loading-contract.test.mjs \
+            next-src/tests/search-suggestions.test.mjs \
+            next-src/tests/editorial-ui-contract.test.mjs \
+            next-src/tests/carbon-theme-contract.test.mjs \
+            next-src/tests/task-first-ui-contract.test.mjs
           npm --prefix next-src run lint
           npm --prefix next-src run build
           npm --prefix next-src audit --omit=dev
@@ -84,6 +93,50 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
+      - name: Run Next.js task-first UI guard
+        run: |
+          set -euo pipefail
+          task_log=/tmp/ai-tool-hub-task-first.log
+          next_pid=''
+          cleanup() {
+            exit_status=$?
+            trap - EXIT INT TERM
+            if [ -n "$next_pid" ]; then
+              kill "$next_pid" 2>/dev/null || true
+              wait "$next_pid" 2>/dev/null || true
+            fi
+            if [ "$exit_status" -ne 0 ]; then
+              cat "$task_log"
+            fi
+            rm -f "$task_log"
+            exit "$exit_status"
+          }
+          trap cleanup EXIT INT TERM
+          (
+            cd next-src
+            exec node node_modules/next/dist/bin/next start --hostname 127.0.0.1 --port 4181
+          ) > "$task_log" 2>&1 &
+          next_pid=$!
+          for attempt in $(seq 1 30); do
+            if ! kill -0 "$next_pid" 2>/dev/null; then
+              exit 1
+            fi
+            if curl --fail --silent http://127.0.0.1:4181/ >/dev/null; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              exit 1
+            fi
+            sleep 1
+          done
+          TASK_FIRST_UI_URL=http://127.0.0.1:4181 node scripts/task-first-ui-guard.mjs
+          CARBON_THEME_URL=http://127.0.0.1:4181 CARBON_QA_DIR=/tmp/carbon-console-qa node scripts/carbon-theme-ui-guard.mjs
+          kill "$next_pid" 2>/dev/null || true
+          wait "$next_pid" 2>/dev/null || true
+          next_pid=''
+          rm -f "$task_log"
+          trap - EXIT INT TERM
+
       - name: Run browser layout guard
         run: |
           npm run preview -- --host 127.0.0.1 --port 4173 > /tmp/ai-tool-hub-preview.log 2>&1 &
@@ -102,6 +155,7 @@ jobs:
           UI_GUARD_URL=http://127.0.0.1:4173/ node scripts/ui-layout-guard.mjs
 
   build-and-deploy:
+    if: github.event_name != 'pull_request'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

@@ -1,11 +1,18 @@
 import type { Metadata, Viewport } from 'next';
+import localFont from 'next/font/local';
 import './globals.css';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import { AuthProvider } from '@/components/auth/AuthProvider';
 import Navbar from '@/components/layout/Navbar';
 import Footer from '@/components/layout/Footer';
-import CompareBar from '@/components/compare/CompareBar';
+import CompareTray from '@/components/compare/CompareTray';
 import BottomNav from '@/components/layout/BottomNav';
+
+const geistSans = localFont({
+  src: './fonts/GeistVF.woff',
+  variable: '--font-geist',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   title: 'AI Tool Hub - 按任务查找和比较 AI 工具',
@@ -35,7 +42,10 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: '#f6f7f4',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#F3F6F8' },
+    { media: '(prefers-color-scheme: dark)', color: '#080B0E' },
+  ],
 };
 
 export default function RootLayout({
@@ -44,7 +54,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN" suppressHydrationWarning data-scroll-behavior="smooth">
+    <html lang="zh-CN" className={geistSans.variable} suppressHydrationWarning data-scroll-behavior="smooth">
       <body className="min-h-screen">
         <Navbar />
         <AuthProvider>
@@ -53,7 +63,7 @@ export default function RootLayout({
           </ErrorBoundary>
         </AuthProvider>
         <Footer />
-        <CompareBar />
+        <CompareTray />
         <BottomNav />
       </body>
     </html>

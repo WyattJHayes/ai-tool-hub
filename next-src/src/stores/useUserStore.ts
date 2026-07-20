@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { toggleFavoriteAPI, submitRating } from '@/lib/api';
+import { isRatingAggregate, type RatingAggregate } from '@/lib/ratings';
 
 interface UserStore {
   favorites: number[];
@@ -11,7 +12,7 @@ interface UserStore {
 
   toggleFavorite: (toolId: number) => void;
   isFavorite: (toolId: number) => boolean;
-  setRating: (toolId: number, score: number, tags?: string[], comment?: string) => Promise<boolean>;
+  setRating: (toolId: number, score: number, tags?: string[], comment?: string) => Promise<RatingAggregate | null>;
   getRating: (toolId: number) => number;
   toggleTheme: () => void;
   login: () => void;
@@ -46,9 +47,15 @@ export const useUserStore = create<UserStore>()(
 
       setRating: async (toolId, score, tags, comment) => {
         const result = await submitRating(toolId, score, tags, comment);
-        if (!result.ok) return false;
+        if (
+          !result ||
+          typeof result !== 'object' ||
+          (result as { ok?: unknown }).ok !== true ||
+          !isRatingAggregate(result) ||
+          result.rating_count === 0
+        ) return null;
         set({ ratings: { ...get().ratings, [toolId]: score } });
-        return true;
+        return { avg_rating: result.avg_rating, rating_count: result.rating_count };
       },
 
       getRating: (toolId) => get().ratings[toolId] ?? 0,

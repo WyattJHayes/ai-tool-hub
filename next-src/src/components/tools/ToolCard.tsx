@@ -2,6 +2,7 @@
 
 import { ArrowRight, ExternalLink, Heart } from 'lucide-react';
 import Link from 'next/link';
+import { useState } from 'react';
 import type { Tool } from '@/types/tool';
 import { useUserStore } from '@/stores/useUserStore';
 import { useCompareStore } from '@/stores/useCompareStore';
@@ -19,9 +20,9 @@ const TAG_LABELS: Record<string, string> = {
 };
 
 const TAG_STYLES: Record<string, string> = {
-  free: 'border-[var(--accent-soft)] bg-[var(--accent-soft)] text-[var(--accent)]',
-  hot: 'border-red-100 bg-red-50 text-[var(--danger)] dark:border-red-950 dark:bg-red-950/40',
-  vip: 'border-amber-100 bg-amber-50 text-[var(--warning)] dark:border-amber-950 dark:bg-amber-950/40',
+  free: 'border-[var(--line)] bg-[var(--surface-subtle)] text-[var(--muted)]',
+  hot: 'border-[var(--line)] bg-[var(--surface-subtle)] text-[var(--muted)]',
+  vip: 'border-[var(--line)] bg-[var(--surface-subtle)] text-[var(--muted)]',
 };
 
 interface ToolCardProps {
@@ -31,11 +32,24 @@ interface ToolCardProps {
 export function ToolCard({ tool }: ToolCardProps) {
   const toggleFavorite = useUserStore((state) => state.toggleFavorite);
   const isFavorite = useUserStore((state) => state.isFavorite(tool.id));
-  const { addTool, removeTool, isSelected } = useCompareStore();
+  const { selectedTools, addTool, removeTool, isSelected } = useCompareStore();
+  const [compareAnnouncement, setCompareAnnouncement] = useState('');
   const compareSelected = isSelected(tool.id);
+  const compareDisabled = !compareSelected && selectedTools.length >= 4;
   const slug = getToolSlug(tool);
   const priceLabel = getPricingHighlight(tool.pricing);
-  const platformLabel = tool.platforms?.[0] || tool.platform?.[0];
+  const platformLabel = tool.platform?.[0];
+
+  const handleCompare = () => {
+    if (compareSelected) {
+      removeTool(tool.id);
+      setCompareAnnouncement('已移出比较');
+      return;
+    }
+
+    const outcome = addTool(tool);
+    setCompareAnnouncement(outcome === 'limit-reached' ? '最多比较 4 款工具，请先移除一款' : '已加入比较');
+  };
 
   const displayTags = [
     ...(tool.status === 'hot' ? ['hot'] : []),
@@ -74,11 +88,14 @@ export function ToolCard({ tool }: ToolCardProps) {
           <input
             type="checkbox"
             checked={compareSelected}
-            onChange={() => (compareSelected ? removeTool(tool.id) : addTool(tool))}
+            aria-disabled={compareDisabled}
+            aria-label={`${compareSelected ? '取消对比' : '加入对比'} ${tool.name}`}
+            onChange={handleCompare}
             className="h-4 w-4 rounded border-[var(--line-strong)] accent-[var(--accent)]"
           />
           <span>对比</span>
         </label>
+        <span className="sr-only" aria-live="polite">{compareAnnouncement}</span>
       </div>
 
       <Link href={`/tools/${slug}`} className="mt-3 min-h-11 flex flex-1">
@@ -92,25 +109,25 @@ export function ToolCard({ tool }: ToolCardProps) {
       </div>
 
       <div className="mt-3 flex items-center justify-between border-t border-[var(--line)] pt-3">
-        <Link href={`/tools/${slug}`} className="flex min-h-11 items-center gap-1 text-xs font-medium text-[var(--accent)] hover:text-[var(--accent-hover)]">
+        <Link href={`/tools/${slug}`} className="flex min-h-11 items-center gap-1 text-xs font-medium text-[var(--accent-ink)] hover:text-[var(--accent-hover)]">
           查看详情 <ArrowRight className="h-3.5 w-3.5" />
         </Link>
         <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={() => toggleFavorite(tool.id)}
-            className="flex h-11 w-11 items-center justify-center rounded-md text-[var(--muted-subtle)] transition-colors hover:bg-[var(--surface-subtle)] hover:text-[var(--danger)]"
+            className="flex h-11 w-11 items-center justify-center rounded-md text-[var(--muted)] transition-colors hover:bg-[var(--surface-hover)]"
             aria-label={isFavorite ? `取消收藏 ${tool.name}` : `收藏 ${tool.name}`}
             title={isFavorite ? '取消收藏' : '收藏'}
           >
-            <Heart className={cn('h-[18px] w-[18px]', isFavorite && 'fill-current text-[var(--danger)]')} />
+            <Heart className={cn('h-[18px] w-[18px]', isFavorite && 'fill-current text-[var(--accent)]')} />
           </button>
           <a
             href={tool.url}
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => trackClick(tool.id, slug, 'card')}
-            className="flex h-11 items-center gap-1.5 rounded-md border border-[var(--line)] px-3 text-xs font-medium text-[var(--ink)] transition-colors hover:border-[var(--line-strong)] hover:bg-[var(--surface-subtle)]"
+            className="flex h-11 items-center gap-1.5 rounded-md border border-[var(--line-strong)] px-3 text-xs font-medium text-[var(--muted)] transition-colors hover:bg-[var(--surface-hover)]"
             aria-label={`访问 ${tool.name}`}
           >
             访问 <ExternalLink className="h-3.5 w-3.5" />

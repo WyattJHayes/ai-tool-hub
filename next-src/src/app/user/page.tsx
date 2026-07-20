@@ -114,7 +114,7 @@ export default function UserPage() {
           const Icon = tab.icon;
           const active = activeTab === tab.key;
           return (
-            <button type="button" role="tab" aria-selected={active} key={tab.key} onClick={() => setActiveTab(tab.key)} className={cn('flex min-h-11 flex-1 shrink-0 items-center justify-center gap-1.5 px-3 text-sm font-medium', index > 0 && 'border-l border-[var(--line)]', active ? 'bg-[var(--accent-soft)] text-[var(--accent)]' : 'text-[var(--muted)] hover:bg-[var(--surface-subtle)] hover:text-[var(--ink)]')}><Icon className="h-4 w-4" />{tab.label}</button>
+            <button type="button" role="tab" aria-selected={active} key={tab.key} onClick={() => setActiveTab(tab.key)} className={cn('flex min-h-11 flex-1 shrink-0 items-center justify-center gap-1.5 px-3 text-sm font-medium', index > 0 && 'border-l border-[var(--line)]', active ? 'bg-[var(--accent-soft)] text-[var(--accent-ink)]' : 'text-[var(--muted)] hover:bg-[var(--surface-subtle)] hover:text-[var(--ink)]')}><Icon className="h-4 w-4" />{tab.label}</button>
           );
         })}
       </div>
@@ -125,8 +125,8 @@ export default function UserPage() {
             {favoriteTools.map((tool) => (
               <div key={tool.id} className="flex min-h-[76px] items-center gap-3 rounded-lg border border-[var(--line)] bg-[var(--surface)] p-4">
                 <ToolIcon name={tool.icon} className="h-5 w-5 shrink-0 text-[var(--accent)]" />
-                <div className="min-w-0 flex-1"><Link href={`/tools/${getToolSlug(tool)}`} className="text-sm font-semibold hover:text-[var(--accent)]">{tool.name}</Link><p className="truncate text-xs text-[var(--muted)]">{tool.desc}</p></div>
-                <button type="button" onClick={() => toggleFavorite(tool.id)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-[var(--danger)] hover:bg-red-50 dark:hover:bg-red-950/40" aria-label={`取消收藏 ${tool.name}`}><Heart className="h-4 w-4 fill-current" /></button>
+                <div className="min-w-0 flex-1"><Link href={`/tools/${getToolSlug(tool)}`} className="text-sm font-semibold text-[var(--accent-ink)] hover:text-[var(--accent-hover)]">{tool.name}</Link><p className="truncate text-xs text-[var(--muted)]">{tool.desc}</p></div>
+                <button type="button" onClick={() => toggleFavorite(tool.id)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-[var(--line-strong)] text-[var(--muted)] hover:bg-[var(--surface-hover)]" aria-label={`取消收藏 ${tool.name}`}><Heart className="h-4 w-4 fill-current text-[var(--accent)]" /></button>
               </div>
             ))}
           </div>
@@ -139,8 +139,8 @@ export default function UserPage() {
             {ratedTools.map((tool) => (
               <div key={tool.id} className="flex min-h-[64px] items-center gap-3 rounded-lg border border-[var(--line)] bg-[var(--surface)] px-4 py-3">
                 <ToolIcon name={tool.icon} className="h-5 w-5 text-[var(--accent)]" />
-                <Link href={`/tools/${getToolSlug(tool)}`} className="min-w-0 flex-1 truncate text-sm font-semibold">{tool.name}</Link>
-                <div className="flex gap-0.5">{[1, 2, 3, 4, 5].map((score) => <Star key={score} className={cn('h-3.5 w-3.5', score <= (ratings[tool.id] || 0) ? 'fill-amber-400 text-amber-400' : 'text-[var(--line-strong)]')} />)}</div>
+                <Link href={`/tools/${getToolSlug(tool)}`} className="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--accent-ink)] hover:text-[var(--accent-hover)]">{tool.name}</Link>
+                <div className="flex gap-0.5">{[1, 2, 3, 4, 5].map((score) => <Star key={score} className={cn('h-3.5 w-3.5', score <= (ratings[tool.id] || 0) ? 'fill-[var(--accent)] text-[var(--accent)]' : 'text-[var(--line-strong)]')} />)}</div>
               </div>
             ))}
           </div>
@@ -152,8 +152,8 @@ export default function UserPage() {
           <div className="space-y-2">
             {compareHistory.map((ids, index) => (
               <div key={index} className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--surface)] p-4">
-                <div className="flex flex-1 flex-wrap gap-2">{ids.map((id) => { const tool = tools.find((candidate) => candidate.id === id); return tool ? <Link key={id} href={`/tools/${getToolSlug(tool)}`} className="rounded border border-[var(--line)] bg-[var(--surface-subtle)] px-2.5 py-1 text-sm text-[var(--muted)] hover:text-[var(--ink)]">{tool.name}</Link> : null; })}</div>
-                <Link href="/compare" className="flex min-h-11 items-center text-xs font-medium text-[var(--accent)]">再次对比</Link>
+                <div className="flex flex-1 flex-wrap gap-2">{ids.map((id) => { const tool = tools.find((candidate) => candidate.id === id); return tool ? <Link key={id} href={`/tools/${getToolSlug(tool)}`} className="rounded border border-[var(--line)] bg-[var(--surface-subtle)] px-2.5 py-1 text-sm text-[var(--accent-ink)] hover:text-[var(--accent-hover)]">{tool.name}</Link> : null; })}</div>
+                <Link href="/compare" className="flex min-h-11 items-center text-xs font-medium text-[var(--accent-ink)] hover:text-[var(--accent-hover)]">再次对比</Link>
               </div>
             ))}
           </div>
@@ -163,7 +163,7 @@ export default function UserPage() {
       {activeTab === 'settings' ? (
         <div className="grid gap-4 sm:grid-cols-2">
           <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)] p-5"><h2 className="font-semibold">数据存储</h2><p className="mt-2 text-sm text-[var(--muted)]">本地数据保存在当前浏览器。登录后可同步收藏和评分。</p><dl className="mt-4 space-y-2 text-sm">{[['收藏数量', favorites.length], ['评价数量', ratedTools.length], ['对比记录', compareHistory.length]].map(([label, value]) => <div key={String(label)} className="flex justify-between"><dt className="text-[var(--muted)]">{label}</dt><dd>{value}</dd></div>)}</dl></section>
-          <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)] p-5"><h2 className="font-semibold">账号</h2>{isLoggedIn ? <><p className="mt-2 text-sm text-[var(--accent)]">已登录，数据同步已启用</p><button type="button" onClick={async () => { if (supabase) await supabase.auth.signOut(); logout(); }} className="mt-4 min-h-11 rounded-md border border-red-200 px-4 text-sm text-[var(--danger)] hover:bg-red-50 dark:border-red-950 dark:hover:bg-red-950/40">退出登录</button></> : <><p className="mt-2 text-sm text-[var(--muted)]">{isSupabaseConfigured ? '尚未登录，数据仅保存在本地' : '云同步当前不可用'}</p><button type="button" onClick={() => setShowAuth(true)} className="mt-4 min-h-11 rounded-md bg-[var(--accent)] px-4 text-sm font-medium text-white hover:bg-[var(--accent-hover)]">登录 / 注册</button></>}</section>
+          <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)] p-5"><h2 className="font-semibold">账号</h2>{isLoggedIn ? <><p className="mt-2 text-sm"><span className="text-[var(--ink)]">已登录</span><span className="text-[var(--muted)]">，数据同步已启用</span></p><button type="button" onClick={async () => { if (supabase) await supabase.auth.signOut(); logout(); }} className="mt-4 min-h-11 rounded-md border border-[var(--line-strong)] px-4 text-sm text-[var(--muted)] hover:bg-[var(--surface-hover)]">退出登录</button></> : <><p className={cn('mt-2 text-sm', isSupabaseConfigured ? 'text-[var(--muted)]' : 'text-[var(--signal-ink)]')}>{isSupabaseConfigured ? '尚未登录，数据仅保存在本地' : '云同步当前不可用'}</p><button type="button" onClick={() => setShowAuth(true)} className="mt-4 min-h-11 rounded-md bg-[var(--accent)] px-4 text-sm font-medium text-[var(--on-accent)] hover:bg-[var(--accent-hover)]">登录 / 注册</button></>}</section>
         </div>
       ) : null}
 
@@ -173,5 +173,5 @@ export default function UserPage() {
 }
 
 function EmptyState({ icon: Icon, text, linkText }: { icon: React.ElementType; text: string; linkText: string }) {
-  return <div className="rounded-lg border border-dashed border-[var(--line-strong)] bg-[var(--surface)] px-6 py-14 text-center"><Icon className="mx-auto h-7 w-7 text-[var(--muted-subtle)]" /><p className="mt-3 text-sm text-[var(--muted)]">{text}</p><Link href="/tools" className="mt-2 inline-flex min-h-11 items-center text-sm font-medium text-[var(--accent)]">{linkText}</Link></div>;
+  return <div className="rounded-lg border border-dashed border-[var(--line-strong)] bg-[var(--surface)] px-6 py-14 text-center"><Icon className="mx-auto h-7 w-7 text-[var(--muted-subtle)]" /><p className="mt-3 text-sm text-[var(--muted)]">{text}</p><Link href="/tools" className="mt-2 inline-flex min-h-11 items-center text-sm font-medium text-[var(--accent-ink)] hover:text-[var(--accent-hover)]">{linkText}</Link></div>;
 }

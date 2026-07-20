@@ -1,7 +1,9 @@
 import type { ToolsData, Tool, Category, SceneData } from '@/types/tool';
+import { deriveToolPrice } from '@/lib/tool-decision.mjs';
 
 let cachedData: ToolsData | null = null;
 let cachedScenes: SceneData | null = null;
+let scenesCacheGeneration = 0;
 
 export async function getToolsData(): Promise<ToolsData> {
   if (cachedData) return cachedData;
@@ -12,9 +14,18 @@ export async function getToolsData(): Promise<ToolsData> {
 
 export async function getScenesData(): Promise<SceneData> {
   if (cachedScenes) return cachedScenes;
+  const requestGeneration = scenesCacheGeneration;
   const res = await fetch('/data/scenes.json');
-  cachedScenes = await res.json() as SceneData;
-  return cachedScenes;
+  if (!res.ok) throw new Error('Failed to load /data/scenes.json');
+  const data = await res.json() as SceneData;
+  if (!Array.isArray(data.scenes)) throw new Error('Invalid scene payload');
+  if (requestGeneration === scenesCacheGeneration) cachedScenes = data;
+  return data;
+}
+
+export function clearScenesDataCache(): void {
+  cachedScenes = null;
+  scenesCacheGeneration += 1;
 }
 
 export function getToolSlug(tool: Tool): string {
@@ -67,12 +78,7 @@ export function getRelatedTools(tools: Tool[], tool: Tool, limit = 4): Tool[] {
 }
 
 export function getPricingHighlight(pricing: Tool['pricing']): string {
-  if (!pricing || pricing.length === 0) return '';
-  const free = pricing.find(p => p.price === 0);
-  const highlight = pricing.find(p => p.highlight);
-  if (free) return '免费';
-  if (highlight) return `${highlight.plan} ${highlight.price > 0 ? `$${highlight.price}` : ''}`;
-  return pricing[0].plan;
+  return deriveToolPrice({ pricing }).summary || '';
 }
 
 export function filterTools(tools: Tool[], filters: {

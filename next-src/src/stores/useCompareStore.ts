@@ -1,9 +1,10 @@
 import { create } from 'zustand';
-import type { Tool } from '@/types/tool';
+import { tryAddCompareTool } from '@/lib/compare-selection.mjs';
+import type { CompareAddOutcome, Tool } from '@/types/tool';
 
 interface CompareStore {
   selectedTools: Tool[];
-  addTool: (tool: Tool) => void;
+  addTool: (tool: Tool) => CompareAddOutcome;
   removeTool: (toolId: number) => void;
   clearAll: () => void;
   isSelected: (toolId: number) => boolean;
@@ -13,10 +14,9 @@ export const useCompareStore = create<CompareStore>((set, get) => ({
   selectedTools: [],
 
   addTool: (tool) => {
-    const { selectedTools } = get();
-    if (selectedTools.length >= 4) return;
-    if (selectedTools.find(t => t.id === tool.id)) return;
-    set({ selectedTools: [...selectedTools, tool] });
+    const result = tryAddCompareTool(get().selectedTools, tool);
+    if (result.outcome === 'added') set({ selectedTools: result.selectedTools as Tool[] });
+    return result.outcome;
   },
 
   removeTool: (toolId) => {

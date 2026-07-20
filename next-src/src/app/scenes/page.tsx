@@ -74,7 +74,7 @@ export default function ScenesPage() {
                 <span className="min-w-0 flex-1">
                   <span className="block text-base font-semibold">{scene.name}</span>
                   <span className="mt-1 block text-sm text-[var(--muted)]">{scene.description}</span>
-                  <span className="mt-3 flex items-center gap-1 text-xs font-medium text-[var(--accent)]">{scene.toolCount} 款工具 <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" /></span>
+                  <span className="mt-3 flex items-center gap-1 text-xs font-medium text-[var(--accent-ink)] hover:text-[var(--accent-hover)]">{scene.toolCount} 款工具 <ArrowRight className="h-3.5 w-3.5" /></span>
                 </span>
               </Link>
             );

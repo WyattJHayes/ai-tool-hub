@@ -31,8 +31,8 @@ export class ErrorBoundary extends React.Component<Props, State> {
     if (this.state.hasError) {
       if (this.props.fallback) return this.props.fallback;
       return (
-        <div className="flex min-h-[200px] flex-col items-center justify-center gap-4 rounded-lg border border-red-200 bg-[var(--surface)] p-8 text-center dark:border-red-950">
-          <AlertTriangle className="h-8 w-8 text-[var(--danger)]" />
+        <div className="flex min-h-[200px] flex-col items-center justify-center gap-4 rounded-lg border border-[var(--signal-ink)] bg-[var(--signal-soft)] p-8 text-center">
+          <AlertTriangle className="h-8 w-8 text-[var(--signal-ink)]" />
           <div>
             <p className="font-medium text-[var(--ink)]">出了点问题</p>
             <p className="mt-1 text-sm text-[var(--muted)]">{this.state.error?.message || '页面加载失败'}</p>
@@ -40,7 +40,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
           <button
             type="button"
             onClick={() => this.setState({ hasError: false })}
-            className="flex min-h-11 items-center gap-1.5 rounded-md bg-[var(--accent)] px-4 text-sm font-medium text-white hover:bg-[var(--accent-hover)]"
+            className="flex min-h-11 items-center gap-1.5 rounded-md bg-[var(--accent)] px-4 text-sm font-medium text-[var(--on-accent)] hover:bg-[var(--accent-hover)]"
           >
             <RefreshCw className="h-3.5 w-3.5" />
             重试

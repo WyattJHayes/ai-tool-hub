@@ -185,11 +185,32 @@ for (const [pattern, message] of [
   [/node next-src\/tests\/api-regressions\.test\.mjs/, 'CI must run Next.js API regressions'],
   [/node \.next\/standalone\/server\.js/, 'CI must start the standalone Next.js server before API regressions'],
   [/TEST_BASE_URL=http:\/\/127\.0\.0\.1:/, 'CI must provide the Next.js API regression base URL'],
+  [
+    /TASK_FIRST_UI_URL=http:\/\/127\.0\.0\.1:4181 node scripts\/task-first-ui-guard\.mjs/,
+    'CI must run the task-first Next.js browser guard',
+  ],
+  [
+    /cd next-src\s+exec node node_modules\/next\/dist\/bin\/next start --hostname 127\.0\.0\.1 --port 4181/,
+    'CI must own the task-first Next.js server through the direct Next CLI process',
+  ],
+  [/if ! kill -0 "\$next_pid" 2>\/dev\/null; then/, 'CI must detect early task-first Next.js server exit'],
+  [/wait "\$next_pid" 2>\/dev\/null \|\| true/, 'CI must wait for the exact task-first Next.js server process'],
+  [/exit_status=\$\?/, 'CI task-first cleanup must preserve the failing command status'],
+  [
+    /if \[ "\$exit_status" -ne 0 \]; then\s+cat "\$task_log"\s+fi\s+rm -f "\$task_log"/,
+    'CI task-first cleanup must print a failed run log once before removing it',
+  ],
+  [/rm -f "\$task_log"/, 'CI task-first cleanup must remove its temporary log'],
+  [/trap - EXIT INT TERM/, 'CI task-first cleanup must remove its traps after explicit cleanup'],
   [/node --test tools\/resume-optimizer\/tests\/api-client-auth\.test\.cjs/, 'CI must run resume optimizer regressions'],
   [/node scripts\/review-regressions\.mjs/, 'CI must run deployment regressions'],
   [/git diff --check/, 'CI must reject whitespace errors'],
 ]) {
   requireMatch(workflowTestJob, pattern, message);
+}
+
+if (/npm --prefix next-src run start -- --hostname 127\.0\.0\.1 --port 4181/.test(workflowTestJob)) {
+  failures.push('CI task-first browser guard must not own an npm wrapper process');
 }
 
 requireMatch(deploymentScript, /rollback_keep=3/, 'deployment must retain exactly three rollback tags');

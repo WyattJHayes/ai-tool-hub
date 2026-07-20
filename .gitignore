@@ -47,6 +47,9 @@ resume_parsed_*.json
 # Continuation
 .omo/
 
+# Local feature worktrees
+.worktrees/
+
 # Third-party assets
 css/tailwind.min.css
 css/tailwind.css

@@ -53,7 +53,7 @@ export default function Navbar() {
                 href={item.href}
                 className={cn(
                   'relative flex h-full items-center text-sm font-medium transition-colors duration-150',
-                  active ? 'text-[var(--accent)]' : 'text-[var(--muted)] hover:text-[var(--ink)]'
+                  active ? 'text-[var(--accent-ink)]' : 'text-[var(--muted)] hover:text-[var(--ink)]'
                 )}
               >
                 {item.label}
