@@ -522,21 +522,109 @@ test('contains no legacy palette, raw status colors, or prohibited motion in app
   }
 });
 
-test('wires the carbon route, viewport, theme, focus, and screenshot guard into CI', () => {
+test('wires the complete carbon route, state, geometry, focus, and evidence guard into CI', () => {
   const guard = readRepo('scripts/carbon-theme-ui-guard.mjs');
   const workflow = readRepo('.github/workflows/deploy.yml');
 
-  for (const route of ['/', '/tools?scene=research', '/tools/71', '/compare', '/scenes', '/scenes/research', '/leaderboard', '/user']) {
-    assert.ok(guard.includes(route), route);
+  const scenariosBlock = guard.match(/const allScenarios = \[([\s\S]*?)\n\];/)?.[1];
+  const viewportsBlock = guard.match(/const viewports = \[([\s\S]*?)\n\];/)?.[1];
+  assert.ok(scenariosBlock, 'missing structural scenario array');
+  assert.ok(viewportsBlock, 'missing structural viewport array');
+
+  const scenarioNames = [...scenariosBlock.matchAll(/name: '([^']+)'/g)].map((match) => match[1]);
+  assert.deepEqual(scenarioNames, ['home', 'directory', 'detail', 'compare', 'scenes', 'scene-detail', 'leaderboard', 'user', 'auth']);
+  for (const entry of [
+    "name: 'home', path: '/'",
+    "name: 'directory', path: '/tools?scene=research&price=free-tier&platform=web'",
+    "name: 'detail', path: '/tools/71'",
+    "name: 'compare', path: '/tools?scene=research&price=free-tier&platform=web'",
+    "name: 'scenes', path: '/scenes'",
+    "name: 'scene-detail', path: '/scenes/research'",
+    "name: 'leaderboard', path: '/leaderboard'",
+    "name: 'user', path: '/user'",
+    "name: 'auth', path: '/user'",
+  ]) assert.match(scenariosBlock, new RegExp(entry.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+
+  const viewportPairs = [...viewportsBlock.matchAll(/width: (\d+), height: (\d+)/g)]
+    .map((match) => [Number(match[1]), Number(match[2])]);
+  assert.deepEqual(viewportPairs, [[1440, 900], [1280, 720], [768, 1024], [390, 844], [320, 700]]);
+  assert.equal((scenarioNames.length * 2) + (4 * 4 * 2), 50);
+  assert.match(guard, /capturePlan\.length !== 50/);
+
+  const functionBody = (name) => {
+    const match = guard.match(new RegExp(`(?:async )?function ${name}\\([^)]*\\) \\{([\\s\\S]*?)\\n\\}`));
+    assert.ok(match, `missing function ${name}`);
+    return match[1];
+  };
+  const capture = functionBody('captureScenario');
+  const main = functionBody('main');
+  for (const call of [
+    'openScenario',
+    'assertScenarioIdentity',
+    'setTheme',
+    'assertHomeHover',
+    'assertTokens',
+    'assertNoOverflow',
+    'assertCarbonSurfaces',
+    'assertSelectedRails',
+    'assertResponsiveGeometry',
+    'assertFocusColors',
+    'assertThemeLayoutInvariant',
+    'prepareScreenshot',
+  ]) assert.match(capture, new RegExp(`await ${call}\\(`), `${call} is not in the capture path`);
+  assert.match(capture, /page\.screenshot\(\{[\s\S]*?fullPage: false/);
+
+  for (const name of [
+    'assertScenarioIdentity',
+    'assertHomeHover',
+    'assertResponsiveGeometry',
+    'assertCarbonSurfaces',
+    'assertSelectedRails',
+    'assertFocusColors',
+    'assertThemeLayoutInvariant',
+    'prepareScreenshot',
+    'auditEvidence',
+  ]) functionBody(name);
+  assert.match(functionBody('assertScenarioIdentity'), /404|not-found|nextjs-portal/);
+  assert.match(functionBody('assertScenarioIdentity'), /searchParams/);
+  assert.match(functionBody('assertHomeHover'), /backgroundColor/);
+  assert.match(functionBody('assertResponsiveGeometry'), /assertTargetSize/);
+  assert.match(functionBody('assertResponsiveGeometry'), /assertContainerGeometry/);
+  assert.match(functionBody('assertResponsiveGeometry'), /assertFixedSurfaceGeometry/);
+  assert.match(functionBody('assertTargetSize'), /44/);
+  assert.match(functionBody('assertContainerGeometry'), /overlap/i);
+  assert.match(functionBody('assertFixedSurfaceGeometry'), /overlap/i);
+  assert.match(functionBody('assertSelectedRails'), /toggle/i);
+  assert.match(functionBody('assertSelectedRails'), /left/);
+  assert.match(functionBody('assertFocusColors'), /assertOutline/);
+  assert.match(functionBody('assertOutline'), /outlineStyle/);
+  assert.match(functionBody('assertOutline'), /outlineWidth/);
+
+  assert.match(main, /await rm\(qaDir, \{ recursive: true, force: true \}\)/);
+  assert.match(main, /await composeEvidence\(sharp\)/);
+  assert.match(main, /await auditEvidence\(sharp\)/);
+  assert.match(functionBody('auditEvidence'), /expectedScreenshotNames/);
+  assert.match(functionBody('auditEvidence'), /metadata\(\)/);
+  assert.match(functionBody('composeEvidence'), /throw new Error|fail\(/);
+
+  const lifecycle = workflow.match(/- name: Run Next\.js task-first UI guard([\s\S]*?)(?=\n      - name:)/)?.[1];
+  assert.ok(lifecycle, 'missing shared production UI guard lifecycle');
+  const lifecycleOrder = [
+    'cleanup() {',
+    'trap cleanup EXIT INT TERM',
+    'next start --hostname 127.0.0.1 --port 4181',
+    'curl --fail --silent http://127.0.0.1:4181/',
+    'TASK_FIRST_UI_URL=http://127.0.0.1:4181 node scripts/task-first-ui-guard.mjs',
+    'CARBON_THEME_URL=http://127.0.0.1:4181 CARBON_QA_DIR=/tmp/carbon-console-qa node scripts/carbon-theme-ui-guard.mjs',
+    'kill "$next_pid"',
+    'wait "$next_pid"',
+    'trap - EXIT INT TERM',
+  ];
+  let previousIndex = -1;
+  for (const fragment of lifecycleOrder) {
+    const index = lifecycle.indexOf(fragment, previousIndex + 1);
+    assert.ok(index > previousIndex, `${fragment} missing or out of order`);
+    previousIndex = index;
   }
-  for (const viewport of ['1440, height: 900', '1280, height: 720', '768, height: 1024', '390, height: 844', '320, height: 700']) {
-    assert.ok(guard.includes(viewport), viewport);
-  }
-  assert.match(guard, /data-carbon-surface/);
-  assert.match(guard, /data-selected/);
-  assert.match(guard, /outlineColor/);
-  assert.match(guard, /CARBON_QA_DIR/);
-  assert.match(guard, /page\.screenshot/);
-  assert.match(workflow, /next-src\/tests\/carbon-theme-contract\.test\.mjs/);
-  assert.match(workflow, /CARBON_THEME_URL=http:\/\/127\.0\.0\.1:4181 CARBON_QA_DIR=\/tmp\/carbon-console-qa node scripts\/carbon-theme-ui-guard\.mjs/);
+  assert.match(workflow, /next-src\/tests\/editorial-ui-contract\.test\.mjs \\\n\s+next-src\/tests\/carbon-theme-contract\.test\.mjs/);
 });

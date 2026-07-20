@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
@@ -8,6 +8,7 @@ const baseUrl = process.env.CARBON_THEME_URL || 'http://127.0.0.1:3101';
 const qaDir = process.env.CARBON_QA_DIR || '/tmp/carbon-console-qa';
 const failures = [];
 const fail = (message) => failures.push(message);
+const intendedTools = ['Perplexity AI', '秘塔AI搜索'];
 
 function normalizeHex(value) {
   const shorthand = value.match(/^#([0-9a-f]{3}|[0-9a-f]{4})$/i);
@@ -22,6 +23,7 @@ const themes = {
     '--accent': '#007e99',
     toolBackground: 'rgb(16, 22, 26)',
     focus: 'rgb(0, 126, 153)',
+    hover: 'rgb(226, 235, 239)',
   },
   dark: {
     '--page': '#080b0e',
@@ -30,19 +32,20 @@ const themes = {
     '--accent': '#46d9f2',
     toolBackground: 'rgb(12, 18, 22)',
     focus: 'rgb(70, 217, 242)',
+    hover: 'rgb(26, 39, 45)',
   },
 };
 
 const allScenarios = [
-  { name: 'home', path: '/', hoverTask: true },
-  { name: 'directory', path: '/tools?scene=research&price=free-tier&platform=web', selectTools: true, carbon: true },
-  { name: 'detail', path: '/tools/71', carbon: true },
-  { name: 'compare', path: '/tools?scene=research&price=free-tier&platform=web', selectTools: true, openCompare: true, carbon: true },
-  { name: 'scenes', path: '/scenes' },
-  { name: 'scene-detail', path: '/scenes/research' },
-  { name: 'leaderboard', path: '/leaderboard' },
-  { name: 'user', path: '/user' },
-  { name: 'auth', path: '/user', openAuth: true },
+  { name: 'home', path: '/', expectedPath: '/' },
+  { name: 'directory', path: '/tools?scene=research&price=free-tier&platform=web', expectedPath: '/tools', selectTools: true },
+  { name: 'detail', path: '/tools/71', expectedPath: '/tools/71' },
+  { name: 'compare', path: '/tools?scene=research&price=free-tier&platform=web', expectedPath: '/compare', selectTools: true, openCompare: true },
+  { name: 'scenes', path: '/scenes', expectedPath: '/scenes' },
+  { name: 'scene-detail', path: '/scenes/research', expectedPath: '/scenes/research' },
+  { name: 'leaderboard', path: '/leaderboard', expectedPath: '/leaderboard' },
+  { name: 'user', path: '/user', expectedPath: '/user' },
+  { name: 'auth', path: '/user', expectedPath: '/user', openAuth: true },
 ];
 
 const coreScenarioNames = new Set(['home', 'directory', 'detail', 'compare']);
@@ -54,22 +57,137 @@ const viewports = [
   { width: 320, height: 700 },
 ];
 
+const evidencePairs = [
+  ['home-desktop.png', '1440x900-light-home.png', 'composite-home.png'],
+  ['directory-desktop.png', '1440x900-light-directory.png', 'composite-directory.png'],
+  ['detail-desktop.png', '1440x900-light-detail.png', 'composite-detail.png'],
+  ['directory-mobile.png', '390x844-light-directory.png', 'composite-directory-mobile.png'],
+];
+
+function buildCapturePlan() {
+  return viewports.flatMap((viewport) => {
+    const scenarios = viewport.allRoutes
+      ? allScenarios
+      : allScenarios.filter((scenario) => coreScenarioNames.has(scenario.name));
+    return Object.keys(themes).flatMap((theme) => scenarios.map((scenario) => ({ viewport, scenario, theme })));
+  });
+}
+
+const capturePlan = buildCapturePlan();
+if (capturePlan.length !== 50) throw new Error(`carbon capture plan is ${capturePlan.length}, expected 50`);
+const screenshotName = ({ viewport, scenario, theme }) => `${viewport.width}x${viewport.height}-${theme}-${scenario.name}.png`;
+const expectedScreenshotNames = capturePlan.map(screenshotName).sort();
+
+async function requireCount(locator, expected, label) {
+  const count = await locator.count();
+  if (count !== expected) throw new Error(`${label}: found ${count}, expected ${expected}`);
+}
+
+async function selectedToolNames(page) {
+  return page.locator('[data-tool-decision-row][data-selected="true"] [data-field="tool"] strong').allTextContents();
+}
+
+async function selectedTrayNames(page) {
+  return page.locator('[data-compare-selected-tools] > span > span').allTextContents();
+}
+
+async function assertIntendedSelections(page, label) {
+  const names = await selectedToolNames(page);
+  if (JSON.stringify(names) !== JSON.stringify(intendedTools)) {
+    throw new Error(`${label}: selected tools are ${JSON.stringify(names)}, expected ${JSON.stringify(intendedTools)}`);
+  }
+}
+
 async function openScenario(page, scenario) {
-  await page.goto(`${baseUrl}${scenario.path}`, { waitUntil: 'networkidle' });
-  if (scenario.hoverTask) await page.getByRole('link', { name: /做调研/ }).hover();
+  const response = await page.goto(`${baseUrl}${scenario.path}`, { waitUntil: 'networkidle' });
+  if (!response || !response.ok()) throw new Error(`navigation failed for ${scenario.path}: ${response?.status() || 'no response'}`);
+
   if (scenario.selectTools) {
-    const rows = page.locator('[data-tool-decision-row]');
-    await rows.first().waitFor();
-    await rows.nth(0).getByRole('checkbox').check();
-    await rows.nth(1).getByRole('checkbox').check();
+    await page.locator('[data-tool-decision-row]').first().waitFor();
+    for (const name of intendedTools) {
+      const checkbox = page.getByRole('checkbox', { name: `加入对比 ${name}`, exact: true });
+      await requireCount(checkbox, 1, `selection control for ${name}`);
+      await checkbox.check();
+    }
+    await assertIntendedSelections(page, 'scenario setup');
   }
   if (scenario.openCompare) {
-    await page.getByRole('button', { name: /比较 2 款/ }).click();
+    const compare = page.getByRole('button', { name: '比较 2 款', exact: true });
+    await requireCount(compare, 1, 'compare action');
+    await compare.click();
     await page.waitForURL((url) => url.pathname === '/compare');
   }
   if (scenario.openAuth) {
-    await page.getByRole('button', { name: '登录', exact: true }).first().click();
-    await page.getByRole('dialog').waitFor();
+    const login = page.getByRole('button', { name: '登录', exact: true }).first();
+    await login.click();
+    const dialog = page.getByRole('dialog', { name: '登录' });
+    await requireCount(dialog, 1, 'login dialog');
+    await dialog.waitFor();
+    await requireCount(dialog.getByText('云同步服务当前不可用，仍可继续使用本地收藏和评分。', { exact: true }), 1, 'auth risk state');
+  }
+}
+
+async function assertScenarioIdentity(page, scenario, label) {
+  const url = new URL(page.url());
+  if (url.pathname !== scenario.expectedPath) {
+    throw new Error(`${label}: pathname is ${url.pathname}, expected ${scenario.expectedPath}`);
+  }
+  const bodyText = await page.locator('body').innerText();
+  for (const forbidden of ['This page could not be found', 'Application error', 'Internal Server Error', '出了点问题', '页面加载失败', '工具未找到']) {
+    if (bodyText.includes(forbidden)) throw new Error(`${label}: rendered failure state ${forbidden}`);
+  }
+  if (await page.locator('nextjs-portal').count()) throw new Error(`${label}: nextjs-portal framework overlay is present`);
+
+  if (scenario.name === 'home') {
+    await requireCount(page.getByRole('heading', { level: 1, name: '按任务找到合适的 AI 工具' }), 1, `${label} home heading`);
+    await requireCount(page.getByRole('heading', { level: 2, name: '你要完成什么？' }), 1, `${label} task heading`);
+    await requireCount(page.getByRole('heading', { level: 2, name: '本周值得试' }), 1, `${label} weekly heading`);
+  } else if (scenario.name === 'directory') {
+    if (url.searchParams.toString() !== 'scene=research&price=free-tier&platform=web') {
+      throw new Error(`${label}: searchParams are ${url.searchParams.toString()}`);
+    }
+    await requireCount(page.getByRole('heading', { level: 1, name: '工具目录' }), 1, `${label} directory heading`);
+    const task = page.getByRole('combobox', { name: '选择任务' });
+    if (await task.inputValue() !== 'research') throw new Error(`${label}: research task is not active`);
+    const activeFilters = await page.locator('input').evaluateAll((inputs) => ({
+      price: inputs.filter((input) => input.closest('label')?.textContent?.trim() === '有免费额度').map((input) => input.checked),
+      web: inputs.filter((input) => input.closest('label')?.textContent?.trim() === '网页版').map((input) => input.checked),
+    }));
+    if (!activeFilters.price.length || activeFilters.price.some((checked) => !checked)) throw new Error(`${label}: free-tier filter is not active`);
+    if (!activeFilters.web.length || activeFilters.web.some((checked) => !checked)) throw new Error(`${label}: web filter is not active`);
+    await assertIntendedSelections(page, label);
+    const trayNames = await selectedTrayNames(page);
+    if (JSON.stringify(trayNames) !== JSON.stringify(intendedTools)) {
+      throw new Error(`${label}: compare tray names are ${JSON.stringify(trayNames)}, expected ${JSON.stringify(intendedTools)}`);
+    }
+  } else if (scenario.name === 'detail') {
+    await requireCount(page.getByRole('heading', { level: 1, name: 'Perplexity AI' }), 1, `${label} detail identity`);
+    await requireCount(page.getByRole('heading', { level: 2, name: '决策摘要' }), 1, `${label} detail summary`);
+  } else if (scenario.name === 'compare') {
+    await requireCount(page.getByRole('heading', { level: 1, name: /工具对比/ }), 1, `${label} compare heading`);
+    const headers = await page.locator('[data-carbon-surface] h2').allTextContents();
+    if (JSON.stringify(headers) !== JSON.stringify(intendedTools)) {
+      throw new Error(`${label}: compare headers are ${JSON.stringify(headers)}, expected ${JSON.stringify(intendedTools)}`);
+    }
+  } else if (scenario.name === 'scenes') {
+    await requireCount(page.getByRole('heading', { level: 1, name: '按任务浏览' }), 1, `${label} scenes heading`);
+  } else if (scenario.name === 'scene-detail') {
+    await requireCount(page.getByRole('heading', { level: 1, name: '搜索调研' }), 1, `${label} scene detail heading`);
+    await requireCount(page.getByRole('link', { name: '返回场景列表' }), 1, `${label} scene return action`);
+  } else if (scenario.name === 'leaderboard') {
+    await requireCount(page.getByRole('heading', { level: 1, name: '排行榜' }), 1, `${label} leaderboard heading`);
+    await requireCount(page.getByRole('tablist', { name: '排行榜类型' }), 1, `${label} leaderboard tabs`);
+  } else if (scenario.name === 'user' || scenario.name === 'auth') {
+    await requireCount(page.getByRole('heading', { level: 1, name: '我的工具箱' }), 1, `${label} user heading`);
+    if (scenario.name === 'auth') {
+      const dialog = page.getByRole('dialog', { name: '登录' });
+      await requireCount(dialog, 1, `${label} auth dialog`);
+      await requireCount(dialog.getByText('云同步服务当前不可用，仍可继续使用本地收藏和评分。', { exact: true }), 1, `${label} auth risk state`);
+      await requireCount(dialog.getByRole('textbox', { name: '邮箱' }), 1, `${label} auth email`);
+      await requireCount(dialog.getByLabel('密码'), 1, `${label} auth password`);
+    } else if (await page.getByRole('dialog').count()) {
+      throw new Error(`${label}: unexpected dialog on user state`);
+    }
   }
 }
 
@@ -79,6 +197,29 @@ async function setTheme(page, theme) {
   if (theme === 'light' && dark) await page.getByRole('button', { name: '切换到亮色主题' }).click();
   await page.waitForFunction((expected) => document.documentElement.classList.contains('dark') === expected, theme === 'dark');
   await page.waitForTimeout(180);
+}
+
+async function assertHomeHover(page, scenario, theme, label) {
+  if (scenario.name !== 'home') return;
+  const task = page.getByRole('link', { name: /做调研/ });
+  await requireCount(task, 1, `${label} research task`);
+  await task.hover();
+  await page.waitForTimeout(180);
+  const hover = await task.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      backgroundColor: style.backgroundColor,
+      borderLeftColor: style.borderLeftColor,
+      borderLeftWidth: style.borderLeftWidth,
+      borderLeftStyle: style.borderLeftStyle,
+    };
+  });
+  if (hover.backgroundColor !== themes[theme].hover
+    || hover.borderLeftColor !== themes[theme].focus
+    || hover.borderLeftWidth !== '3px'
+    || hover.borderLeftStyle === 'none') {
+    fail(`${label}: research hover geometry/colors are ${JSON.stringify(hover)}`);
+  }
 }
 
 async function assertTokens(page, theme, label) {
@@ -104,40 +245,102 @@ async function assertNoOverflow(page, label) {
 
 async function assertCarbonSurfaces(page, scenario, theme, label) {
   const surfaces = page.locator('[data-carbon-surface]');
+  const expectedCount = { directory: 1, detail: 1, compare: 2 }[scenario.name] || 0;
   const count = await surfaces.count();
-  if (scenario.carbon && count === 0) fail(`${label}: carbon surface missing`);
-  if (!scenario.carbon && count !== 0) fail(`${label}: unexpected carbon surface`);
+  if (count !== expectedCount) fail(`${label}: carbon surface count is ${count}, expected ${expectedCount}`);
+  if (scenario.name === 'directory' && (await page.locator('[data-compare-tray][data-carbon-surface]').count()) !== 1) {
+    fail(`${label}: directory carbon surface is not the unique compare tray`);
+  }
+  if (scenario.name === 'detail') {
+    const summaries = surfaces.filter({ has: page.getByRole('heading', { level: 2, name: '决策摘要' }) });
+    if ((await summaries.count()) !== 1) fail(`${label}: detail carbon summary is not unique`);
+  }
+  if (scenario.name === 'compare') {
+    const headers = await surfaces.locator('h2').allTextContents();
+    if (JSON.stringify(headers) !== JSON.stringify(intendedTools)) fail(`${label}: carbon headers are ${JSON.stringify(headers)}`);
+  }
   for (let index = 0; index < count; index += 1) {
     const style = await surfaces.nth(index).evaluate((element) => {
       const computed = getComputedStyle(element);
-      return {
-        background: computed.backgroundColor,
-        color: computed.color,
-        border: computed.borderTopColor,
-      };
+      return { background: computed.backgroundColor, color: computed.color, border: computed.borderTopColor };
     });
-    if (style.background !== themes[theme].toolBackground) fail(`${label}: carbon background is ${style.background}`);
-    if (style.color !== 'rgb(232, 247, 251)') fail(`${label}: carbon text is ${style.color}`);
-    if (style.border !== 'rgb(88, 112, 123)') fail(`${label}: carbon keyline is ${style.border}`);
+    if (style.background !== themes[theme].toolBackground) fail(`${label}: carbon ${index} background is ${style.background}`);
+    if (style.color !== 'rgb(232, 247, 251)') fail(`${label}: carbon ${index} text is ${style.color}`);
+    if (style.border !== 'rgb(88, 112, 123)') fail(`${label}: carbon ${index} keyline is ${style.border}`);
+  }
+}
+
+async function measureRail(row) {
+  return row.evaluate((element) => {
+    const rowStyle = getComputedStyle(element);
+    const style = getComputedStyle(element, '::before');
+    const rect = element.getBoundingClientRect();
+    return {
+      row: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+      rowPosition: rowStyle.position,
+      rail: {
+        position: style.position,
+        left: style.left,
+        top: style.top,
+        bottom: style.bottom,
+        width: style.width,
+        background: style.backgroundColor,
+      },
+    };
+  });
+}
+
+function assertStableRect(before, after, label) {
+  for (const key of ['left', 'top', 'width', 'height']) {
+    if (Math.abs(before[key] - after[key]) > 1) fail(`${label}: ${key} changed ${before[key]} -> ${after[key]}`);
   }
 }
 
 async function assertSelectedRails(page, scenario, theme, label) {
-  if (!scenario.selectTools || scenario.openCompare) return;
+  if (scenario.name !== 'directory') return;
   const selectedRows = page.locator('[data-tool-decision-row][data-selected="true"]');
-  if (await selectedRows.count() < 2) {
-    fail(`${label}: selected rows are missing`);
-    return;
+  if ((await selectedRows.count()) !== 2) throw new Error(`${label}: selected row count is not exactly two`);
+  for (let index = 0; index < 2; index += 1) {
+    const measurement = await measureRail(selectedRows.nth(index));
+    if (measurement.rowPosition !== 'relative'
+      || measurement.rail.position !== 'absolute'
+      || measurement.rail.left !== '0px'
+      || measurement.rail.top !== '0px'
+      || measurement.rail.bottom !== '0px'
+      || measurement.rail.width !== '3px'
+      || measurement.rail.background !== themes[theme].focus) {
+      fail(`${label}: selected rail ${index} geometry is ${JSON.stringify(measurement)}`);
+    }
   }
-  const rail = await selectedRows.first().evaluate((element) => {
-    const style = getComputedStyle(element, '::before');
-    return { width: style.width, background: style.backgroundColor };
-  });
-  if (rail.width !== '3px') fail(`${label}: selected rail width is ${rail.width}`);
-  if (rail.background !== themes[theme].focus) fail(`${label}: selected rail is ${rail.background}`);
+
+  const row = page.locator('[data-tool-decision-row]').filter({ hasText: intendedTools[0] }).first();
+  const checkbox = row.locator('input[type="checkbox"]');
+  const beforeToggle = await measureRail(row);
+  await checkbox.uncheck();
+  await page.waitForTimeout(180);
+  const afterToggle = await measureRail(row);
+  if ((await page.locator('[data-tool-decision-row][data-selected="true"]').count()) !== 1) fail(`${label}: selection toggle did not remove exactly one row`);
+  await checkbox.check();
+  await page.waitForTimeout(180);
+  const afterRestore = await measureRail(row);
+
+  const secondRow = page.locator('[data-tool-decision-row]').filter({ hasText: intendedTools[1] }).first();
+  const secondCheckbox = secondRow.locator('input[type="checkbox"]');
+  await secondCheckbox.uncheck();
+  await page.waitForTimeout(180);
+  await secondCheckbox.check();
+  await page.waitForTimeout(180);
+  await assertIntendedSelections(page, `${label} selection restore`);
+  const trayNames = await selectedTrayNames(page);
+  if (JSON.stringify(trayNames) !== JSON.stringify(intendedTools)) fail(`${label}: selection toggle order restored as ${JSON.stringify(trayNames)}`);
+  assertStableRect(beforeToggle.row, afterToggle.row, `${label} row during toggle`);
+  assertStableRect(beforeToggle.row, afterRestore.row, `${label} row after toggle restore`);
+  if (afterToggle.rail.width !== '3px' || afterToggle.rail.left !== '0px') fail(`${label}: rail inset changed during toggle`);
+  if (afterRestore.rail.background !== themes[theme].focus) fail(`${label}: rail color did not restore after toggle`);
 }
 
 async function focusByKeyboard(page, target, label) {
+  await requireCount(target, 1, `${label} focus target`);
   await page.evaluate(() => {
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
   });
@@ -151,37 +354,255 @@ async function focusByKeyboard(page, target, label) {
   throw new Error(`${label}: keyboard could not reach focus target`);
 }
 
-async function assertFocusColors(page, scenario, theme, label) {
-  const normalTarget = page.getByRole('button', { name: theme === 'dark' ? '切换到亮色主题' : '切换到暗色主题' });
-  await focusByKeyboard(page, normalTarget, label);
-  const normalOutline = await normalTarget.evaluate((element) => getComputedStyle(element).outlineColor);
-  if (normalOutline !== themes[theme].focus) fail(`${label}: normal focus is ${normalOutline}`);
-  if (!scenario.carbon) return;
-  const carbonTarget = page.locator('[data-carbon-surface]').getByRole('button').first();
-  if (await carbonTarget.count() === 0) return;
-  await focusByKeyboard(page, carbonTarget, label);
-  const carbonOutline = await carbonTarget.evaluate((element) => getComputedStyle(element).outlineColor);
-  if (carbonOutline !== 'rgb(70, 217, 242)') fail(`${label}: carbon focus is ${carbonOutline}`);
+async function assertOutline(target, expectedColor, label) {
+  const outline = await target.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { outlineColor: style.outlineColor, outlineStyle: style.outlineStyle, outlineWidth: style.outlineWidth };
+  });
+  if (outline.outlineStyle === 'none'
+    || Number.parseFloat(outline.outlineWidth) < 2
+    || outline.outlineColor !== expectedColor) {
+    fail(`${label}: outline is ${JSON.stringify(outline)}, expected >=2px solid ${expectedColor}`);
+  }
 }
 
-async function assertThemeLayoutInvariant(page, label) {
-  const measure = () => page.evaluate(() => {
-    const main = document.querySelector('main')?.getBoundingClientRect();
+async function assertFocusColors(page, scenario, theme, label) {
+  const normalTarget = page.getByRole('button', { name: theme === 'dark' ? '切换到亮色主题' : '切换到暗色主题' });
+  await focusByKeyboard(page, normalTarget, `${label} normal`);
+  await assertOutline(normalTarget, themes[theme].focus, `${label} normal focus`);
+
+  let carbonTarget = null;
+  if (scenario.name === 'directory') carbonTarget = page.locator('[data-compare-tray]').getByRole('button', { name: '比较 2 款' });
+  if (scenario.name === 'detail') carbonTarget = page.locator('[data-carbon-surface]').getByRole('link', { name: '访问官网' });
+  if (scenario.name === 'compare') carbonTarget = page.locator('[data-carbon-surface]').first().getByRole('button', { name: '移除 Perplexity AI' });
+  if (carbonTarget) {
+    await focusByKeyboard(page, carbonTarget, `${label} carbon`);
+    await assertOutline(carbonTarget, 'rgb(70, 217, 242)', `${label} carbon focus`);
+  }
+}
+
+async function assertTargetSize(locator, label, closestLabel = false) {
+  await requireCount(locator, 1, label);
+  const geometry = await locator.evaluate((element, useLabel) => {
+    const target = useLabel ? element.closest('label') : element;
+    const rect = target?.getBoundingClientRect();
+    return rect ? { width: rect.width, height: rect.height } : null;
+  }, closestLabel);
+  if (!geometry || geometry.width < 44 || geometry.height < 44) {
+    fail(`${label}: target is ${geometry ? `${geometry.width.toFixed(1)}x${geometry.height.toFixed(1)}` : 'missing'}, expected at least 44x44`);
+  }
+}
+
+async function assertContainerGeometry(locator, label, allowOverlap = false) {
+  await requireCount(locator, 1, label);
+  const result = await locator.evaluate((element, skipOverlap) => {
+    const parent = element.getBoundingClientRect();
+    const children = Array.from(element.children)
+      .filter((child) => {
+        const style = getComputedStyle(child);
+        return style.display !== 'none' && style.visibility !== 'hidden' && child.getBoundingClientRect().width > 0;
+      })
+      .map((child, index) => {
+        const rect = child.getBoundingClientRect();
+        return { index, left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
+      });
+    const clipped = children.filter((child) => child.left < parent.left - 1
+      || child.right > parent.right + 1
+      || child.top < parent.top - 1
+      || child.bottom > parent.bottom + 1);
+    const overlap = [];
+    if (!skipOverlap) {
+      for (let left = 0; left < children.length; left += 1) {
+        for (let right = left + 1; right < children.length; right += 1) {
+          const a = children[left];
+          const b = children[right];
+          if (Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1
+            && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1) overlap.push([a.index, b.index]);
+        }
+      }
+    }
+    return { clipped, overlap, scrollWidth: element.scrollWidth, clientWidth: element.clientWidth };
+  }, allowOverlap);
+  if (result.clipped.length || result.overlap.length || result.scrollWidth > result.clientWidth + 1) {
+    fail(`${label}: internal clipping/overlap ${JSON.stringify(result)}`);
+  }
+}
+
+async function assertFixedSurfaceGeometry(page, scenario, label) {
+  const fixed = await page.evaluate(() => {
+    const rectOf = (selector) => {
+      const element = document.querySelector(selector);
+      if (!element || getComputedStyle(element).display === 'none') return null;
+      const rect = element.getBoundingClientRect();
+      return rect.height ? { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right, height: rect.height } : null;
+    };
+    const root = getComputedStyle(document.documentElement);
+    const spacer = document.querySelector('[data-compare-tray]')?.previousElementSibling?.getBoundingClientRect();
     return {
-      scrollWidth: document.documentElement.scrollWidth,
-      scrollHeight: document.documentElement.scrollHeight,
-      mainLeft: Math.round(main?.left || 0),
-      mainWidth: Math.round(main?.width || 0),
+      nav: rectOf('[data-mobile-bottom-nav]'),
+      tray: rectOf('[data-compare-tray]'),
+      viewportHeight: innerHeight,
+      spacerHeight: spacer?.height || 0,
+      requiredClearance: Number.parseFloat(root.getPropertyValue('--mobile-nav-block-size'))
+        + Number.parseFloat(root.getPropertyValue('--compare-tray-block-size')),
     };
   });
-  const before = await measure();
-  await page.getByRole('button', { name: '切换到暗色主题' }).click();
-  const after = await measure();
-  for (const key of Object.keys(before)) {
-    if (Math.abs(before[key] - after[key]) > 1) fail(`${label}: ${key} shifts ${before[key]} -> ${after[key]}`);
+  if (fixed.nav && Math.abs(fixed.nav.bottom - fixed.viewportHeight) > 1) fail(`${label}: mobile nav bottom is ${fixed.nav.bottom}, viewport is ${fixed.viewportHeight}`);
+  if (fixed.tray) {
+    const expectedBottom = fixed.nav ? fixed.nav.top : fixed.viewportHeight;
+    if (Math.abs(fixed.tray.bottom - expectedBottom) > 1) fail(`${label}: compare tray bottom ${fixed.tray.bottom} does not meet ${expectedBottom}`);
+    const overlap = fixed.nav && Math.min(fixed.tray.bottom, fixed.nav.bottom) - Math.max(fixed.tray.top, fixed.nav.top);
+    if (overlap && overlap > 1) fail(`${label}: compare tray/mobile nav overlap by ${overlap}px`);
+    if (fixed.spacerHeight + 1 < fixed.requiredClearance) fail(`${label}: fixed clearance ${fixed.spacerHeight} < ${fixed.requiredClearance}`);
   }
-  await page.getByRole('button', { name: '切换到亮色主题' }).click();
+
+  if (scenario.name === 'directory') {
+    await page.evaluate(() => {
+      document.documentElement.style.scrollBehavior = 'auto';
+      window.scrollTo(0, document.documentElement.scrollHeight);
+    });
+    await page.waitForFunction(() => Math.abs(scrollY - Math.max(0, document.documentElement.scrollHeight - innerHeight)) <= 1);
+    const obstruction = await page.evaluate(() => {
+      const row = Array.from(document.querySelectorAll('[data-tool-decision-row]')).at(-1)?.getBoundingClientRect();
+      const tray = document.querySelector('[data-compare-tray]')?.getBoundingClientRect();
+      return row && tray ? { rowBottom: row.bottom, trayTop: tray.top } : null;
+    });
+    if (!obstruction) fail(`${label}: missing row/tray obstruction geometry`);
+    else if (obstruction.rowBottom > obstruction.trayTop + 1) fail(`${label}: tray obscures last row ${JSON.stringify(obstruction)}`);
+    await page.evaluate(() => document.documentElement.style.removeProperty('scroll-behavior'));
+  }
+}
+
+async function assertResponsiveGeometry(page, scenario, theme, label) {
+  const themeTarget = page.getByRole('button', { name: theme === 'dark' ? '切换到亮色主题' : '切换到暗色主题' });
+  await assertTargetSize(themeTarget, `${label} theme target`);
+
+  if (scenario.name === 'home') {
+    await assertTargetSize(page.getByRole('button', { name: '提交搜索', exact: true }), `${label} search target`);
+    await assertTargetSize(page.getByRole('link', { name: /做调研/ }), `${label} research target`);
+  } else if (scenario.name === 'directory') {
+    await assertTargetSize(page.getByRole('combobox', { name: '选择任务' }), `${label} task select`);
+    await assertTargetSize(page.getByRole('combobox', { name: '工具排序' }), `${label} sort select`);
+    await assertTargetSize(page.getByRole('checkbox', { name: '取消对比 Perplexity AI' }), `${label} selection target`, true);
+    await assertTargetSize(page.getByRole('link', { name: '查看 Perplexity AI 详情' }), `${label} detail target`);
+    await assertTargetSize(page.locator('[data-compare-tray]').getByRole('button', { name: '比较 2 款' }), `${label} compare target`);
+    const filter = page.getByRole('button', { name: /^筛选/ });
+    if (await filter.isVisible()) await assertTargetSize(filter, `${label} mobile filter target`);
+    await assertContainerGeometry(page.locator('[data-directory-controls]'), `${label} directory controls`);
+    await assertContainerGeometry(page.locator('[data-tool-decision-row]').first(), `${label} first decision row`);
+  } else if (scenario.name === 'detail') {
+    await assertTargetSize(page.getByRole('link', { name: '访问官网' }).first(), `${label} official target`);
+    await assertTargetSize(page.getByRole('button', { name: '加入比较' }).first(), `${label} detail compare target`);
+    await assertContainerGeometry(page.locator('[data-carbon-surface]'), `${label} detail summary geometry`);
+  } else if (scenario.name === 'compare') {
+    await assertTargetSize(page.getByRole('button', { name: '移除 Perplexity AI' }), `${label} compare remove target`);
+    await assertTargetSize(page.getByRole('button', { name: '添加工具' }), `${label} add target`);
+    await assertContainerGeometry(page.locator('[data-carbon-surface]').first(), `${label} compare header geometry`);
+  } else if (scenario.name === 'scenes') {
+    await assertTargetSize(page.getByRole('link').filter({ hasText: '制作 PPT' }).first(), `${label} scene target`);
+  } else if (scenario.name === 'scene-detail') {
+    await assertTargetSize(page.getByRole('link', { name: '返回场景列表' }), `${label} scene return target`);
+  } else if (scenario.name === 'leaderboard') {
+    await assertTargetSize(page.getByRole('tab', { name: '热度排行' }), `${label} leaderboard tab`);
+  } else if (scenario.name === 'user') {
+    await assertTargetSize(page.getByRole('button', { name: '登录', exact: true }), `${label} user login target`);
+  } else if (scenario.name === 'auth') {
+    const dialog = page.getByRole('dialog', { name: '登录' });
+    await assertTargetSize(dialog.getByRole('button', { name: '关闭登录窗口' }), `${label} auth close target`);
+    await assertTargetSize(dialog.getByRole('textbox', { name: '邮箱' }), `${label} auth email target`);
+    await assertTargetSize(dialog.getByLabel('密码'), `${label} auth password target`);
+    await assertTargetSize(dialog.getByRole('button', { name: '登录', exact: true }), `${label} auth submit target`);
+    await assertContainerGeometry(dialog, `${label} auth dialog geometry`, true);
+  }
+
+  const bottomNav = page.getByRole('navigation', { name: '移动端导航' });
+  if (await bottomNav.isVisible()) await assertTargetSize(bottomNav.getByRole('link', { name: '工具' }), `${label} bottom nav target`);
+  await assertFixedSurfaceGeometry(page, scenario, label);
+}
+
+function layoutSelectorsFor(scenario) {
+  const shared = ['nav[aria-label="主导航"]', 'main', 'main h1'];
+  const specific = {
+    home: ['main section', 'a[href="/tools?scene=research"]', '[data-tool-decision-row]'],
+    directory: ['[data-directory-controls]', '[data-tool-decision-row]', '[data-compare-tray]'],
+    detail: ['[data-carbon-surface]', '[data-tool-decision-row]'],
+    compare: ['[data-carbon-surface]', 'main section'],
+    scenes: ['main section', 'main section a'],
+    'scene-detail': ['main header', 'main section'],
+    leaderboard: ['[role="tablist"]', 'main > div'],
+    user: ['[role="tablist"]', 'main section'],
+    auth: ['[role="dialog"]', '[role="dialog"] form'],
+  }[scenario.name];
+  return [...shared, ...specific];
+}
+
+async function measureLayout(page, scenario) {
+  return page.evaluate((selectors) => {
+    const values = {
+      document: {
+        scrollWidth: document.documentElement.scrollWidth,
+        scrollHeight: document.documentElement.scrollHeight,
+      },
+    };
+    for (const selector of selectors) {
+      Array.from(document.querySelectorAll(selector)).forEach((element, index) => {
+        const rect = element.getBoundingClientRect();
+        values[`${selector}:${index}`] = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+      });
+    }
+    Array.from(document.querySelectorAll('[data-tool-decision-row][data-selected="true"]')).forEach((element, index) => {
+      const style = getComputedStyle(element, '::before');
+      values[`selected-rail:${index}`] = {
+        left: Number.parseFloat(style.left),
+        top: Number.parseFloat(style.top),
+        width: Number.parseFloat(style.width),
+        bottom: Number.parseFloat(style.bottom),
+      };
+    });
+    return values;
+  }, layoutSelectorsFor(scenario));
+}
+
+function compareLayouts(before, after, label) {
+  if (JSON.stringify(Object.keys(before)) !== JSON.stringify(Object.keys(after))) {
+    fail(`${label}: layout keys changed ${JSON.stringify(Object.keys(before))} -> ${JSON.stringify(Object.keys(after))}`);
+    return;
+  }
+  for (const [component, beforeRect] of Object.entries(before)) {
+    const afterRect = after[component];
+    for (const [key, value] of Object.entries(beforeRect)) {
+      if (Math.abs(value - afterRect[key]) > 1) fail(`${label}: ${component}.${key} shifts ${value} -> ${afterRect[key]}`);
+    }
+  }
+}
+
+async function assertThemeLayoutInvariant(page, scenario, label) {
+  await prepareScreenshot(page);
+  await assertHomeHover(page, scenario, 'light', `${label} light layout`);
+  const before = await measureLayout(page, scenario);
+  await page.getByRole('button', { name: '切换到暗色主题' }).click();
+  await page.waitForFunction(() => document.documentElement.classList.contains('dark'));
   await page.waitForTimeout(180);
+  await assertHomeHover(page, scenario, 'dark', `${label} dark layout`);
+  const dark = await measureLayout(page, scenario);
+  compareLayouts(before, dark, `${label} light/dark layout`);
+
+  await page.getByRole('button', { name: '切换到亮色主题' }).click();
+  await page.waitForFunction(() => !document.documentElement.classList.contains('dark'));
+  await page.waitForTimeout(180);
+  await assertHomeHover(page, scenario, 'light', `${label} restored layout`);
+  const restored = await measureLayout(page, scenario);
+  compareLayouts(before, restored, `${label} restored layout`);
+}
+
+async function prepareScreenshot(page) {
+  await page.evaluate(() => {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    document.documentElement.style.scrollBehavior = 'auto';
+    window.scrollTo(0, 0);
+  });
+  await page.waitForFunction(() => window.scrollY === 0);
+  await page.evaluate(() => document.documentElement.style.removeProperty('scroll-behavior'));
 }
 
 async function captureScenario(browser, viewport, scenario, theme) {
@@ -195,22 +616,24 @@ async function captureScenario(browser, viewport, scenario, theme) {
   page.on('pageerror', (error) => consoleIssues.push(error.message));
   try {
     await openScenario(page, scenario);
+    await assertScenarioIdentity(page, scenario, `${label} setup`);
     await setTheme(page, theme);
+    await assertHomeHover(page, scenario, theme, `${label} themed`);
+    await assertScenarioIdentity(page, scenario, `${label} themed identity`);
     await assertTokens(page, theme, label);
     await assertNoOverflow(page, label);
     await assertCarbonSurfaces(page, scenario, theme, label);
     await assertSelectedRails(page, scenario, theme, label);
+    await assertResponsiveGeometry(page, scenario, theme, label);
     await assertFocusColors(page, scenario, theme, label);
-    if (theme === 'light') await assertThemeLayoutInvariant(page, label);
-    await page.evaluate(() => {
-      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-      document.documentElement.style.scrollBehavior = 'auto';
-      window.scrollTo(0, 0);
-    });
-    await page.waitForFunction(() => window.scrollY === 0);
-    await page.evaluate(() => document.documentElement.style.removeProperty('scroll-behavior'));
+    if (theme === 'light') await assertThemeLayoutInvariant(page, scenario, label);
+    await assertScenarioIdentity(page, scenario, `${label} final identity`);
+    await prepareScreenshot(page);
+    await assertScenarioIdentity(page, scenario, `${label} screenshot identity`);
+    await assertHomeHover(page, scenario, theme, `${label} screenshot`);
     await page.screenshot({
-      path: path.join(qaDir, `${viewport.width}x${viewport.height}-${theme}-${scenario.name}.png`),
+      path: path.join(qaDir, screenshotName({ viewport, scenario, theme })),
+      fullPage: false,
     });
   } catch (error) {
     fail(`${label}: ${error.message}`);
@@ -220,24 +643,24 @@ async function captureScenario(browser, viewport, scenario, theme) {
   }
 }
 
-async function composeEvidence() {
-  if (!process.env.CARBON_QA_SHARP) return;
-  const sharp = (await import(pathToFileURL(process.env.CARBON_QA_SHARP).href)).default;
+async function loadSharp() {
+  if (!process.env.CARBON_QA_SHARP) return null;
+  return (await import(pathToFileURL(process.env.CARBON_QA_SHARP).href)).default;
+}
+
+async function composeEvidence(sharp) {
+  if (!sharp) return;
   const referenceRoot = path.resolve('.superpowers/visual-references/task-first');
-  const pairs = [
-    ['home-desktop.png', '1440x900-light-home.png', 'composite-home.png'],
-    ['directory-desktop.png', '1440x900-light-directory.png', 'composite-directory.png'],
-    ['detail-desktop.png', '1440x900-light-detail.png', 'composite-detail.png'],
-    ['directory-mobile.png', '390x844-light-directory.png', 'composite-directory-mobile.png'],
-  ];
-  for (const [referenceName, actualName, outputName] of pairs) {
+  for (const [referenceName, actualName, outputName] of evidencePairs) {
     const reference = path.join(referenceRoot, referenceName);
     const actual = path.join(qaDir, actualName);
-    if (!existsSync(reference) || !existsSync(actual)) continue;
+    if (!existsSync(reference)) throw new Error(`missing reference ${reference}`);
+    if (!existsSync(actual)) throw new Error(`missing actual ${actual}`);
     const referenceMeta = await sharp(reference).metadata();
     const actualMeta = await sharp(actual).metadata();
     const width = (referenceMeta.width || 0) + (actualMeta.width || 0);
     const height = Math.max(referenceMeta.height || 0, actualMeta.height || 0);
+    if (!width || !height) throw new Error(`invalid evidence metadata for ${outputName}`);
     await sharp({ create: { width, height, channels: 4, background: '#ffffff' } })
       .composite([
         { input: reference, left: 0, top: 0 },
@@ -248,26 +671,71 @@ async function composeEvidence() {
   }
 }
 
+async function readPngDimensions(file) {
+  const data = await readFile(file);
+  if (data.length < 24 || data.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') throw new Error(`${file} is not a valid PNG`);
+  return { width: data.readUInt32BE(16), height: data.readUInt32BE(20) };
+}
+
+async function auditEvidence(sharp) {
+  const expectedCompositeNames = sharp ? evidencePairs.map((pair) => pair[2]).sort() : [];
+  const expectedNames = [...expectedScreenshotNames, ...expectedCompositeNames].sort();
+  const actualNames = (await readdir(qaDir)).filter((name) => name.endsWith('.png')).sort();
+  if (JSON.stringify(actualNames) !== JSON.stringify(expectedNames)) {
+    throw new Error(`QA filename audit failed: actual=${JSON.stringify(actualNames)} expected=${JSON.stringify(expectedNames)}`);
+  }
+  for (const entry of capturePlan) {
+    const name = screenshotName(entry);
+    const dimensions = await readPngDimensions(path.join(qaDir, name));
+    if (dimensions.width !== entry.viewport.width || dimensions.height !== entry.viewport.height) {
+      throw new Error(`${name} is ${dimensions.width}x${dimensions.height}, expected ${entry.viewport.width}x${entry.viewport.height}`);
+    }
+    if (sharp) {
+      const metadata = await sharp(path.join(qaDir, name)).metadata();
+      if (metadata.width !== entry.viewport.width || metadata.height !== entry.viewport.height) throw new Error(`${name} Sharp metadata mismatch`);
+    }
+  }
+  if (sharp) {
+    const referenceRoot = path.resolve('.superpowers/visual-references/task-first');
+    for (const [referenceName, actualName, outputName] of evidencePairs) {
+      const referenceMeta = await sharp(path.join(referenceRoot, referenceName)).metadata();
+      const actualMeta = await sharp(path.join(qaDir, actualName)).metadata();
+      const compositeMeta = await sharp(path.join(qaDir, outputName)).metadata();
+      const expectedWidth = (referenceMeta.width || 0) + (actualMeta.width || 0);
+      const expectedHeight = Math.max(referenceMeta.height || 0, actualMeta.height || 0);
+      if (compositeMeta.width !== expectedWidth || compositeMeta.height !== expectedHeight) {
+        throw new Error(`${outputName} is ${compositeMeta.width}x${compositeMeta.height}, expected ${expectedWidth}x${expectedHeight}`);
+      }
+    }
+  }
+}
+
 async function main() {
+  await rm(qaDir, { recursive: true, force: true });
   await mkdir(qaDir, { recursive: true });
+  const sharp = await loadSharp();
   const browser = await chromium.launch();
   try {
-    for (const viewport of viewports) {
-      const scenarios = viewport.allRoutes ? allScenarios : allScenarios.filter((scenario) => coreScenarioNames.has(scenario.name));
-      for (const theme of Object.keys(themes)) {
-        for (const scenario of scenarios) await captureScenario(browser, viewport, scenario, theme);
-      }
+    for (let index = 0; index < capturePlan.length; index += 1) {
+      const { viewport, scenario, theme } = capturePlan[index];
+      console.log(`[carbon ${index + 1}/${capturePlan.length}] ${viewport.width}x${viewport.height} ${theme} ${scenario.name}`);
+      await captureScenario(browser, viewport, scenario, theme);
     }
   } finally {
     await browser.close();
   }
-  await composeEvidence();
+  try {
+    await composeEvidence(sharp);
+    await auditEvidence(sharp);
+  } catch (error) {
+    fail(`evidence audit: ${error.message}`);
+  }
   if (failures.length) {
     console.error(failures.join('\n'));
     process.exitCode = 1;
     return;
   }
-  console.log(`carbon theme UI guard passed; screenshots: ${qaDir}`);
+  console.log(`carbon theme UI guard passed; 50 screenshots${sharp ? ' + 4 composites' : ''}: ${qaDir}`);
 }
 
 main().catch((error) => {
