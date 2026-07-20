@@ -1069,3 +1069,10 @@ test('wires the complete carbon route, state, geometry, focus, and evidence guar
   }
   assert.match(workflow, /next-src\/tests\/editorial-ui-contract\.test\.mjs \\\n\s+next-src\/tests\/carbon-theme-contract\.test\.mjs/);
 });
+
+test('keeps protected GitHub Pages deployment out of pull request runs', () => {
+  const workflow = readRepo('.github/workflows/deploy.yml');
+  const deployJob = workflow.match(/\n  build-and-deploy:\n([\s\S]*)$/)?.[1];
+  assert.ok(deployJob, 'missing build-and-deploy job');
+  assert.match(deployJob, /^    if: github\.event_name != 'pull_request'$/m);
+});

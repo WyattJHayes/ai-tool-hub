@@ -155,6 +155,7 @@ jobs:
           UI_GUARD_URL=http://127.0.0.1:4173/ node scripts/ui-layout-guard.mjs
 
   build-and-deploy:
+    if: github.event_name != 'pull_request'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
