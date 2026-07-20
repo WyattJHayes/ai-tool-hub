@@ -3,7 +3,7 @@ import { readFile, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
-import { DEFAULT_THEME, THEME_STORAGE_KEY } from '../next-src/src/lib/theme-bootstrap.mjs';
+import { DEFAULT_THEME, THEME_STORAGE_KEY, THEME_STORAGE_VERSION } from '../next-src/src/lib/theme-bootstrap.mjs';
 import { prepareQaDir } from './carbon-qa-path.mjs';
 
 const baseUrl = process.env.CARBON_THEME_URL || 'http://127.0.0.1:3101';
@@ -204,13 +204,13 @@ async function assertInitialTheme(browser) {
   for (const entry of cases) {
     const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
     if (entry.stored) {
-      await context.addInitScript(({ key, theme }) => {
+      await context.addInitScript(({ key, theme, version }) => {
         try {
-          localStorage.setItem(key, JSON.stringify({ state: { theme }, version: 0 }));
+          localStorage.setItem(key, JSON.stringify({ state: { theme }, version }));
         } catch {
           // The script runs again after the target origin is created.
         }
-      }, { key: THEME_STORAGE_KEY, theme: entry.stored });
+      }, { key: THEME_STORAGE_KEY, theme: entry.stored, version: THEME_STORAGE_VERSION });
     }
     const page = await context.newPage();
     try {
@@ -219,11 +219,15 @@ async function assertInitialTheme(browser) {
       const actual = await page.evaluate(() => ({
         colorScheme: document.documentElement.style.colorScheme,
         dark: document.documentElement.classList.contains('dark'),
+        themeColor: document.querySelector('meta[name="theme-color"]')?.getAttribute('content'),
       }));
       const expectedDark = entry.expected === 'dark';
-      if (actual.dark !== expectedDark || actual.colorScheme !== entry.expected) {
+      const expectedColor = entry.expected === 'dark' ? '#080B0E' : '#F3F6F8';
+      const expectedAction = entry.expected === 'dark' ? '切换到亮色主题' : '切换到暗色主题';
+      if (actual.dark !== expectedDark || actual.colorScheme !== entry.expected || actual.themeColor !== expectedColor) {
         throw new Error(`${entry.name}: initial theme is ${JSON.stringify(actual)}, expected ${entry.expected}`);
       }
+      await requireCount(page.getByRole('button', { name: expectedAction, exact: true }), 1, `${entry.name}: theme toggle action`);
     } finally {
       await context.close();
     }
@@ -299,6 +303,17 @@ async function setTheme(page, theme) {
   if (theme === 'dark' && !dark) await page.getByRole('button', { name: '切换到暗色主题' }).click();
   if (theme === 'light' && dark) await page.getByRole('button', { name: '切换到亮色主题' }).click();
   await page.waitForFunction((expected) => document.documentElement.classList.contains('dark') === expected, theme === 'dark');
+  const actual = await page.evaluate((key) => {
+    const stored = localStorage.getItem(key);
+    return {
+      themeColor: document.querySelector('meta[name="theme-color"]')?.getAttribute('content'),
+      version: stored ? JSON.parse(stored).version : null,
+    };
+  }, THEME_STORAGE_KEY);
+  const expectedColor = theme === 'dark' ? '#080B0E' : '#F3F6F8';
+  if (actual.themeColor !== expectedColor || actual.version !== THEME_STORAGE_VERSION) {
+    throw new Error(`theme persistence/metadata is ${JSON.stringify(actual)}, expected ${theme}/${THEME_STORAGE_VERSION}`);
+  }
   await page.waitForTimeout(180);
 }
 
@@ -505,6 +520,24 @@ async function assertSelectedRails(page, scenario, theme, label) {
   if (afterRestore.rail.background !== themes[theme].focus) fail(`${label}: rail color did not restore after toggle`);
 }
 
+async function assertNavigationRails(page, theme, label) {
+  for (const [name, selector] of [
+    ['desktop', 'nav[aria-label="主导航"] [data-orientation="desktop"][data-active="true"]'],
+    ['mobile', '[data-mobile-bottom-nav] [data-orientation="mobile"][data-active="true"]'],
+  ]) {
+    const rail = page.locator(selector);
+    if (!(await rail.isVisible())) continue;
+    await requireCount(rail, 1, `${label} ${name} active navigation`);
+    const geometry = await rail.evaluate((element) => {
+      const style = getComputedStyle(element, '::after');
+      return { background: style.backgroundColor, height: style.height, position: style.position };
+    });
+    if (geometry.height !== '2px' || geometry.position !== 'absolute' || geometry.background !== themes[theme].focus) {
+      fail(`${label}: ${name} navigation rail is ${JSON.stringify(geometry)}`);
+    }
+  }
+}
+
 async function focusByKeyboard(page, target, label) {
   await requireCount(target, 1, `${label} focus target`);
   await page.evaluate(() => {
@@ -536,6 +569,23 @@ async function assertFocusColors(page, scenario, theme, label) {
   const normalTarget = page.getByRole('button', { name: theme === 'dark' ? '切换到亮色主题' : '切换到暗色主题' });
   await focusByKeyboard(page, normalTarget, `${label} normal`);
   await assertOutline(normalTarget, themes[theme].focus, `${label} normal focus`);
+
+  if (scenario.name === 'home') {
+    const task = page.locator('[data-task-entry]').first();
+    const before = await task.boundingBox();
+    await focusByKeyboard(page, task, `${label} task entry`);
+    const focused = await task.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { borderLeftColor: style.borderLeftColor, borderLeftWidth: style.borderLeftWidth };
+    });
+    const after = await task.boundingBox();
+    if (focused.borderLeftWidth !== '3px' || focused.borderLeftColor !== themes[theme].focus) {
+      fail(`${label}: task entry focus rail is ${JSON.stringify(focused)}`);
+    }
+    if (!before || !after || Math.abs(before.width - after.width) > 1 || Math.abs(before.height - after.height) > 1) {
+      fail(`${label}: task entry focus changed geometry ${JSON.stringify({ before, after })}`);
+    }
+  }
 
   let carbonTarget = null;
   if (scenario.name === 'directory') carbonTarget = page.locator('[data-compare-tray]').getByRole('button', { name: '比较 2 款' });
@@ -886,6 +936,7 @@ async function captureScenario(browser, viewport, scenario, theme, qaDir) {
     await assertNoOverflow(page, label);
     await assertCarbonSurfaces(page, scenario, theme, label);
     await assertSelectedRails(page, scenario, theme, label);
+    await assertNavigationRails(page, theme, label);
     await assertResponsiveGeometry(page, scenario, theme, label);
     await assertFocusColors(page, scenario, theme, label);
     if (theme === 'light') await assertThemeLayoutInvariant(page, scenario, label);

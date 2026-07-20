@@ -1,6 +1,5 @@
 'use client';
 
-import { useEffect } from 'react';
 import { LayoutGrid, Moon, Share2, Sun, User } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -15,11 +14,7 @@ const navItems = [
 
 export default function Navbar() {
   const pathname = usePathname();
-  const { theme, toggleTheme } = useUserStore();
-
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', theme === 'dark');
-  }, [theme]);
+  const toggleTheme = useUserStore((state) => state.toggleTheme);
 
   const handleShare = async () => {
     if (navigator.share) {
@@ -70,10 +65,12 @@ export default function Navbar() {
             type="button"
             onClick={toggleTheme}
             className="flex h-11 w-11 items-center justify-center rounded-md text-[var(--muted)] transition-colors duration-150 hover:bg-[var(--surface-subtle)] hover:text-[var(--ink)]"
-            aria-label={theme === 'dark' ? '切换到亮色主题' : '切换到暗色主题'}
-            title={theme === 'dark' ? '切换到亮色主题' : '切换到暗色主题'}
+            title="切换主题"
           >
-            {theme === 'dark' ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
+            <Moon className="h-[18px] w-[18px] dark:hidden" aria-hidden="true" />
+            <Sun className="hidden h-[18px] w-[18px] dark:block" aria-hidden="true" />
+            <span className="sr-only dark:hidden">切换到暗色主题</span>
+            <span className="sr-only hidden dark:inline">切换到亮色主题</span>
           </button>
           <button
             type="button"

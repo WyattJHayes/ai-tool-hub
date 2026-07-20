@@ -622,10 +622,9 @@ test('maps browser metadata, radii, and default motion to the approved system', 
   const manifest = JSON.parse(read('public/manifest.json'));
   const tailwind = read('tailwind.config.ts');
 
-  assert.match(layout, /media: '\(prefers-color-scheme: light\)', color: '#F3F6F8'/);
-  assert.match(layout, /media: '\(prefers-color-scheme: dark\)', color: '#080B0E'/);
-  assert.equal(manifest.background_color, '#F3F6F8');
-  assert.equal(manifest.theme_color, '#F3F6F8');
+  assert.match(layout, /themeColor:\s*'#080B0E'/);
+  assert.equal(manifest.background_color, '#080B0E');
+  assert.equal(manifest.theme_color, '#080B0E');
   assert.match(css, /--radius:\s*6px/);
   assert.match(css, /--radius-sm:\s*4px/);
   assert.doesNotMatch(css, /border-radius:\s*8px/);
@@ -646,23 +645,56 @@ test('boots dark before paint while honoring a persisted theme', async () => {
     DEFAULT_THEME,
     THEME_BOOTSTRAP_SCRIPT,
     THEME_STORAGE_KEY,
+    THEME_STORAGE_VERSION,
+    createSafeStorage,
     resolveStoredTheme,
+    synchronizeTheme,
   } = await import(`${moduleUrl.href}?contract=${Date.now()}`);
 
   assert.equal(DEFAULT_THEME, 'dark');
   assert.equal(THEME_STORAGE_KEY, 'ai-tool-hub-user');
+  assert.equal(THEME_STORAGE_VERSION, 0);
   assert.equal(resolveStoredTheme(null, DEFAULT_THEME), 'dark');
   assert.equal(resolveStoredTheme('{bad json', DEFAULT_THEME), 'dark');
-  assert.equal(resolveStoredTheme(JSON.stringify({ state: { theme: 'light' } }), DEFAULT_THEME), 'light');
-  assert.equal(resolveStoredTheme(JSON.stringify({ state: { theme: 'dark' } }), DEFAULT_THEME), 'dark');
+  assert.equal(resolveStoredTheme(JSON.stringify({ state: { theme: 'light' } }), DEFAULT_THEME), 'dark');
+  assert.equal(resolveStoredTheme(JSON.stringify({ state: { theme: 'light' }, version: 1 }), DEFAULT_THEME), 'dark');
+  assert.equal(resolveStoredTheme(JSON.stringify({ state: { theme: 'light' }, version: THEME_STORAGE_VERSION }), DEFAULT_THEME), 'light');
+  assert.equal(resolveStoredTheme(JSON.stringify({ state: { theme: 'dark' }, version: THEME_STORAGE_VERSION }), DEFAULT_THEME), 'dark');
   assert.equal(resolveStoredTheme(JSON.stringify({ state: { theme: 'green' } }), DEFAULT_THEME), 'dark');
+
+  const safeStorage = createSafeStorage({
+    getItem() { throw new Error('read denied'); },
+    setItem() { throw new Error('write denied'); },
+    removeItem() { throw new Error('remove denied'); },
+  });
+  assert.equal(safeStorage.getItem(THEME_STORAGE_KEY), null);
+  assert.doesNotThrow(() => safeStorage.setItem(THEME_STORAGE_KEY, 'value'));
+  assert.doesNotThrow(() => safeStorage.removeItem(THEME_STORAGE_KEY));
+
+  const classNames = new Set();
+  const meta = { content: '' };
+  const documentRef = {
+    documentElement: {
+      classList: { toggle: (name, enabled) => enabled ? classNames.add(name) : classNames.delete(name) },
+      style: {},
+    },
+    querySelectorAll: () => [meta],
+  };
+  synchronizeTheme('dark', documentRef);
+  assert.deepEqual({ dark: classNames.has('dark'), colorScheme: documentRef.documentElement.style.colorScheme, meta: meta.content }, {
+    dark: true, colorScheme: 'dark', meta: '#080B0E',
+  });
+  synchronizeTheme('light', documentRef);
+  assert.deepEqual({ dark: classNames.has('dark'), colorScheme: documentRef.documentElement.style.colorScheme, meta: meta.content }, {
+    dark: false, colorScheme: 'light', meta: '#F3F6F8',
+  });
 
   assert.deepEqual(runThemeBootstrap(THEME_BOOTSTRAP_SCRIPT, null), {
     colorScheme: 'dark',
     dark: true,
     requestedKey: 'ai-tool-hub-user',
   });
-  assert.deepEqual(runThemeBootstrap(THEME_BOOTSTRAP_SCRIPT, JSON.stringify({ state: { theme: 'light' } })), {
+  assert.deepEqual(runThemeBootstrap(THEME_BOOTSTRAP_SCRIPT, JSON.stringify({ state: { theme: 'light' }, version: 0 })), {
     colorScheme: 'light',
     dark: false,
     requestedKey: 'ai-tool-hub-user',
@@ -674,7 +706,10 @@ test('boots dark before paint while honoring a persisted theme', async () => {
   });
   assert.match(store, /theme:\s*DEFAULT_THEME/);
   assert.match(store, /name:\s*THEME_STORAGE_KEY/);
-  assert.match(store, /document\.documentElement\.style\.colorScheme = newTheme/);
+  assert.match(store, /version:\s*THEME_STORAGE_VERSION/);
+  assert.match(store, /storage:\s*createJSONStorage\(\(\) => createSafeStorage/);
+  assert.match(store, /synchronizeTheme\(newTheme\)/);
+  assert.match(store, /synchronizeTheme\(state\.theme\)/);
   assert.match(layout, /id="theme-bootstrap"/);
   assert.match(layout, /dangerouslySetInnerHTML=\{\{ __html: THEME_BOOTSTRAP_SCRIPT \}\}/);
   assert.ok(layout.indexOf('id="theme-bootstrap"') < layout.indexOf('<body'));
@@ -722,6 +757,9 @@ test('uses precision navigation rails and outline-only search focus', () => {
   assert.match(navbar, /data-orientation="desktop"/);
   assert.match(navbar, /data-active=\{active \? 'true' : undefined\}/);
   assert.match(navbar, /aria-current=\{active \? 'page' : undefined\}/);
+  assert.doesNotMatch(navbar, /aria-label=\{theme === 'dark'/);
+  assert.match(navbar, /sr-only dark:hidden">切换到暗色主题/);
+  assert.match(navbar, /sr-only hidden dark:inline">切换到亮色主题/);
   assert.match(bottomNav, /data-orientation="mobile"/);
   assert.match(bottomNav, /data-active=\{active \? 'true' : undefined\}/);
   assert.match(search, /data-search-shell/);

@@ -1,28 +1,80 @@
 export const DEFAULT_THEME = 'dark';
 export const THEME_STORAGE_KEY = 'ai-tool-hub-user';
+export const THEME_STORAGE_VERSION = 0;
+
+export function createSafeStorage(storageSource) {
+  const storage = () => {
+    try {
+      return typeof storageSource === 'function' ? storageSource() : storageSource;
+    } catch {
+      return null;
+    }
+  };
+
+  return {
+    getItem(key) {
+      try {
+        return storage()?.getItem(key) ?? null;
+      } catch {
+        return null;
+      }
+    },
+    setItem(key, value) {
+      try {
+        storage()?.setItem(key, value);
+      } catch {
+        // Theme persistence is optional when browser storage is unavailable.
+      }
+    },
+    removeItem(key) {
+      try {
+        storage()?.removeItem(key);
+      } catch {
+        // Theme persistence is optional when browser storage is unavailable.
+      }
+    },
+  };
+}
 
 export function resolveStoredTheme(raw, fallback) {
   try {
-    const theme = raw ? JSON.parse(raw)?.state?.theme : null;
-    return theme === 'light' || theme === 'dark' ? theme : fallback;
+    const parsed = raw ? JSON.parse(raw) : null;
+    const theme = parsed?.state?.theme;
+    return parsed?.version === THEME_STORAGE_VERSION && (theme === 'light' || theme === 'dark')
+      ? theme
+      : fallback;
   } catch {
     return fallback;
   }
 }
 
+export function synchronizeTheme(theme, documentRef = typeof document === 'undefined' ? null : document) {
+  if (!documentRef) return;
+  const isDark = theme === 'dark';
+  const color = isDark ? '#080B0E' : '#F3F6F8';
+  const root = documentRef.documentElement;
+  root.classList.toggle('dark', isDark);
+  root.style.colorScheme = theme;
+  documentRef.querySelectorAll?.('meta[name="theme-color"]').forEach((meta) => {
+    meta.content = color;
+  });
+}
+
 export const THEME_BOOTSTRAP_SCRIPT = `(() => {
+  const THEME_STORAGE_VERSION = ${THEME_STORAGE_VERSION};
+  const createSafeStorage = ${createSafeStorage.toString()};
   const resolveStoredTheme = ${resolveStoredTheme.toString()};
-  let stored = null;
+  const synchronizeTheme = ${synchronizeTheme.toString()};
+  let storageSource = null;
   try {
-    stored = window.localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)});
+    storageSource = window.localStorage;
   } catch {
-    stored = null;
+    storageSource = null;
   }
+  const stored = createSafeStorage(storageSource).getItem(${JSON.stringify(THEME_STORAGE_KEY)});
   const theme = resolveStoredTheme(
     stored,
     ${JSON.stringify(DEFAULT_THEME)},
   );
-  const root = document.documentElement;
-  root.classList.toggle('dark', theme === 'dark');
-  root.style.colorScheme = theme;
+  synchronizeTheme(theme, document);
 })();`;

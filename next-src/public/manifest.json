@@ -4,8 +4,8 @@
   "description": "一站式AI工具聚合导航平台，支持用户系统、工具对比、个性化推荐",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#F3F6F8",
-  "theme_color": "#F3F6F8",
+  "background_color": "#080B0E",
+  "theme_color": "#080B0E",
   "orientation": "portrait-primary",
   "scope": "/",
   "icons": [
