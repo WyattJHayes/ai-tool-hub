@@ -17,8 +17,8 @@ const gradientEffect = /(?:repeating-)?(?:linear|radial|conic)-gradient\s*\(|(?<
 const spinningAnimation = /(?<![A-Za-z0-9_-])animate-spin(?![A-Za-z0-9_-])/;
 const transformTransition = /(?<![A-Za-z0-9_-])transition-transform(?![A-Za-z0-9_-])/;
 const scaleOrRotate = /(?<![A-Za-z0-9_-])-?(?:scale(?:-[xy])?|rotate(?:-[xyz])?)-(?:\[[^\]]+\]|\d+(?:\.\d+)?(?:\/\d+)?)(?![A-Za-z0-9_-])/;
-const cssScaleOrRotate = /transform\s*:[^;}\n]*(?:rotate|scale)\s*\(|(?<![A-Za-z0-9_-])(?:rotate|scale)\s*:/;
-const arbitraryTransform = /(?<![A-Za-z0-9_-])transform-\[[^\]]*(?:rotate|scale)\s*\([^\]]*\)[^\]]*\](?![A-Za-z0-9_-])/;
+const cssScaleOrRotate = /transform\s*:[^;}\n]*(?:rotate(?:x|y|z|3d)?|scale(?:x|y|z|3d)?)\s*\(|(?<![A-Za-z0-9_-])(?:rotate|scale)\s*:/i;
+const arbitraryTransform = /(?<![A-Za-z0-9_-])transform-\[[^\]]*(?:rotate(?:x|y|z|3d)?|scale(?:x|y|z|3d)?)\s*\([^\]]*\)[^\]]*\](?![A-Za-z0-9_-])/i;
 const variantTranslate = /(?<![A-Za-z0-9_-])(?:[^\s"'`]+:)+-?translate-[xy]-(?:\[[^\]]+\]|\d+(?:\.\d+)?(?:\/\d+)?|full|px)(?![A-Za-z0-9_-])/;
 const largeRadiusClass = /(?<![A-Za-z0-9_-])rounded(?:-[trblse]{1,2})?-(?:xl|2xl|3xl|full)(?![A-Za-z0-9_-])/;
 const arbitraryRadiusClass = /(?<![A-Za-z0-9_-])rounded(?:-[trblse]{1,2})?-\[([^\]]+)\](?![A-Za-z0-9_-])/g;
@@ -38,9 +38,14 @@ function hasProhibitedRadius(content) {
 
 function getStyleContexts(content, file) {
   const extension = path.extname(file).toLowerCase();
-  if (extension === '.css' || extension === '.mdx') return [content];
-  if (extension !== '.jsx' && extension !== '.tsx') return [];
-  return [...content.matchAll(/style\s*=\s*\{\{([\s\S]*?)\}\}/g)].map((match) => match[1]);
+  if (extension === '.css') return [content];
+
+  const inlineStyles = [...content.matchAll(/style\s*=\s*\{\{([\s\S]*?)\}\}/g)].map((match) => match[1]);
+  if (extension === '.jsx' || extension === '.tsx') return inlineStyles;
+  if (extension !== '.mdx') return [];
+
+  const styleTags = [...content.matchAll(/<style(?:\s[^>]*)?>([\s\S]*?)<\/style\s*>/gi)].map((match) => match[1]);
+  return [...styleTags, ...inlineStyles];
 }
 
 function maskFunctionContents(value) {
@@ -428,7 +433,15 @@ test('source scanner rejects reviewed palette, effect, motion, radius, and track
     ['group rotate utility', 'group-hover:-rotate-3'],
     ['data scale utility', 'data-[state=open]:scale-100'],
     ['CSS transform rotate function', 'transform: rotate(3deg);', 'fixture.css'],
+    ['CSS transform rotateX function', 'transform: rotateX(3deg);', 'fixture.css'],
+    ['CSS transform rotateY function', 'transform: rotateY(3deg);', 'fixture.css'],
+    ['CSS transform rotateZ function', 'transform: rotateZ(3deg);', 'fixture.css'],
+    ['CSS transform rotate3d function', 'transform: ROTATE3D(1, 0, 0, 3deg);', 'fixture.css'],
     ['CSS transform scale function', 'transform: scale(1.05);', 'fixture.css'],
+    ['CSS transform scaleX function', 'transform: scaleX(1.05);', 'fixture.css'],
+    ['CSS transform scaleY function', 'transform: scaleY(1.05);', 'fixture.css'],
+    ['CSS transform scaleZ function', 'transform: scaleZ(1.05);', 'fixture.css'],
+    ['CSS transform scale3d function', 'transform: SCALE3D(1.05, 1, 1);', 'fixture.css'],
     ['standalone CSS rotate property', 'rotate: 3deg;', 'fixture.css'],
     ['standalone CSS scale property', 'scale: 1.05;', 'fixture.css'],
     ['inline style scale property', 'style={{ scale: 1.1 }}', 'fixture.tsx'],
@@ -440,7 +453,19 @@ test('source scanner rejects reviewed palette, effect, motion, radius, and track
     ['checked translate utility', 'checked:-translate-y-1'],
     ['arbitrary selector translate utility', '[&[data-state=open]]:translate-x-1'],
     ['arbitrary transform rotate utility', 'transform-[rotate(3deg)]'],
+    ['arbitrary transform rotateX utility', 'transform-[rotateX(3deg)]'],
+    ['arbitrary transform rotateY utility', 'transform-[rotateY(3deg)]'],
+    ['arbitrary transform rotateZ utility', 'transform-[rotateZ(3deg)]'],
+    ['arbitrary transform rotate3d utility', 'transform-[ROTATE3D(1,0,0,3deg)]'],
     ['arbitrary transform scale utility', 'transform-[scale(1.05)]'],
+    ['arbitrary transform scaleX utility', 'transform-[scaleX(1.05)]'],
+    ['arbitrary transform scaleY utility', 'transform-[scaleY(1.05)]'],
+    ['arbitrary transform scaleZ utility', 'transform-[scaleZ(1.05)]'],
+    ['arbitrary transform scale3d utility', 'transform-[SCALE3D(1.05,1,1)]'],
+    ['MDX style tag transform function', '<style>.card { transform: rotateX(3deg); }</style>', 'fixture.mdx'],
+    ['MDX attributed style tag property', '<style type="text/css">.card { scale: 1.1; }</style>', 'fixture.mdx'],
+    ['MDX inline style transform function', '<div style={{ transform: \'scaleZ(1.1)\' }} />', 'fixture.mdx'],
+    ['MDX inline style property', '<div style={{ rotate: \'3deg\' }} />', 'fixture.mdx'],
     ['large radius utility', 'rounded-xl'],
     ['directional large radius utility', 'md:rounded-t-2xl'],
     ['full radius utility', 'rounded-full'],
@@ -477,6 +502,8 @@ test('source scanner allows precise identifiers, approved radii, and static posi
     ['similar custom property', '--dangerous: 1; color: var(--warning-label);'],
     ['similar transform identifiers', 'rotate-icon scale-factor transition-transformation'],
     ['ordinary scale object key', 'const options = { scale: 2 };', 'fixture.ts'],
+    ['MDX prose with scale label', 'Enterprise scale: built for teams', 'fixture.mdx'],
+    ['MDX ordinary scale expression', '{ scale: 2 }', 'fixture.mdx'],
   ];
 
   for (const [name, source, file = 'fixture.tsx'] of cases) {
