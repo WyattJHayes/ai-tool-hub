@@ -7,28 +7,32 @@ import { fileURLToPath } from 'node:url';
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const readRepo = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
 const css = read('src/app/globals.css');
-const sourceExtension = /\.(?:css|cjs|cts|js|jsx|mjs|mts|ts|tsx)$/;
+const sourceExtension = /\.(?:css|cjs|cts|js|jsx|mdx|mjs|mts|ts|tsx)$/;
 const forbiddenHex = /#(?:f6f7f4|eef1ec|e8ede7|171a17|5f675f|858c85|dce1da|c8cfc6|176b4d|105b40|e4f0e9|b54747|9a6700|171917|202320|292d29|303530|f2f4ef|b2b9b0|858d84|373d36|4a5148|72b897|8cc8aa|203c30|e08080|d8ad58)\b/i;
 const rawPaletteClass = /(?<![A-Za-z0-9_-])(?:bg|border|text|fill|stroke|ring|outline|divide|decoration|from|via|to)-(?:red|amber|yellow|green|emerald|teal|cyan|sky|blue|purple|violet)-\d+(?:\/\d+)?(?![A-Za-z0-9_/-])/;
 const aliasDefinition = /(?<![A-Za-z0-9_-])--(?:danger|warning)\s*:/;
 const aliasUse = /var\(\s*--(?:danger|warning)\s*(?:,|\))/;
 const whiteForegroundClass = /(?<![A-Za-z0-9_-])text-white(?:\/\d+)?(?![A-Za-z0-9_/-])/;
 const gradientEffect = /(?:repeating-)?(?:linear|radial|conic)-gradient\s*\(|(?<![A-Za-z0-9_-])bg-(?:gradient|linear|radial|conic)(?:-[A-Za-z0-9_[\]./%-]+)?(?![A-Za-z0-9_-])/;
-const cssGlow = /(?:box-shadow|text-shadow)\s*:\s*(?:inset\s+)?0(?:px|rem|em)?\s+0(?:px|rem|em)?(?=\s|[,;])/;
-const arbitraryGlow = /(?<![A-Za-z0-9_-])(?:text-)?shadow-\[(?:inset_)?0(?:px|rem|em)?_0(?:px|rem|em)?(?:_|\])/;
+const cssGlow = /(?:box-shadow|text-shadow)\s*:\s*(?:inset\s+)?(?:#[0-9a-f]{3,8}\s+)?0(?:px|rem|em)?\s+0(?:px|rem|em)?(?=\s|[,;])/i;
+const arbitraryGlow = /(?<![A-Za-z0-9_-])(?:text-)?shadow-\[(?:inset_)?(?:#[0-9a-f]{3,8}_)?0(?:px|rem|em)?_0(?:px|rem|em)?(?:_|\])/i;
 const spinningAnimation = /(?<![A-Za-z0-9_-])animate-spin(?![A-Za-z0-9_-])/;
 const transformTransition = /(?<![A-Za-z0-9_-])transition-transform(?![A-Za-z0-9_-])/;
 const scaleOrRotate = /(?<![A-Za-z0-9_-])-?(?:scale(?:-[xy])?|rotate(?:-[xyz])?)-(?:\[[^\]]+\]|\d+(?:\.\d+)?(?:\/\d+)?)(?![A-Za-z0-9_-])/;
-const interactiveTranslate = /(?<![A-Za-z0-9_-])(?:hover|focus(?:-visible)?|active|data-\[[^\]]+\]|aria-\[[^\]]+\]|group-[^:\s"'`]+|peer-[^:\s"'`]+):-?translate-[xy]-(?:\[[^\]]+\]|\d+(?:\.\d+)?(?:\/\d+)?|full|px)(?![A-Za-z0-9_-])/;
+const cssScaleOrRotate = /transform\s*:[^;}\n]*(?:rotate|scale)\s*\(|(?<![A-Za-z0-9_-])(?:rotate|scale)\s*:/;
+const interactiveTranslate = /(?<![A-Za-z0-9_-])(?:hover|focus(?:-visible)?|active|data-\[[^\]]+\]|aria-\[[^\]]+\]|group-[^:\s"'`]+|peer-[^:\s"'`]+|\[[^\]]*:(?:hover|focus(?:-visible)?|active)[^\]]*\]):-?translate-[xy]-(?:\[[^\]]+\]|\d+(?:\.\d+)?(?:\/\d+)?|full|px)(?![A-Za-z0-9_-])/;
 const largeRadiusClass = /(?<![A-Za-z0-9_-])rounded(?:-[trblse]{1,2})?-(?:xl|2xl|3xl|full)(?![A-Za-z0-9_-])/;
-const arbitraryRadiusClass = /(?<![A-Za-z0-9_-])rounded(?:-[trblse]{1,2})?-\[\s*(\d*\.?\d+)(px|rem)\s*\](?![A-Za-z0-9_-])/g;
+const arbitraryRadiusClass = /(?<![A-Za-z0-9_-])rounded(?:-[trblse]{1,2})?-\[([^\]]+)\](?![A-Za-z0-9_-])/g;
+const approvedArbitraryRadius = /^(\d*\.?\d+)(px|rem)$/;
 const negativeTracking = /(?<![A-Za-z0-9_-])tracking-(?:tight|tighter)(?![A-Za-z0-9_-])|(?<![A-Za-z0-9_-])tracking-\[\s*-|letter-spacing\s*:\s*-/;
 
 function hasProhibitedRadius(content) {
   if (largeRadiusClass.test(content)) return true;
   return [...content.matchAll(arbitraryRadiusClass)].some((match) => {
-    const value = Number.parseFloat(match[1]);
-    const pixels = match[2] === 'rem' ? value * 16 : value;
+    const approved = match[1].trim().match(approvedArbitraryRadius);
+    if (!approved) return true;
+    const value = Number.parseFloat(approved[1]);
+    const pixels = approved[2] === 'rem' ? value * 16 : value;
     return pixels > 6;
   });
 }
@@ -45,6 +49,7 @@ const sourceRules = [
   ['prohibited motion', (content) => spinningAnimation.test(content)
     || transformTransition.test(content)
     || scaleOrRotate.test(content)
+    || cssScaleOrRotate.test(content)
     || interactiveTranslate.test(content)],
   ['negative tracking', (content) => negativeTracking.test(content)],
 ];
@@ -308,19 +313,22 @@ test('uses carbon compare headers while keeping recoverable compare actions neut
   assert.doesNotMatch(clearAction, /--(?:danger|signal)|(?:bg|border|text|ring|fill)-(?:red|amber|orange|signal)|\b(?:amber|orange|signal)\b|text-white/);
 });
 
-test('source scanner collects existing JavaScript source modules', () => {
+test('source scanner collects existing JavaScript modules and recognizes MDX source', () => {
   const sourceRoot = fileURLToPath(new URL('../src/', import.meta.url));
   const modules = collectSourceFiles(sourceRoot)
     .filter((file) => file.endsWith('.mjs'))
     .map((file) => path.basename(file))
     .sort();
 
-  assert.deepEqual(modules, [
+  for (const knownModule of [
     'compare-selection.mjs',
     'search-suggestions.mjs',
     'tool-decision.mjs',
     'tools-query-state.mjs',
-  ]);
+  ]) {
+    assert.ok(modules.includes(knownModule), knownModule);
+  }
+  assert.equal(sourceExtension.test('content.mdx'), true);
 });
 
 test('source scanner rejects reviewed palette, effect, motion, radius, and tracking escapes', async (t) => {
@@ -340,18 +348,32 @@ test('source scanner rejects reviewed palette, effect, motion, radius, and track
     ['box shadow glow', 'box-shadow: 0 0 12px rgb(0 0 0 / 20%);'],
     ['text shadow glow', 'text-shadow: 0px 0rem 4px #000;'],
     ['arbitrary Tailwind glow', 'shadow-[0_0_12px_rgba(0,0,0,0.2)]'],
+    ['color-first box shadow glow', 'box-shadow: #fff 0 0 12px;'],
+    ['color-first text shadow glow', 'text-shadow: #fff 0 0 12px;'],
+    ['color-first arbitrary Tailwind glow', 'shadow-[#fff_0_0_12px]'],
+    ['color-first arbitrary Tailwind text glow', 'text-shadow-[#fff_0_0_12px]'],
     ['unprefixed scale utility', 'scale-95'],
     ['responsive scale utility', 'md:scale-x-105'],
     ['group rotate utility', 'group-hover:-rotate-3'],
     ['data scale utility', 'data-[state=open]:scale-100'],
+    ['CSS transform rotate function', 'transform: rotate(3deg);'],
+    ['CSS transform scale function', 'transform: scale(1.05);'],
+    ['standalone CSS rotate property', 'rotate: 3deg;'],
+    ['standalone CSS scale property', 'scale: 1.05;'],
     ['active translate utility', 'active:translate-x-1'],
     ['focus translate utility', 'focus:-translate-y-1'],
     ['group data translate utility', 'group-data-[state=open]:translate-x-1'],
+    ['arbitrary hover translate utility', '[&:hover]:translate-x-1'],
     ['large radius utility', 'rounded-xl'],
     ['directional large radius utility', 'md:rounded-t-2xl'],
     ['full radius utility', 'rounded-full'],
     ['arbitrary pixel radius above limit', 'rounded-[7px]'],
     ['arbitrary rem radius above limit', 'rounded-[0.5rem]'],
+    ['percentage arbitrary radius', 'rounded-[50%]'],
+    ['em arbitrary radius', 'rounded-[1em]'],
+    ['point arbitrary radius', 'rounded-[8pt]'],
+    ['calculated arbitrary radius', 'rounded-[calc(6px+1px)]'],
+    ['variable arbitrary radius', 'rounded-[var(--large-radius)]'],
     ['tight tracking utility', 'tracking-tight'],
     ['tighter tracking utility', 'sm:tracking-tighter'],
     ['negative arbitrary tracking', 'tracking-[-0.01em]'],
