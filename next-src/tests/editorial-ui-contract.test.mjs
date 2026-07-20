@@ -156,11 +156,13 @@ const inertComponentMocks = {
   'react/jsx-runtime': { jsx: () => null, jsxs: () => null, Fragment: Symbol('Fragment') },
 };
 
-test('uses the neutral editorial color system without animated grid decoration', () => {
+test('uses the carbon console color system without animated grid decoration', () => {
   const css = read('src/app/globals.css');
 
-  assert.match(css, /--page:\s*#f6f7f4/i);
-  assert.match(css, /--accent:\s*#176b4d/i);
+  assert.match(css, /--page:\s*#f3f6f8/i);
+  assert.match(css, /--accent:\s*#007e99/i);
+  assert.match(css, /\.dark[\s\S]*--page:\s*#080b0e/i);
+  assert.match(css, /\.dark[\s\S]*--accent:\s*#46d9f2/i);
   assert.doesNotMatch(css, /gridMove|repeating-linear-gradient|--neon-purple/i);
 });
 
@@ -169,7 +171,8 @@ test('ships a light default viewport and quiet directory navigation', () => {
   const navbar = read('src/components/layout/Navbar.tsx');
   const footer = read('src/components/layout/Footer.tsx');
 
-  assert.match(layout, /themeColor:\s*'#f6f7f4'/);
+  assert.match(layout, /media: '\(prefers-color-scheme: light\)', color: '#F3F6F8'/);
+  assert.match(layout, /media: '\(prefers-color-scheme: dark\)', color: '#080B0E'/);
   assert.doesNotMatch(layout, /className="dark"|bg-gray-950|text-white/);
   assert.match(navbar, /label: '工具'/);
   assert.match(navbar, /label: '场景'/);

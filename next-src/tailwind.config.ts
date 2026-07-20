@@ -12,6 +12,18 @@ const config: Config = {
         background: "var(--background)",
         foreground: "var(--foreground)",
       },
+      borderRadius: {
+        DEFAULT: 'var(--radius-sm)',
+        sm: 'var(--radius-sm)',
+        md: 'var(--radius)',
+        lg: 'var(--radius)',
+      },
+      transitionDuration: {
+        DEFAULT: '140ms',
+      },
+      transitionTimingFunction: {
+        DEFAULT: 'ease-out',
+      },
     },
   },
   plugins: [],
