@@ -161,7 +161,7 @@ export function SearchBar({ value: controlledValue, placeholder = '搜索工具�
           'relative flex items-center rounded-lg border bg-[var(--surface)] transition-colors',
           compact ? 'h-11' : 'h-14',
           focused
-            ? 'border-[var(--accent)] outline outline-2 outline-offset-2 outline-[var(--accent)]'
+            ? 'border-[var(--accent)] [outline-style:solid] outline-2 outline-offset-2 outline-[var(--accent)]'
             : 'border-[var(--line-strong)] hover:border-[var(--muted-subtle)]'
         )}
       >

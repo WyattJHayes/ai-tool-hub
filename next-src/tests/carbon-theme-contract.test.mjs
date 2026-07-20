@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import ts from 'typescript';
+import { twMerge } from 'tailwind-merge';
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const readRepo = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
@@ -724,8 +725,46 @@ test('uses precision navigation rails and outline-only search focus', () => {
   assert.match(bottomNav, /data-orientation="mobile"/);
   assert.match(bottomNav, /data-active=\{active \? 'true' : undefined\}/);
   assert.match(search, /data-search-shell/);
-  assert.match(search, /outline outline-2 outline-offset-2 outline-\[var\(--accent\)\]/);
+  assert.match(search, /\[outline-style:solid\] outline-2 outline-offset-2 outline-\[var\(--accent\)\]/);
   assert.doesNotMatch(search, /ring-2 ring-\[var\(--accent-soft\)\]/);
+});
+
+test('preserves the explicit search outline style after Tailwind class merging', () => {
+  const search = read('src/components/hero/SearchBar.tsx');
+  const focusedClass = search.match(/focused\s*\?\s*'([^']+)'/)?.[1];
+  assert.ok(focusedClass, 'missing focused SearchBar class');
+
+  const mergedFocusedClass = twMerge(focusedClass);
+  const mergedTokens = new Set(mergedFocusedClass.split(/\s+/));
+  for (const token of [
+    '[outline-style:solid]',
+    'outline-2',
+    'outline-offset-2',
+    'outline-[var(--accent)]',
+  ]) assert.ok(mergedTokens.has(token), `${token} did not survive twMerge: ${mergedFocusedClass}`);
+});
+
+test('task-first guard toggles away from and restores the current theme in both paths', () => {
+  const guard = readRepo('scripts/task-first-ui-guard.mjs');
+  const section = (start, end) => {
+    const startIndex = guard.indexOf(start);
+    const endIndex = guard.indexOf(end, startIndex + start.length);
+    assert.ok(startIndex >= 0, `missing ${start}`);
+    assert.ok(endIndex > startIndex, `missing ${end} after ${start}`);
+    return guard.slice(startIndex, endIndex);
+  };
+  const helper = section('async function assertThemeToggle', 'async function runFlow');
+  const keyboardPath = section('async function assertKeyboardAndTheme', 'async function assertCompareLimit');
+  const responsivePath = section('async function assertResponsiveGeometry', 'async function main');
+
+  assert.match(helper, /const initiallyDark = await page\.locator\('html\.dark'\)\.count\(\) === 1/);
+  assert.match(helper, /initiallyDark \? '切换到亮色主题' : '切换到暗色主题'/);
+  assert.match(helper, /initiallyDark \? '切换到暗色主题' : '切换到亮色主题'/);
+  assert.match(helper, /toggledDark === initiallyDark/);
+  assert.match(helper, /restoredDark !== initiallyDark/);
+  assert.match(keyboardPath, /await assertThemeToggle\(page,/);
+  assert.match(responsivePath, /await assertThemeToggle\(page,/);
+  assert.equal((guard.match(/await assertThemeToggle\(page,/g) || []).length, 2);
 });
 
 test('uses stable selected rails and a scoped carbon compare tray', () => {

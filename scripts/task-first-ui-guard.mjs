@@ -100,6 +100,20 @@ async function assertControlRowGeometry(page, label) {
   }
 }
 
+async function assertThemeToggle(page, label) {
+  const initiallyDark = await page.locator('html.dark').count() === 1;
+  const toggleName = initiallyDark ? '切换到亮色主题' : '切换到暗色主题';
+  const restoreName = initiallyDark ? '切换到暗色主题' : '切换到亮色主题';
+
+  await page.getByRole('button', { name: toggleName }).click();
+  const toggledDark = await page.locator('html.dark').count() === 1;
+  if (toggledDark === initiallyDark) fail(`${label}: theme did not change`);
+
+  await page.getByRole('button', { name: restoreName }).click();
+  const restoredDark = await page.locator('html.dark').count() === 1;
+  if (restoredDark !== initiallyDark) fail(`${label}: theme was not restored`);
+}
+
 async function runFlow(page) {
   await page.goto(`${baseUrl}/`, { waitUntil: 'networkidle' });
   await page.getByRole('link', { name: /做调研/ }).click();
@@ -138,9 +152,7 @@ async function assertKeyboardAndTheme(page) {
   await page.keyboard.press('Tab');
   const focusTag = await page.evaluate(() => document.activeElement?.tagName || '');
   if (!['A', 'BUTTON', 'INPUT', 'SELECT'].includes(focusTag)) fail(`keyboard: unexpected focus target ${focusTag}`);
-  await page.getByRole('button', { name: '切换到暗色主题' }).click();
-  if (!await page.locator('html.dark').count()) fail('theme: dark class was not applied');
-  await page.getByRole('button', { name: '切换到亮色主题' }).click();
+  await assertThemeToggle(page, 'keyboard theme');
 }
 
 async function assertCompareLimit(browser) {
@@ -463,10 +475,7 @@ async function assertResponsiveGeometry(browser) {
         if (await page.getByRole('dialog').isVisible()) fail(`${viewportLabel}: filter drawer did not close with Escape`);
         if (!await filterButton.evaluate((element) => document.activeElement === element)) fail(`${viewportLabel}: filter drawer did not restore keyboard focus`);
       }
-      await page.getByRole('button', { name: '切换到暗色主题' }).click();
-      if (!await page.locator('html.dark').count()) fail(`${viewportLabel}: dark theme missing`);
-      await page.getByRole('button', { name: '切换到亮色主题' }).click();
-      if (await page.locator('html.dark').count()) fail(`${viewportLabel}: light theme was not restored`);
+      await assertThemeToggle(page, `${viewportLabel} theme`);
     });
   }
 }
