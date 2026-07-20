@@ -5,7 +5,22 @@ import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
 
 const baseUrl = process.env.CARBON_THEME_URL || 'http://127.0.0.1:3101';
-const qaDir = process.env.CARBON_QA_DIR || '/tmp/carbon-console-qa';
+
+function validateQaDir(candidate) {
+  const tmpRoot = path.resolve('/tmp');
+  const resolved = path.resolve(candidate);
+  const relative = path.relative(tmpRoot, resolved);
+  const isDescendant = relative !== ''
+    && relative !== '..'
+    && !relative.startsWith(`..${path.sep}`)
+    && !path.isAbsolute(relative);
+  if (!isDescendant) {
+    throw new Error(`CARBON_QA_DIR must resolve to a non-root descendant of /tmp/: ${candidate}`);
+  }
+  return resolved;
+}
+
+const qaDir = validateQaDir(process.env.CARBON_QA_DIR || '/tmp/carbon-console-qa');
 const failures = [];
 const fail = (message) => failures.push(message);
 const intendedTools = ['Perplexity AI', '秘塔AI搜索'];

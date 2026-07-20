@@ -522,6 +522,42 @@ test('contains no legacy palette, raw status colors, or prohibited motion in app
   }
 });
 
+test('validates the QA directory before any recursive removal or evidence work', () => {
+  const guard = readRepo('scripts/carbon-theme-ui-guard.mjs');
+  const validatorMatch = guard.match(/function validateQaDir\(candidate\) \{([\s\S]*?)\n\}/);
+  assert.ok(validatorMatch, 'missing pure validateQaDir helper');
+
+  const validateQaDir = new Function('path', `'use strict'; ${validatorMatch[0]}; return validateQaDir;`)(path);
+  assert.equal(validateQaDir('/tmp/carbon-console-qa'), '/tmp/carbon-console-qa');
+  assert.equal(validateQaDir('/tmp/nested/../carbon-console-qa'), '/tmp/carbon-console-qa');
+  for (const rejected of [
+    '.',
+    fileURLToPath(new URL('../', import.meta.url)),
+    fileURLToPath(new URL('../../', import.meta.url)),
+    '/',
+    '/tmp',
+    '/tmp/..',
+    '/tmp/../outside',
+    '/tmp-sibling',
+  ]) {
+    assert.throws(() => validateQaDir(rejected), /CARBON_QA_DIR.*\/tmp\//, rejected);
+  }
+
+  const validation = "const qaDir = validateQaDir(process.env.CARBON_QA_DIR || '/tmp/carbon-console-qa');";
+  const validationIndex = guard.indexOf(validation);
+  const mainIndex = guard.indexOf('async function main()');
+  const removeIndex = guard.indexOf('await rm(qaDir, { recursive: true, force: true })');
+  const mkdirIndex = guard.indexOf('await mkdir(qaDir, { recursive: true })');
+  const captureIndex = guard.indexOf('await captureScenario(browser, viewport, scenario, theme)');
+  const composeIndex = guard.indexOf('await composeEvidence(sharp)');
+  const auditIndex = guard.indexOf('await auditEvidence(sharp)');
+  assert.ok(validationIndex >= 0, 'QA directory is not assigned from the validator');
+  assert.equal([...guard.matchAll(/process\.env\.CARBON_QA_DIR/g)].length, 1, 'raw QA env must be read exactly once');
+  assert.ok(validationIndex < mainIndex, 'validation must happen before main');
+  assert.ok(mainIndex < removeIndex && removeIndex < mkdirIndex, 'validation/main/removal/mkdir order is unsafe');
+  assert.ok(mkdirIndex < captureIndex && captureIndex < composeIndex && composeIndex < auditIndex, 'QA work is out of order');
+});
+
 test('wires the complete carbon route, state, geometry, focus, and evidence guard into CI', () => {
   const guard = readRepo('scripts/carbon-theme-ui-guard.mjs');
   const workflow = readRepo('.github/workflows/deploy.yml');
