@@ -1,26 +1,12 @@
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, rm } from 'node:fs/promises';
+import { readFile, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
+import { prepareQaDir } from './carbon-qa-path.mjs';
 
 const baseUrl = process.env.CARBON_THEME_URL || 'http://127.0.0.1:3101';
 
-function validateQaDir(candidate) {
-  const tmpRoot = path.resolve('/tmp');
-  const resolved = path.resolve(candidate);
-  const relative = path.relative(tmpRoot, resolved);
-  const isDescendant = relative !== ''
-    && relative !== '..'
-    && !relative.startsWith(`..${path.sep}`)
-    && !path.isAbsolute(relative);
-  if (!isDescendant) {
-    throw new Error(`CARBON_QA_DIR must resolve to a non-root descendant of /tmp/: ${candidate}`);
-  }
-  return resolved;
-}
-
-const qaDir = validateQaDir(process.env.CARBON_QA_DIR || '/tmp/carbon-console-qa');
 const failures = [];
 const fail = (message) => failures.push(message);
 const intendedTools = ['Perplexity AI', '秘塔AI搜索'];
@@ -92,6 +78,16 @@ const capturePlan = buildCapturePlan();
 if (capturePlan.length !== 50) throw new Error(`carbon capture plan is ${capturePlan.length}, expected 50`);
 const screenshotName = ({ viewport, scenario, theme }) => `${viewport.width}x${viewport.height}-${theme}-${scenario.name}.png`;
 const expectedScreenshotNames = capturePlan.map(screenshotName).sort();
+const knownGeneratedNames = [
+  ...expectedScreenshotNames,
+  ...evidencePairs.map((pair) => pair[2]),
+];
+
+async function cleanupGeneratedEvidence(qaDir) {
+  for (const name of knownGeneratedNames) {
+    await rm(path.join(qaDir, name), { force: true });
+  }
+}
 
 async function requireCount(locator, expected, label) {
   const count = await locator.count();
@@ -620,7 +616,7 @@ async function prepareScreenshot(page) {
   await page.evaluate(() => document.documentElement.style.removeProperty('scroll-behavior'));
 }
 
-async function captureScenario(browser, viewport, scenario, theme) {
+async function captureScenario(browser, viewport, scenario, theme, qaDir) {
   const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height } });
   const page = await context.newPage();
   const label = `${viewport.width}x${viewport.height} ${theme} ${scenario.name}`;
@@ -663,7 +659,7 @@ async function loadSharp() {
   return (await import(pathToFileURL(process.env.CARBON_QA_SHARP).href)).default;
 }
 
-async function composeEvidence(sharp) {
+async function composeEvidence(sharp, qaDir) {
   if (!sharp) return;
   const referenceRoot = path.resolve('.superpowers/visual-references/task-first');
   for (const [referenceName, actualName, outputName] of evidencePairs) {
@@ -692,7 +688,7 @@ async function readPngDimensions(file) {
   return { width: data.readUInt32BE(16), height: data.readUInt32BE(20) };
 }
 
-async function auditEvidence(sharp) {
+async function auditEvidence(sharp, qaDir) {
   const expectedCompositeNames = sharp ? evidencePairs.map((pair) => pair[2]).sort() : [];
   const expectedNames = [...expectedScreenshotNames, ...expectedCompositeNames].sort();
   const actualNames = (await readdir(qaDir)).filter((name) => name.endsWith('.png')).sort();
@@ -726,22 +722,22 @@ async function auditEvidence(sharp) {
 }
 
 async function main() {
-  await rm(qaDir, { recursive: true, force: true });
-  await mkdir(qaDir, { recursive: true });
+  const qaDir = await prepareQaDir(process.env.CARBON_QA_DIR || '/tmp/carbon-console-qa');
+  await cleanupGeneratedEvidence(qaDir);
   const sharp = await loadSharp();
   const browser = await chromium.launch();
   try {
     for (let index = 0; index < capturePlan.length; index += 1) {
       const { viewport, scenario, theme } = capturePlan[index];
       console.log(`[carbon ${index + 1}/${capturePlan.length}] ${viewport.width}x${viewport.height} ${theme} ${scenario.name}`);
-      await captureScenario(browser, viewport, scenario, theme);
+      await captureScenario(browser, viewport, scenario, theme, qaDir);
     }
   } finally {
     await browser.close();
   }
   try {
-    await composeEvidence(sharp);
-    await auditEvidence(sharp);
+    await composeEvidence(sharp, qaDir);
+    await auditEvidence(sharp, qaDir);
   } catch (error) {
     fail(`evidence audit: ${error.message}`);
   }

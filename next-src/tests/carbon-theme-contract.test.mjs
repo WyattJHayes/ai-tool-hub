@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -522,12 +523,10 @@ test('contains no legacy palette, raw status colors, or prohibited motion in app
   }
 });
 
-test('validates the QA directory before any recursive removal or evidence work', () => {
-  const guard = readRepo('scripts/carbon-theme-ui-guard.mjs');
-  const validatorMatch = guard.match(/function validateQaDir\(candidate\) \{([\s\S]*?)\n\}/);
-  assert.ok(validatorMatch, 'missing pure validateQaDir helper');
-
-  const validateQaDir = new Function('path', `'use strict'; ${validatorMatch[0]}; return validateQaDir;`)(path);
+test('prepares the QA directory without following existing path escapes', async () => {
+  const helperUrl = new URL('../../scripts/carbon-qa-path.mjs', import.meta.url);
+  assert.equal(existsSync(helperUrl), true, 'missing executable QA path preparation helper');
+  const { prepareQaDir, validateQaDir } = await import(helperUrl.href);
   assert.equal(validateQaDir('/tmp/carbon-console-qa'), '/tmp/carbon-console-qa');
   assert.equal(validateQaDir('/tmp/nested/../carbon-console-qa'), '/tmp/carbon-console-qa');
   for (const rejected of [
@@ -542,20 +541,55 @@ test('validates the QA directory before any recursive removal or evidence work',
   ]) {
     assert.throws(() => validateQaDir(rejected), /CARBON_QA_DIR.*\/tmp\//, rejected);
   }
+  const callerRoot = await mkdtemp('/tmp/carbon-qa-caller-');
+  const externalRoot = await mkdtemp('/tmp/carbon-qa-external-');
+  const externalEvidence = path.join(externalRoot, 'evidence');
+  const sentinel = path.join(externalEvidence, 'sentinel.txt');
 
-  const validation = "const qaDir = validateQaDir(process.env.CARBON_QA_DIR || '/tmp/carbon-console-qa');";
-  const validationIndex = guard.indexOf(validation);
+  try {
+    await mkdir(externalEvidence);
+    await writeFile(sentinel, 'must survive');
+    await symlink(externalRoot, path.join(callerRoot, 'linked'), 'dir');
+
+    await assert.rejects(
+      prepareQaDir(path.join(callerRoot, 'linked', 'evidence')),
+      /symbolic link/i,
+    );
+    assert.equal(await readFile(sentinel, 'utf8'), 'must survive');
+
+    const fileAncestor = path.join(callerRoot, 'not-a-directory');
+    await writeFile(fileAncestor, 'file');
+    await assert.rejects(
+      prepareQaDir(path.join(fileAncestor, 'evidence')),
+      /not a directory/i,
+    );
+
+    const safeCandidate = path.join(callerRoot, 'fresh', 'evidence');
+    assert.equal(await prepareQaDir(safeCandidate), safeCandidate);
+    assert.equal(statSync(safeCandidate).isDirectory(), true);
+    await assert.rejects(prepareQaDir('/tmp'), /non-root descendant/i);
+  } finally {
+    await rm(callerRoot, { recursive: true, force: true });
+    await rm(externalRoot, { recursive: true, force: true });
+  }
+});
+
+test('prepares the QA directory before known-entry cleanup or evidence work', () => {
+  const guard = readRepo('scripts/carbon-theme-ui-guard.mjs');
+  const preparation = "const qaDir = await prepareQaDir(process.env.CARBON_QA_DIR || '/tmp/carbon-console-qa');";
+  const preparationIndex = guard.indexOf(preparation);
   const mainIndex = guard.indexOf('async function main()');
-  const removeIndex = guard.indexOf('await rm(qaDir, { recursive: true, force: true })');
-  const mkdirIndex = guard.indexOf('await mkdir(qaDir, { recursive: true })');
-  const captureIndex = guard.indexOf('await captureScenario(browser, viewport, scenario, theme)');
-  const composeIndex = guard.indexOf('await composeEvidence(sharp)');
-  const auditIndex = guard.indexOf('await auditEvidence(sharp)');
-  assert.ok(validationIndex >= 0, 'QA directory is not assigned from the validator');
+  const cleanupIndex = guard.indexOf('await cleanupGeneratedEvidence(qaDir)');
+  const captureIndex = guard.indexOf('await captureScenario(browser, viewport, scenario, theme, qaDir)');
+  const composeIndex = guard.indexOf('await composeEvidence(sharp, qaDir)');
+  const auditIndex = guard.indexOf('await auditEvidence(sharp, qaDir)');
+  assert.match(guard, /import \{ prepareQaDir \} from '\.\/carbon-qa-path\.mjs'/);
+  assert.ok(preparationIndex >= 0, 'QA directory is not assigned from the preparation helper');
   assert.equal([...guard.matchAll(/process\.env\.CARBON_QA_DIR/g)].length, 1, 'raw QA env must be read exactly once');
-  assert.ok(validationIndex < mainIndex, 'validation must happen before main');
-  assert.ok(mainIndex < removeIndex && removeIndex < mkdirIndex, 'validation/main/removal/mkdir order is unsafe');
-  assert.ok(mkdirIndex < captureIndex && captureIndex < composeIndex && composeIndex < auditIndex, 'QA work is out of order');
+  assert.ok(mainIndex < preparationIndex && preparationIndex < cleanupIndex, 'main/preparation/cleanup order is unsafe');
+  assert.ok(cleanupIndex < captureIndex && captureIndex < composeIndex && composeIndex < auditIndex, 'QA work is out of order');
+  assert.doesNotMatch(guard, /rm\(qaDir,\s*\{\s*recursive:\s*true/);
+  assert.doesNotMatch(guard, /mkdir\(qaDir,\s*\{\s*recursive:\s*true/);
 });
 
 test('wires the complete carbon route, state, geometry, focus, and evidence guard into CI', () => {
@@ -636,9 +670,11 @@ test('wires the complete carbon route, state, geometry, focus, and evidence guar
   assert.match(functionBody('assertOutline'), /outlineStyle/);
   assert.match(functionBody('assertOutline'), /outlineWidth/);
 
-  assert.match(main, /await rm\(qaDir, \{ recursive: true, force: true \}\)/);
-  assert.match(main, /await composeEvidence\(sharp\)/);
-  assert.match(main, /await auditEvidence\(sharp\)/);
+  assert.match(main, /await prepareQaDir\(/);
+  assert.match(main, /await cleanupGeneratedEvidence\(qaDir\)/);
+  assert.doesNotMatch(main, /recursive:\s*true/);
+  assert.match(main, /await composeEvidence\(sharp, qaDir\)/);
+  assert.match(main, /await auditEvidence\(sharp, qaDir\)/);
   assert.match(functionBody('auditEvidence'), /expectedScreenshotNames/);
   assert.match(functionBody('auditEvidence'), /metadata\(\)/);
   assert.match(functionBody('composeEvidence'), /throw new Error|fail\(/);
