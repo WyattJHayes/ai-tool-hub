@@ -343,22 +343,43 @@ async function assertInstrumentConsole(page, scenario, theme, label) {
   const tasksSection = page.locator('[data-instrument-section="tasks"]');
   const marker = await tasksSection.evaluate((element) => {
     const style = getComputedStyle(element, '::before');
-    return { background: style.backgroundColor, height: style.height, width: style.width };
+    return {
+      content: style.content,
+      display: style.display,
+      height: style.height,
+      visibility: style.visibility,
+      width: style.width,
+    };
   });
+  const markerVisible = !['none', 'normal'].includes(marker.content)
+    && marker.display !== 'none'
+    && marker.visibility === 'visible'
+    && Number.parseFloat(marker.width) > 0
+    && Number.parseFloat(marker.height) > 0;
   if (width >= 768) {
-    if (marker.width !== '20px' || marker.height !== '1px') fail(`${label}: marker geometry ${JSON.stringify(marker)}`);
-  } else if (marker.width === '20px') {
+    if (!markerVisible || marker.width !== '20px' || marker.height !== '1px') {
+      fail(`${label}: marker geometry ${JSON.stringify(marker)}`);
+    }
+  } else if (markerVisible) {
     fail(`${label}: desktop marker is visible on mobile`);
   }
 
   const search = page.getByRole('combobox', { name: '搜索工具、任务或能力' });
   await search.focus();
-  await page.waitForFunction(() => getComputedStyle(document.querySelector('[data-search-shell]')).outlineWidth === '2px');
+  await page.waitForFunction((label) => document.activeElement?.getAttribute('aria-label') === label, '搜索工具、任务或能力');
   const searchOutline = await page.locator('[data-search-shell]').evaluate((element) => {
     const style = getComputedStyle(element);
-    return { color: style.outlineColor, offset: style.outlineOffset, width: style.outlineWidth };
+    return {
+      color: style.outlineColor,
+      offset: style.outlineOffset,
+      outlineStyle: style.outlineStyle,
+      width: style.outlineWidth,
+    };
   });
-  if (searchOutline.color !== themes[theme].focus || searchOutline.offset !== '2px' || searchOutline.width !== '2px') {
+  if (searchOutline.outlineStyle !== 'solid'
+    || searchOutline.color !== themes[theme].focus
+    || searchOutline.offset !== '2px'
+    || searchOutline.width !== '2px') {
     fail(`${label}: search outline ${JSON.stringify(searchOutline)}`);
   }
 

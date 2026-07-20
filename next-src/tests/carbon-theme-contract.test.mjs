@@ -1137,9 +1137,14 @@ test('wires the complete carbon route, state, geometry, focus, and evidence guar
   assert.match(functionBody('assertOutline'), /outlineWidth/);
   assert.match(capture, /await assertInstrumentConsole\(/);
   assert.match(main, /await assertInitialTheme\(browser\)/);
-  assert.match(functionBody('assertInstrumentConsole'), /gridTemplateColumns/);
-  assert.match(functionBody('assertInstrumentConsole'), /data-instrument-section/);
-  assert.match(functionBody('assertInstrumentConsole'), /data-search-shell/);
+  const instrumentConsole = functionBody('assertInstrumentConsole');
+  assert.match(instrumentConsole, /gridTemplateColumns/);
+  assert.match(instrumentConsole, /data-instrument-section/);
+  assert.match(instrumentConsole, /data-search-shell/);
+  assert.match(instrumentConsole, /content/);
+  assert.match(instrumentConsole, /display/);
+  assert.match(instrumentConsole, /visibility/);
+  assert.match(instrumentConsole, /outlineStyle/);
   assert.match(functionBody('assertInitialTheme'), /THEME_STORAGE_KEY/);
   assert.match(functionBody('assertInitialTheme'), /DEFAULT_THEME/);
   assert.match(main, /await assertAuthoritativeRatingFlow\(browser\)/);
