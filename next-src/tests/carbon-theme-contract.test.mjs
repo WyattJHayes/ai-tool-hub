@@ -221,12 +221,25 @@ test('uses a carbon detail rail and keeps ratings, favorites, and ordinary succe
 
 test('uses carbon compare headers while keeping recoverable compare actions neutral', () => {
   const compare = read('src/app/compare/page.tsx');
+  const header = compare.match(/selectedTools\.map\(\(tool\) => \(\s*(<div key=\{tool\.id\}[\s\S]*?<\/div>)\s*\)\)/)?.[1];
+  const dataCell = compare.match(/values\.map\(\(value, index\) => (<div key=\{`\$\{row\.key\}-\$\{index\}`\}[\s\S]*?<\/div>)\)\}/)?.[1];
+  const clearAction = compare.match(/<button type="button" onClick=\{clearAll\} className="([^"]*)">清除全部<\/button>/)?.[1];
 
-  assert.match(compare, /data-carbon-surface/);
-  assert.match(compare, /carbon-tool-surface/);
-  assert.match(compare, /border-\[var\(--line-strong\)\]/);
-  assert.match(compare, /text-\[var\(--on-accent\)\]/);
-  assert.match(compare, /text-\[var\(--accent-ink\)\]/);
-  assert.doesNotMatch(compare, /--danger|bg-red|border-red|text-red|text-white/);
-  assert.match(compare, /onClick=\{clearAll\}[^>]+text-\[var\(--muted\)\]/);
+  assert.ok(header, 'missing selected-tool header block');
+  assert.match(header, /<div key=\{tool\.id\} data-carbon-surface className="carbon-tool-surface[^\"]*border-\[var\(--line-strong\)\][^\"]*">/);
+  assert.match(header, /<button type="button" onClick=\{\(\) => removeTool\(tool\.id\)\} className="[^\"]*h-11 w-11[^\"]*text-\[var\(--muted\)\][^\"]*hover:bg-\[var\(--surface-subtle\)\][^\"]*"/);
+  assert.match(cssBlock('.carbon-tool-surface'), /--on-accent:\s*var\(--tool-on-accent\)/);
+  assert.doesNotMatch(header, /--danger|bg-red|border-red|text-red|text-white/);
+
+  assert.ok(dataCell, 'missing ordinary comparison data-cell block');
+  assert.match(dataCell, /bg-\[var\(--surface\)\]/);
+  assert.match(dataCell, /text-\[var\(--accent-ink\)\]/);
+  assert.doesNotMatch(dataCell, /data-carbon-surface|carbon-tool-surface/);
+
+  assert.ok(clearAction, 'missing recoverable clear action');
+  assert.match(clearAction, /min-h-11/);
+  assert.match(clearAction, /border-\[var\(--line-strong\)\]/);
+  assert.match(clearAction, /text-\[var\(--muted\)\]/);
+  assert.match(clearAction, /hover:bg-\[var\(--surface-hover\)\]/);
+  assert.doesNotMatch(clearAction, /--danger|bg-red|border-red|text-red|text-white/);
 });
