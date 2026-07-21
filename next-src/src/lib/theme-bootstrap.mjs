@@ -37,15 +37,39 @@ export function createSafeStorage(storageSource) {
 }
 
 export function resolveStoredTheme(raw, fallback) {
+  return parseStoredThemeEnvelope(raw)?.state?.theme || fallback;
+}
+
+export function parseStoredThemeEnvelope(raw) {
   try {
     const parsed = raw ? JSON.parse(raw) : null;
     const theme = parsed?.state?.theme;
-    return parsed?.version === THEME_STORAGE_VERSION && (theme === 'light' || theme === 'dark')
-      ? theme
-      : fallback;
+    return parsed?.version === THEME_STORAGE_VERSION
+      && (theme === 'light' || theme === 'dark')
+      ? parsed
+      : null;
   } catch {
-    return fallback;
+    return null;
   }
+}
+
+export function createThemeStorage(storageSource) {
+  const rawStorage = createSafeStorage(storageSource);
+  return {
+    getItem(name) {
+      return parseStoredThemeEnvelope(rawStorage.getItem(name));
+    },
+    setItem(name, value) {
+      try {
+        rawStorage.setItem(name, JSON.stringify(value));
+      } catch {
+        // Theme persistence is optional when a state cannot be serialized.
+      }
+    },
+    removeItem(name) {
+      rawStorage.removeItem(name);
+    },
+  };
 }
 
 export function synchronizeTheme(theme, documentRef = typeof document === 'undefined' ? null : document) {
@@ -63,6 +87,7 @@ export function synchronizeTheme(theme, documentRef = typeof document === 'undef
 export const THEME_BOOTSTRAP_SCRIPT = `(() => {
   const THEME_STORAGE_VERSION = ${THEME_STORAGE_VERSION};
   const createSafeStorage = ${createSafeStorage.toString()};
+  const parseStoredThemeEnvelope = ${parseStoredThemeEnvelope.toString()};
   const resolveStoredTheme = ${resolveStoredTheme.toString()};
   const synchronizeTheme = ${synchronizeTheme.toString()};
   let storageSource = null;

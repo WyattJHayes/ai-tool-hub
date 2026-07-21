@@ -773,7 +773,7 @@ test('boots dark before paint while honoring a persisted theme', async () => {
   assert.match(store, /theme:\s*DEFAULT_THEME/);
   assert.match(store, /name:\s*THEME_STORAGE_KEY/);
   assert.match(store, /version:\s*THEME_STORAGE_VERSION/);
-  assert.match(store, /storage:\s*createJSONStorage\(\(\) => createSafeStorage/);
+  assert.match(store, /storage:\s*createThemeStorage<UserStore>/);
   assert.match(store, /synchronizeTheme\(newTheme\)/);
   assert.match(store, /synchronizeTheme\(state\.theme\)/);
   assert.match(layout, /id="theme-bootstrap"/);
@@ -800,6 +800,20 @@ test('executes persisted user theme synchronization through Zustand storage', as
     assert.equal(document.documentElement.style.colorScheme, 'light');
     assert.equal(document.meta.content, '#F3F6F8');
   });
+
+  for (const raw of [
+    JSON.stringify({ state: { theme: 'light' } }),
+    JSON.stringify({ state: { theme: 'green' }, version: 0 }),
+  ]) {
+    await withUserStoreEnvironment({ raw }, async ({ document }) => {
+      const useUserStore = await loadUserStore();
+      await useUserStore.persist.rehydrate();
+      assert.equal(useUserStore.getState().theme, 'dark');
+      assert.equal(document.documentElement.classList.contains('dark'), true);
+      assert.equal(document.documentElement.style.colorScheme, 'dark');
+      assert.equal(document.meta.content, '#080B0E');
+    });
+  }
 });
 
 test('uses contrast-safe chrome, primary actions, active rails, and control borders', () => {

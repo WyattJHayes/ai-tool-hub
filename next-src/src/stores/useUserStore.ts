@@ -1,9 +1,9 @@
 import { create } from 'zustand';
-import { createJSONStorage, persist } from 'zustand/middleware';
+import { persist } from 'zustand/middleware';
 import { toggleFavoriteAPI, submitRating } from '@/lib/api';
 import { isRatingAggregate, type RatingAggregate } from '@/lib/ratings';
 import {
-  createSafeStorage,
+  createThemeStorage,
   DEFAULT_THEME,
   synchronizeTheme,
   THEME_STORAGE_KEY,
@@ -93,7 +93,7 @@ export const useUserStore = create<UserStore>()(
     }),
     {
       name: THEME_STORAGE_KEY,
-      storage: createJSONStorage(() => createSafeStorage(() => window.localStorage)),
+      storage: createThemeStorage<UserStore>(() => window.localStorage),
       version: THEME_STORAGE_VERSION,
       // D-06: Add localStorage capacity monitoring
       onRehydrateStorage: () => {
