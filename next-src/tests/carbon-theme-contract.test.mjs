@@ -690,6 +690,7 @@ test('maps browser metadata, radii, and default motion to the approved system', 
   assert.match(layout, /themeColor:\s*'#080B0E'/);
   assert.equal(manifest.background_color, '#080B0E');
   assert.equal(manifest.theme_color, '#080B0E');
+  assert.match(tailwind, /darkMode:\s*['"]class['"]/);
   assert.match(css, /--radius:\s*6px/);
   assert.match(css, /--radius-sm:\s*4px/);
   assert.doesNotMatch(css, /border-radius:\s*8px/);
@@ -1329,6 +1330,7 @@ test('wires the complete carbon route, state, geometry, focus, and evidence guar
   assert.match(functionBody('assertOutline'), /outlineStyle/);
   assert.match(functionBody('assertOutline'), /outlineWidth/);
   assert.match(capture, /await assertInstrumentConsole\(/);
+  assert.match(capture, /context\.addInitScript\([\s\S]*THEME_STORAGE_KEY[\s\S]*THEME_STORAGE_VERSION/);
   assert.match(main, /await assertInitialTheme\(browser\)/);
   const instrumentConsole = functionBody('assertInstrumentConsole');
   assert.match(instrumentConsole, /gridTemplateColumns/);

@@ -195,6 +195,14 @@ async function assertAuthoritativeRatingFlow(browser) {
   }
 }
 
+function seedThemeStorage({ key, theme, version }) {
+  try {
+    localStorage.setItem(key, JSON.stringify({ state: { theme }, version }));
+  } catch {
+    // The script runs again after the target origin is created.
+  }
+}
+
 async function assertInitialTheme(browser) {
   const cases = [
     { name: 'new visitor', stored: null, expected: DEFAULT_THEME },
@@ -204,13 +212,11 @@ async function assertInitialTheme(browser) {
   for (const entry of cases) {
     const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
     if (entry.stored) {
-      await context.addInitScript(({ key, theme, version }) => {
-        try {
-          localStorage.setItem(key, JSON.stringify({ state: { theme }, version }));
-        } catch {
-          // The script runs again after the target origin is created.
-        }
-      }, { key: THEME_STORAGE_KEY, theme: entry.stored, version: THEME_STORAGE_VERSION });
+      await context.addInitScript(seedThemeStorage, {
+        key: THEME_STORAGE_KEY,
+        theme: entry.stored,
+        version: THEME_STORAGE_VERSION,
+      });
     }
     const page = await context.newPage();
     try {
@@ -918,6 +924,7 @@ async function prepareScreenshot(page) {
 
 async function captureScenario(browser, viewport, scenario, theme, qaDir) {
   const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height } });
+  await context.addInitScript(seedThemeStorage, { key: THEME_STORAGE_KEY, theme, version: THEME_STORAGE_VERSION });
   const page = await context.newPage();
   const label = `${viewport.width}x${viewport.height} ${theme} ${scenario.name}`;
   const consoleIssues = [];
