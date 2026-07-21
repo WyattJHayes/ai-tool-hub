@@ -2,12 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import ts from 'typescript';
 import { twMerge } from 'tailwind-merge';
 
+const runtimeRequire = createRequire(import.meta.url);
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const readRepo = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
 const css = read('src/app/globals.css');
@@ -60,6 +62,69 @@ function runThemeBootstrap(script, raw, storageError = false) {
     dark: root.classList.contains('dark'),
     requestedKey,
   };
+}
+
+async function loadUserStore() {
+  let source = read('src/stores/useUserStore.ts');
+  if (process.env.THEME_STORE_MUTATION === '1') {
+    source = source.replace('        synchronizeTheme(newTheme);', '        // mutation: omit toggle synchronization');
+  }
+  const { outputText } = ts.transpileModule(source, {
+    compilerOptions: {
+      esModuleInterop: true,
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+    },
+  });
+  const themeBootstrap = await import(new URL('../src/lib/theme-bootstrap.mjs', import.meta.url).href);
+  const module = { exports: {} };
+  const requireMock = (id) => {
+    if (id === 'zustand' || id === 'zustand/middleware') return runtimeRequire(id);
+    if (id === '@/lib/api') return { toggleFavoriteAPI: () => Promise.resolve(), submitRating: () => Promise.resolve(null) };
+    if (id === '@/lib/ratings') return { isRatingAggregate: () => false };
+    if (id === '@/lib/theme-bootstrap.mjs') return themeBootstrap;
+    throw new Error(`Unexpected user-store import: ${id}`);
+  };
+  new Function('require', 'module', 'exports', outputText)(requireMock, module, module.exports);
+  return module.exports.useUserStore;
+}
+
+function createThemeDocument() {
+  const classes = new Set(['dark']);
+  const meta = { content: '#080B0E' };
+  return {
+    documentElement: {
+      classList: {
+        contains: (name) => classes.has(name),
+        toggle: (name, enabled) => enabled ? classes.add(name) : classes.delete(name),
+      },
+      style: { colorScheme: 'dark' },
+    },
+    meta,
+    querySelectorAll: () => [meta],
+  };
+}
+
+async function withUserStoreEnvironment({ raw = null, throwOnSet = false }, run) {
+  const original = {
+    document: globalThis.document,
+    localStorage: globalThis.localStorage,
+    window: globalThis.window,
+  };
+  const document = createThemeDocument();
+  const localStorage = {
+    getItem: () => raw,
+    setItem: () => {
+      if (throwOnSet) throw new Error('quota exceeded');
+    },
+    removeItem: () => {},
+  };
+  Object.assign(globalThis, { document, localStorage, window: { localStorage } });
+  try {
+    await run({ document, localStorage });
+  } finally {
+    Object.assign(globalThis, original);
+  }
 }
 
 function hasProhibitedRadius(content) {
@@ -660,6 +725,7 @@ test('boots dark before paint while honoring a persisted theme', async () => {
   assert.equal(resolveStoredTheme(JSON.stringify({ state: { theme: 'light' }, version: 1 }), DEFAULT_THEME), 'dark');
   assert.equal(resolveStoredTheme(JSON.stringify({ state: { theme: 'light' }, version: THEME_STORAGE_VERSION }), DEFAULT_THEME), 'light');
   assert.equal(resolveStoredTheme(JSON.stringify({ state: { theme: 'dark' }, version: THEME_STORAGE_VERSION }), DEFAULT_THEME), 'dark');
+  assert.equal(resolveStoredTheme(JSON.stringify({ state: { theme: 'green' }, version: THEME_STORAGE_VERSION }), DEFAULT_THEME), 'dark');
   assert.equal(resolveStoredTheme(JSON.stringify({ state: { theme: 'green' } }), DEFAULT_THEME), 'dark');
 
   const safeStorage = createSafeStorage({
@@ -713,6 +779,27 @@ test('boots dark before paint while honoring a persisted theme', async () => {
   assert.match(layout, /id="theme-bootstrap"/);
   assert.match(layout, /dangerouslySetInnerHTML=\{\{ __html: THEME_BOOTSTRAP_SCRIPT \}\}/);
   assert.ok(layout.indexOf('id="theme-bootstrap"') < layout.indexOf('<body'));
+});
+
+test('executes persisted user theme synchronization through Zustand storage', async () => {
+  await withUserStoreEnvironment({ throwOnSet: true }, async ({ document }) => {
+    const useUserStore = await loadUserStore();
+    assert.equal(useUserStore.getState().theme, 'dark');
+    assert.doesNotThrow(() => useUserStore.getState().toggleTheme());
+    assert.equal(useUserStore.getState().theme, 'light');
+    assert.equal(document.documentElement.classList.contains('dark'), false);
+    assert.equal(document.documentElement.style.colorScheme, 'light');
+    assert.equal(document.meta.content, '#F3F6F8');
+  });
+
+  await withUserStoreEnvironment({ raw: JSON.stringify({ state: { theme: 'light' }, version: 0 }) }, async ({ document }) => {
+    const useUserStore = await loadUserStore();
+    await useUserStore.persist.rehydrate();
+    assert.equal(useUserStore.getState().theme, 'light');
+    assert.equal(document.documentElement.classList.contains('dark'), false);
+    assert.equal(document.documentElement.style.colorScheme, 'light');
+    assert.equal(document.meta.content, '#F3F6F8');
+  });
 });
 
 test('uses contrast-safe chrome, primary actions, active rails, and control borders', () => {
