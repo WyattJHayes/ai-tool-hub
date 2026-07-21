@@ -1,6 +1,5 @@
 'use client';
 
-import { useEffect } from 'react';
 import { LayoutGrid, Moon, Share2, Sun, User } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -15,11 +14,7 @@ const navItems = [
 
 export default function Navbar() {
   const pathname = usePathname();
-  const { theme, toggleTheme } = useUserStore();
-
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', theme === 'dark');
-  }, [theme]);
+  const toggleTheme = useUserStore((state) => state.toggleTheme);
 
   const handleShare = async () => {
     if (navigator.share) {
@@ -52,12 +47,14 @@ export default function Navbar() {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  'relative flex h-full items-center text-sm font-medium transition-colors duration-150',
+                  'instrument-nav-item flex h-full items-center text-sm font-medium transition-colors',
                   active ? 'text-[var(--accent-ink)]' : 'text-[var(--muted)] hover:text-[var(--ink)]'
                 )}
+                data-orientation="desktop"
+                data-active={active ? 'true' : undefined}
+                aria-current={active ? 'page' : undefined}
               >
                 {item.label}
-                {active ? <span className="absolute inset-x-0 bottom-0 h-0.5 bg-[var(--accent)]" /> : null}
               </Link>
             );
           })}
@@ -68,10 +65,12 @@ export default function Navbar() {
             type="button"
             onClick={toggleTheme}
             className="flex h-11 w-11 items-center justify-center rounded-md text-[var(--muted)] transition-colors duration-150 hover:bg-[var(--surface-subtle)] hover:text-[var(--ink)]"
-            aria-label={theme === 'dark' ? '切换到亮色主题' : '切换到暗色主题'}
-            title={theme === 'dark' ? '切换到亮色主题' : '切换到暗色主题'}
+            title="切换主题"
           >
-            {theme === 'dark' ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
+            <Moon className="h-[18px] w-[18px] dark:hidden" aria-hidden="true" />
+            <Sun className="hidden h-[18px] w-[18px] dark:block" aria-hidden="true" />
+            <span className="sr-only dark:hidden">切换到暗色主题</span>
+            <span className="sr-only hidden dark:inline">切换到亮色主题</span>
           </button>
           <button
             type="button"

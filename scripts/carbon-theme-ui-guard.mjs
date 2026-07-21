@@ -3,6 +3,7 @@ import { readFile, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
+import { DEFAULT_THEME, THEME_STORAGE_KEY, THEME_STORAGE_VERSION } from '../next-src/src/lib/theme-bootstrap.mjs';
 import { prepareQaDir } from './carbon-qa-path.mjs';
 
 const baseUrl = process.env.CARBON_THEME_URL || 'http://127.0.0.1:3101';
@@ -55,7 +56,7 @@ const viewports = [
   { width: 1280, height: 720 },
   { width: 768, height: 1024 },
   { width: 390, height: 844 },
-  { width: 320, height: 700 },
+  { width: 320, height: 844 },
 ];
 
 const evidencePairs = [
@@ -194,6 +195,51 @@ async function assertAuthoritativeRatingFlow(browser) {
   }
 }
 
+function seedThemeStorage({ key, theme, version }) {
+  try {
+    localStorage.setItem(key, JSON.stringify({ state: { theme }, version }));
+  } catch {
+    // The script runs again after the target origin is created.
+  }
+}
+
+async function assertInitialTheme(browser) {
+  const cases = [
+    { name: 'new visitor', stored: null, expected: DEFAULT_THEME },
+    { name: 'persisted light', stored: 'light', expected: 'light' },
+    { name: 'persisted dark', stored: 'dark', expected: 'dark' },
+  ];
+  for (const entry of cases) {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    if (entry.stored) {
+      await context.addInitScript(seedThemeStorage, {
+        key: THEME_STORAGE_KEY,
+        theme: entry.stored,
+        version: THEME_STORAGE_VERSION,
+      });
+    }
+    const page = await context.newPage();
+    try {
+      const response = await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+      if (!response || !response.ok()) throw new Error(`${entry.name}: navigation failed`);
+      const actual = await page.evaluate(() => ({
+        colorScheme: document.documentElement.style.colorScheme,
+        dark: document.documentElement.classList.contains('dark'),
+        themeColor: document.querySelector('meta[name="theme-color"]')?.getAttribute('content'),
+      }));
+      const expectedDark = entry.expected === 'dark';
+      const expectedColor = entry.expected === 'dark' ? '#080B0E' : '#F3F6F8';
+      const expectedAction = entry.expected === 'dark' ? '切换到亮色主题' : '切换到暗色主题';
+      if (actual.dark !== expectedDark || actual.colorScheme !== entry.expected || actual.themeColor !== expectedColor) {
+        throw new Error(`${entry.name}: initial theme is ${JSON.stringify(actual)}, expected ${entry.expected}`);
+      }
+      await requireCount(page.getByRole('button', { name: expectedAction, exact: true }), 1, `${entry.name}: theme toggle action`);
+    } finally {
+      await context.close();
+    }
+  }
+}
+
 async function assertScenarioIdentity(page, scenario, label) {
   const url = new URL(page.url());
   if (url.pathname !== scenario.expectedPath) {
@@ -263,6 +309,17 @@ async function setTheme(page, theme) {
   if (theme === 'dark' && !dark) await page.getByRole('button', { name: '切换到暗色主题' }).click();
   if (theme === 'light' && dark) await page.getByRole('button', { name: '切换到亮色主题' }).click();
   await page.waitForFunction((expected) => document.documentElement.classList.contains('dark') === expected, theme === 'dark');
+  const actual = await page.evaluate((key) => {
+    const stored = localStorage.getItem(key);
+    return {
+      themeColor: document.querySelector('meta[name="theme-color"]')?.getAttribute('content'),
+      version: stored ? JSON.parse(stored).version : null,
+    };
+  }, THEME_STORAGE_KEY);
+  const expectedColor = theme === 'dark' ? '#080B0E' : '#F3F6F8';
+  if (actual.themeColor !== expectedColor || actual.version !== THEME_STORAGE_VERSION) {
+    throw new Error(`theme persistence/metadata is ${JSON.stringify(actual)}, expected ${theme}/${THEME_STORAGE_VERSION}`);
+  }
   await page.waitForTimeout(180);
 }
 
@@ -287,6 +344,69 @@ async function assertHomeHover(page, scenario, theme, label) {
     || hover.borderLeftStyle === 'none') {
     fail(`${label}: research hover geometry/colors are ${JSON.stringify(hover)}`);
   }
+}
+
+async function assertInstrumentConsole(page, scenario, theme, label) {
+  if (scenario.name !== 'home') return;
+  await requireCount(page.locator('[data-instrument-section]'), 3, `${label} instrument sections`);
+  await requireCount(page.locator('[data-task-entry]'), 8, `${label} task entries`);
+  await requireCount(page.locator('[data-decision-list] [data-tool-decision-row]'), 6, `${label} weekly rows`);
+  if (await page.getByRole('checkbox', { name: /对比/ }).count()) {
+    fail(`${label}: homepage exposes compare checkboxes`);
+  }
+
+  const taskGrid = page.locator('[data-task-entry-list]');
+  const columnCount = await taskGrid.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length);
+  const width = await page.evaluate(() => innerWidth);
+  const expectedColumns = width >= 1024 ? 4 : width >= 640 ? 2 : 1;
+  if (columnCount !== expectedColumns) fail(`${label}: task columns ${columnCount}, expected ${expectedColumns}`);
+
+  const tasksSection = page.locator('[data-instrument-section="tasks"]');
+  const marker = await tasksSection.evaluate((element) => {
+    const style = getComputedStyle(element, '::before');
+    return {
+      content: style.content,
+      display: style.display,
+      height: style.height,
+      visibility: style.visibility,
+      width: style.width,
+    };
+  });
+  const markerVisible = !['none', 'normal'].includes(marker.content)
+    && marker.display !== 'none'
+    && marker.visibility === 'visible'
+    && Number.parseFloat(marker.width) > 0
+    && Number.parseFloat(marker.height) > 0;
+  if (width >= 768) {
+    if (!markerVisible || marker.width !== '20px' || marker.height !== '1px') {
+      fail(`${label}: marker geometry ${JSON.stringify(marker)}`);
+    }
+  } else if (markerVisible) {
+    fail(`${label}: desktop marker is visible on mobile`);
+  }
+
+  const search = page.getByRole('combobox', { name: '搜索工具、任务或能力' });
+  await search.focus();
+  await page.waitForFunction((label) => document.activeElement?.getAttribute('aria-label') === label, '搜索工具、任务或能力');
+  const searchOutline = await page.locator('[data-search-shell]').evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      color: style.outlineColor,
+      offset: style.outlineOffset,
+      outlineStyle: style.outlineStyle,
+      width: style.outlineWidth,
+    };
+  });
+  if (searchOutline.outlineStyle !== 'solid'
+    || searchOutline.color !== themes[theme].focus
+    || searchOutline.offset !== '2px'
+    || searchOutline.width !== '2px') {
+    fail(`${label}: search outline ${JSON.stringify(searchOutline)}`);
+  }
+
+  const firstRowRadius = await page.locator('[data-decision-list] [data-tool-decision-row]').first()
+    .evaluate((element) => getComputedStyle(element).borderRadius);
+  if (firstRowRadius !== '0px') fail(`${label}: compact row radius is ${firstRowRadius}`);
 }
 
 async function assertTokens(page, theme, label) {
@@ -406,6 +526,24 @@ async function assertSelectedRails(page, scenario, theme, label) {
   if (afterRestore.rail.background !== themes[theme].focus) fail(`${label}: rail color did not restore after toggle`);
 }
 
+async function assertNavigationRails(page, theme, label) {
+  for (const [name, selector] of [
+    ['desktop', 'nav[aria-label="主导航"] [data-orientation="desktop"][data-active="true"]'],
+    ['mobile', '[data-mobile-bottom-nav] [data-orientation="mobile"][data-active="true"]'],
+  ]) {
+    const rail = page.locator(selector);
+    if (!(await rail.isVisible())) continue;
+    await requireCount(rail, 1, `${label} ${name} active navigation`);
+    const geometry = await rail.evaluate((element) => {
+      const style = getComputedStyle(element, '::after');
+      return { background: style.backgroundColor, height: style.height, position: style.position };
+    });
+    if (geometry.height !== '2px' || geometry.position !== 'absolute' || geometry.background !== themes[theme].focus) {
+      fail(`${label}: ${name} navigation rail is ${JSON.stringify(geometry)}`);
+    }
+  }
+}
+
 async function focusByKeyboard(page, target, label) {
   await requireCount(target, 1, `${label} focus target`);
   await page.evaluate(() => {
@@ -437,6 +575,23 @@ async function assertFocusColors(page, scenario, theme, label) {
   const normalTarget = page.getByRole('button', { name: theme === 'dark' ? '切换到亮色主题' : '切换到暗色主题' });
   await focusByKeyboard(page, normalTarget, `${label} normal`);
   await assertOutline(normalTarget, themes[theme].focus, `${label} normal focus`);
+
+  if (scenario.name === 'home') {
+    const task = page.locator('[data-task-entry]').first();
+    const before = await task.boundingBox();
+    await focusByKeyboard(page, task, `${label} task entry`);
+    const focused = await task.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { borderLeftColor: style.borderLeftColor, borderLeftWidth: style.borderLeftWidth };
+    });
+    const after = await task.boundingBox();
+    if (focused.borderLeftWidth !== '3px' || focused.borderLeftColor !== themes[theme].focus) {
+      fail(`${label}: task entry focus rail is ${JSON.stringify(focused)}`);
+    }
+    if (!before || !after || Math.abs(before.width - after.width) > 1 || Math.abs(before.height - after.height) > 1) {
+      fail(`${label}: task entry focus changed geometry ${JSON.stringify({ before, after })}`);
+    }
+  }
 
   let carbonTarget = null;
   if (scenario.name === 'directory') carbonTarget = page.locator('[data-compare-tray]').getByRole('button', { name: '比较 2 款' });
@@ -769,6 +924,7 @@ async function prepareScreenshot(page) {
 
 async function captureScenario(browser, viewport, scenario, theme, qaDir) {
   const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height } });
+  await context.addInitScript(seedThemeStorage, { key: THEME_STORAGE_KEY, theme, version: THEME_STORAGE_VERSION });
   const page = await context.newPage();
   const label = `${viewport.width}x${viewport.height} ${theme} ${scenario.name}`;
   const consoleIssues = [];
@@ -781,11 +937,13 @@ async function captureScenario(browser, viewport, scenario, theme, qaDir) {
     await assertScenarioIdentity(page, scenario, `${label} setup`);
     await setTheme(page, theme);
     await assertHomeHover(page, scenario, theme, `${label} themed`);
+    await assertInstrumentConsole(page, scenario, theme, label);
     await assertScenarioIdentity(page, scenario, `${label} themed identity`);
     await assertTokens(page, theme, label);
     await assertNoOverflow(page, label);
     await assertCarbonSurfaces(page, scenario, theme, label);
     await assertSelectedRails(page, scenario, theme, label);
+    await assertNavigationRails(page, theme, label);
     await assertResponsiveGeometry(page, scenario, theme, label);
     await assertFocusColors(page, scenario, theme, label);
     if (theme === 'light') await assertThemeLayoutInvariant(page, scenario, label);
@@ -878,6 +1036,7 @@ async function main() {
   const sharp = await loadSharp();
   const browser = await chromium.launch();
   try {
+    await assertInitialTheme(browser);
     await assertAuthoritativeRatingFlow(browser);
     for (let index = 0; index < capturePlan.length; index += 1) {
       const { viewport, scenario, theme } = capturePlan[index];

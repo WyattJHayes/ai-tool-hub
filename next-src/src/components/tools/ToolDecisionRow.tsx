@@ -51,7 +51,7 @@ export function ToolDecisionRow({
         !selected && 'hover:bg-[var(--surface-hover)]',
         variant === 'matrix'
           ? 'grid-cols-[minmax(0,1fr)_44px] md:grid-cols-[44px_minmax(120px,.9fr)_minmax(110px,.75fr)_minmax(180px,1.25fr)_minmax(88px,.6fr)_44px] lg:grid-cols-[44px_minmax(150px,1fr)_minmax(130px,.85fr)_minmax(220px,1.35fr)_minmax(100px,.65fr)_44px]'
-          : 'grid-cols-[minmax(0,1fr)_44px] rounded-md border md:grid-cols-[44px_minmax(120px,.9fr)_minmax(110px,.75fr)_minmax(180px,1.25fr)_minmax(88px,.6fr)_44px] md:rounded-none md:border-x-0 md:border-t-0 lg:grid-cols-[44px_minmax(150px,1fr)_minmax(130px,.85fr)_minmax(220px,1.35fr)_minmax(100px,.65fr)_44px]'
+          : 'grid-cols-[minmax(0,1fr)_44px] md:grid-cols-[44px_minmax(120px,.9fr)_minmax(110px,.75fr)_minmax(180px,1.25fr)_minmax(88px,.6fr)_44px] lg:grid-cols-[44px_minmax(150px,1fr)_minmax(130px,.85fr)_minmax(220px,1.35fr)_minmax(100px,.65fr)_44px]'
       )}
     >
       {showCompare ? (

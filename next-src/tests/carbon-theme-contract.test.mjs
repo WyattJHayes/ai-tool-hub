@@ -2,10 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
 import ts from 'typescript';
+import { twMerge } from 'tailwind-merge';
 
+const runtimeRequire = createRequire(import.meta.url);
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const readRepo = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
 const css = read('src/app/globals.css');
@@ -30,6 +34,98 @@ const javaScriptExtension = /^\.(?:cjs|cts|js|jsx|mjs|mts|ts|tsx)$/;
 const prohibitedStyleProperties = new Set(['rotate', 'scale', 'transform']);
 const motionObjectProps = new Set(['animate', 'exit', 'initial', 'style', 'variants', 'whileDrag', 'whileFocus', 'whileHover', 'whileTap']);
 const prohibitedTransformFunction = /(?:^|[^A-Za-z0-9_-])(?:rotate(?:x|y|z|3d)?|scale(?:x|y|z|3d)?)\s*\(/i;
+
+function runThemeBootstrap(script, raw, storageError = false) {
+  const classNames = new Set();
+  let requestedKey = null;
+  const root = {
+    classList: {
+      contains: (name) => classNames.has(name),
+      toggle: (name, enabled) => enabled ? classNames.add(name) : classNames.delete(name),
+    },
+    style: {},
+  };
+  vm.runInNewContext(script, {
+    document: { documentElement: root },
+    window: {
+      localStorage: {
+        getItem(key) {
+          requestedKey = key;
+          if (storageError) throw new Error('storage unavailable');
+          return raw;
+        },
+      },
+    },
+  });
+  return {
+    colorScheme: root.style.colorScheme,
+    dark: root.classList.contains('dark'),
+    requestedKey,
+  };
+}
+
+async function loadUserStore() {
+  let source = read('src/stores/useUserStore.ts');
+  if (process.env.THEME_STORE_MUTATION === '1') {
+    source = source.replace('        synchronizeTheme(newTheme);', '        // mutation: omit toggle synchronization');
+  }
+  const { outputText } = ts.transpileModule(source, {
+    compilerOptions: {
+      esModuleInterop: true,
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+    },
+  });
+  const themeBootstrap = await import(new URL('../src/lib/theme-bootstrap.mjs', import.meta.url).href);
+  const module = { exports: {} };
+  const requireMock = (id) => {
+    if (id === 'zustand' || id === 'zustand/middleware') return runtimeRequire(id);
+    if (id === '@/lib/api') return { toggleFavoriteAPI: () => Promise.resolve(), submitRating: () => Promise.resolve(null) };
+    if (id === '@/lib/ratings') return { isRatingAggregate: () => false };
+    if (id === '@/lib/theme-bootstrap.mjs') return themeBootstrap;
+    throw new Error(`Unexpected user-store import: ${id}`);
+  };
+  new Function('require', 'module', 'exports', outputText)(requireMock, module, module.exports);
+  return module.exports.useUserStore;
+}
+
+function createThemeDocument(initialTheme = 'dark') {
+  const classes = new Set(initialTheme === 'dark' ? ['dark'] : []);
+  const meta = { content: initialTheme === 'dark' ? '#080B0E' : '#F3F6F8' };
+  return {
+    documentElement: {
+      classList: {
+        contains: (name) => classes.has(name),
+        toggle: (name, enabled) => enabled ? classes.add(name) : classes.delete(name),
+      },
+      style: { colorScheme: initialTheme },
+    },
+    meta,
+    querySelectorAll: () => [meta],
+  };
+}
+
+async function withUserStoreEnvironment({ initialTheme = 'dark', raw = null, throwOnSet = false }, run) {
+  const original = {
+    document: globalThis.document,
+    localStorage: globalThis.localStorage,
+    window: globalThis.window,
+  };
+  const document = createThemeDocument(initialTheme);
+  const localStorage = {
+    getItem: () => raw,
+    setItem: () => {
+      if (throwOnSet) throw new Error('quota exceeded');
+    },
+    removeItem: () => {},
+  };
+  Object.assign(globalThis, { document, localStorage, window: { localStorage } });
+  try {
+    await run({ document, localStorage });
+  } finally {
+    Object.assign(globalThis, original);
+  }
+}
 
 function hasProhibitedRadius(content) {
   if (largeRadiusClass.test(content)) return true;
@@ -591,10 +687,10 @@ test('maps browser metadata, radii, and default motion to the approved system', 
   const manifest = JSON.parse(read('public/manifest.json'));
   const tailwind = read('tailwind.config.ts');
 
-  assert.match(layout, /media: '\(prefers-color-scheme: light\)', color: '#F3F6F8'/);
-  assert.match(layout, /media: '\(prefers-color-scheme: dark\)', color: '#080B0E'/);
-  assert.equal(manifest.background_color, '#F3F6F8');
-  assert.equal(manifest.theme_color, '#F3F6F8');
+  assert.match(layout, /themeColor:\s*'#080B0E'/);
+  assert.equal(manifest.background_color, '#080B0E');
+  assert.equal(manifest.theme_color, '#080B0E');
+  assert.match(tailwind, /darkMode:\s*['"]class['"]/);
   assert.match(css, /--radius:\s*6px/);
   assert.match(css, /--radius-sm:\s*4px/);
   assert.doesNotMatch(css, /border-radius:\s*8px/);
@@ -603,6 +699,139 @@ test('maps browser metadata, radii, and default motion to the approved system', 
   assert.match(tailwind, /lg:\s*'var\(--radius\)'/);
   assert.match(tailwind, /DEFAULT:\s*'140ms'/);
   assert.match(tailwind, /DEFAULT:\s*'ease-out'/);
+});
+
+test('boots dark before paint while honoring a persisted theme', async () => {
+  const layout = read('src/app/layout.tsx');
+  const store = read('src/stores/useUserStore.ts');
+  const moduleUrl = new URL('../src/lib/theme-bootstrap.mjs', import.meta.url);
+
+  assert.equal(existsSync(moduleUrl), true, 'missing theme bootstrap module');
+  const {
+    DEFAULT_THEME,
+    THEME_BOOTSTRAP_SCRIPT,
+    THEME_STORAGE_KEY,
+    THEME_STORAGE_VERSION,
+    createSafeStorage,
+    resolveStoredTheme,
+    synchronizeTheme,
+  } = await import(`${moduleUrl.href}?contract=${Date.now()}`);
+
+  assert.equal(DEFAULT_THEME, 'dark');
+  assert.equal(THEME_STORAGE_KEY, 'ai-tool-hub-user');
+  assert.equal(THEME_STORAGE_VERSION, 0);
+  assert.equal(resolveStoredTheme(null, DEFAULT_THEME), 'dark');
+  assert.equal(resolveStoredTheme('{bad json', DEFAULT_THEME), 'dark');
+  assert.equal(resolveStoredTheme(JSON.stringify({ state: { theme: 'light' } }), DEFAULT_THEME), 'dark');
+  assert.equal(resolveStoredTheme(JSON.stringify({ state: { theme: 'light' }, version: 1 }), DEFAULT_THEME), 'dark');
+  assert.equal(resolveStoredTheme(JSON.stringify({ state: { theme: 'light' }, version: THEME_STORAGE_VERSION }), DEFAULT_THEME), 'light');
+  assert.equal(resolveStoredTheme(JSON.stringify({ state: { theme: 'dark' }, version: THEME_STORAGE_VERSION }), DEFAULT_THEME), 'dark');
+  assert.equal(resolveStoredTheme(JSON.stringify({ state: { theme: 'green' }, version: THEME_STORAGE_VERSION }), DEFAULT_THEME), 'dark');
+  assert.equal(resolveStoredTheme(JSON.stringify({ state: { theme: 'green' } }), DEFAULT_THEME), 'dark');
+  assert.match(THEME_BOOTSTRAP_SCRIPT, /const parsed = parseStoredThemeEnvelope\(stored\)/);
+  assert.doesNotMatch(THEME_BOOTSTRAP_SCRIPT, /const resolveStoredTheme =/);
+
+  const safeStorage = createSafeStorage({
+    getItem() { throw new Error('read denied'); },
+    setItem() { throw new Error('write denied'); },
+    removeItem() { throw new Error('remove denied'); },
+  });
+  assert.equal(safeStorage.getItem(THEME_STORAGE_KEY), null);
+  assert.doesNotThrow(() => safeStorage.setItem(THEME_STORAGE_KEY, 'value'));
+  assert.doesNotThrow(() => safeStorage.removeItem(THEME_STORAGE_KEY));
+
+  const classNames = new Set();
+  const meta = { content: '' };
+  const documentRef = {
+    documentElement: {
+      classList: { toggle: (name, enabled) => enabled ? classNames.add(name) : classNames.delete(name) },
+      style: {},
+    },
+    querySelectorAll: () => [meta],
+  };
+  synchronizeTheme('dark', documentRef);
+  assert.deepEqual({ dark: classNames.has('dark'), colorScheme: documentRef.documentElement.style.colorScheme, meta: meta.content }, {
+    dark: true, colorScheme: 'dark', meta: '#080B0E',
+  });
+  synchronizeTheme('light', documentRef);
+  assert.deepEqual({ dark: classNames.has('dark'), colorScheme: documentRef.documentElement.style.colorScheme, meta: meta.content }, {
+    dark: false, colorScheme: 'light', meta: '#F3F6F8',
+  });
+
+  assert.deepEqual(runThemeBootstrap(THEME_BOOTSTRAP_SCRIPT, null), {
+    colorScheme: 'dark',
+    dark: true,
+    requestedKey: 'ai-tool-hub-user',
+  });
+  assert.deepEqual(runThemeBootstrap(THEME_BOOTSTRAP_SCRIPT, JSON.stringify({ state: { theme: 'light' }, version: 0 })), {
+    colorScheme: 'light',
+    dark: false,
+    requestedKey: 'ai-tool-hub-user',
+  });
+  assert.deepEqual(runThemeBootstrap(THEME_BOOTSTRAP_SCRIPT, null, true), {
+    colorScheme: 'dark',
+    dark: true,
+    requestedKey: 'ai-tool-hub-user',
+  });
+  assert.match(store, /theme:\s*DEFAULT_THEME/);
+  assert.match(store, /name:\s*THEME_STORAGE_KEY/);
+  assert.match(store, /version:\s*THEME_STORAGE_VERSION/);
+  assert.match(store, /storage:\s*createThemeStorage<UserStore>/);
+  assert.match(store, /synchronizeTheme\(newTheme\)/);
+  assert.match(store, /synchronizeTheme\(state\.theme\)/);
+  assert.match(layout, /id="theme-bootstrap"/);
+  assert.match(layout, /dangerouslySetInnerHTML=\{\{ __html: THEME_BOOTSTRAP_SCRIPT \}\}/);
+  assert.ok(layout.indexOf('id="theme-bootstrap"') < layout.indexOf('<body'));
+});
+
+test('executes persisted user theme synchronization through Zustand storage', async () => {
+  await withUserStoreEnvironment({ throwOnSet: true }, async ({ document }) => {
+    const useUserStore = await loadUserStore();
+    assert.equal(useUserStore.getState().theme, 'dark');
+    assert.doesNotThrow(() => useUserStore.getState().toggleTheme());
+    assert.equal(useUserStore.getState().theme, 'light');
+    assert.equal(document.documentElement.classList.contains('dark'), false);
+    assert.equal(document.documentElement.style.colorScheme, 'light');
+    assert.equal(document.meta.content, '#F3F6F8');
+  });
+
+  await withUserStoreEnvironment({ raw: JSON.stringify({ state: { theme: 'light' }, version: 0 }) }, async ({ document }) => {
+    const useUserStore = await loadUserStore();
+    await useUserStore.persist.rehydrate();
+    assert.equal(useUserStore.getState().theme, 'light');
+    assert.equal(document.documentElement.classList.contains('dark'), false);
+    assert.equal(document.documentElement.style.colorScheme, 'light');
+    assert.equal(document.meta.content, '#F3F6F8');
+  });
+
+  await withUserStoreEnvironment({
+    initialTheme: 'light',
+    raw: JSON.stringify({ state: { favorites: [42], theme: 'dark' }, version: 0 }),
+  }, async ({ document }) => {
+    const useUserStore = await loadUserStore();
+    await useUserStore.persist.rehydrate();
+    assert.equal(useUserStore.getState().theme, 'dark');
+    assert.deepEqual(useUserStore.getState().favorites, [42]);
+    assert.equal(document.documentElement.classList.contains('dark'), true);
+    assert.equal(document.documentElement.style.colorScheme, 'dark');
+    assert.equal(document.meta.content, '#080B0E');
+  });
+
+  for (const raw of [
+    '{bad json',
+    JSON.stringify({ state: { theme: 'light' } }),
+    JSON.stringify({ state: { theme: 'green' }, version: 0 }),
+    JSON.stringify({ state: { theme: 'light' }, version: 1 }),
+  ]) {
+    await withUserStoreEnvironment({ raw }, async ({ document }) => {
+      const useUserStore = await loadUserStore();
+      await useUserStore.persist.rehydrate();
+      assert.equal(useUserStore.getState().theme, 'dark');
+      assert.equal(document.documentElement.classList.contains('dark'), true);
+      assert.equal(document.documentElement.style.colorScheme, 'dark');
+      assert.equal(document.meta.content, '#080B0E');
+    });
+  }
 });
 
 test('uses contrast-safe chrome, primary actions, active rails, and control borders', () => {
@@ -630,6 +859,69 @@ test('uses contrast-safe chrome, primary actions, active rails, and control bord
   assert.match(filters, /accent-\[var\(--accent\)\]/);
   assert.match(filters, /border-\[var\(--line-strong\)\]/);
   assert.match(drawer, /border-l border-\[var\(--line-strong\)\]/);
+});
+
+test('uses precision navigation rails and outline-only search focus', () => {
+  const navbar = read('src/components/layout/Navbar.tsx');
+  const bottomNav = read('src/components/layout/BottomNav.tsx');
+  const search = read('src/components/hero/SearchBar.tsx');
+
+  assert.match(css, /\.instrument-nav-item\[data-orientation='desktop'\]::after/);
+  assert.match(css, /\.instrument-nav-item\[data-orientation='mobile'\]::after/);
+  assert.match(css, /\.instrument-nav-item\[data-active='true'\]::after/);
+  assert.match(css, /\.instrument-section::before/);
+  assert.match(css, /\.instrument-section::after/);
+  assert.match(css, /@media \(min-width: 768px\)/);
+  assert.doesNotMatch(css, /repeating-(?:linear|radial)-gradient/);
+  assert.match(navbar, /data-orientation="desktop"/);
+  assert.match(navbar, /data-active=\{active \? 'true' : undefined\}/);
+  assert.match(navbar, /aria-current=\{active \? 'page' : undefined\}/);
+  assert.doesNotMatch(navbar, /aria-label=\{theme === 'dark'/);
+  assert.match(navbar, /sr-only dark:hidden">切换到暗色主题/);
+  assert.match(navbar, /sr-only hidden dark:inline">切换到亮色主题/);
+  assert.match(bottomNav, /data-orientation="mobile"/);
+  assert.match(bottomNav, /data-active=\{active \? 'true' : undefined\}/);
+  assert.match(search, /data-search-shell/);
+  assert.match(search, /\[outline-style:solid\] outline-2 outline-offset-2 outline-\[var\(--accent\)\]/);
+  assert.doesNotMatch(search, /ring-2 ring-\[var\(--accent-soft\)\]/);
+});
+
+test('preserves the explicit search outline style after Tailwind class merging', () => {
+  const search = read('src/components/hero/SearchBar.tsx');
+  const focusedClass = search.match(/focused\s*\?\s*'([^']+)'/)?.[1];
+  assert.ok(focusedClass, 'missing focused SearchBar class');
+
+  const mergedFocusedClass = twMerge(focusedClass);
+  const mergedTokens = new Set(mergedFocusedClass.split(/\s+/));
+  for (const token of [
+    '[outline-style:solid]',
+    'outline-2',
+    'outline-offset-2',
+    'outline-[var(--accent)]',
+  ]) assert.ok(mergedTokens.has(token), `${token} did not survive twMerge: ${mergedFocusedClass}`);
+});
+
+test('task-first guard toggles away from and restores the current theme in both paths', () => {
+  const guard = readRepo('scripts/task-first-ui-guard.mjs');
+  const section = (start, end) => {
+    const startIndex = guard.indexOf(start);
+    const endIndex = guard.indexOf(end, startIndex + start.length);
+    assert.ok(startIndex >= 0, `missing ${start}`);
+    assert.ok(endIndex > startIndex, `missing ${end} after ${start}`);
+    return guard.slice(startIndex, endIndex);
+  };
+  const helper = section('async function assertThemeToggle', 'async function runFlow');
+  const keyboardPath = section('async function assertKeyboardAndTheme', 'async function assertCompareLimit');
+  const responsivePath = section('async function assertResponsiveGeometry', 'async function main');
+
+  assert.match(helper, /const initiallyDark = await page\.locator\('html\.dark'\)\.count\(\) === 1/);
+  assert.match(helper, /initiallyDark \? '切换到亮色主题' : '切换到暗色主题'/);
+  assert.match(helper, /initiallyDark \? '切换到暗色主题' : '切换到亮色主题'/);
+  assert.match(helper, /if \(toggledDark === initiallyDark\) \{\s*fail\(`\$\{label\}: theme did not change`\);\s*return;\s*\}/);
+  assert.match(helper, /restoredDark !== initiallyDark/);
+  assert.match(keyboardPath, /await assertThemeToggle\(page,/);
+  assert.match(responsivePath, /await assertThemeToggle\(page,/);
+  assert.equal((guard.match(/await assertThemeToggle\(page,/g) || []).length, 2);
 });
 
 test('uses stable selected rails and a scoped carbon compare tray', () => {
@@ -976,7 +1268,7 @@ test('wires the complete carbon route, state, geometry, focus, and evidence guar
 
   const viewportPairs = [...viewportsBlock.matchAll(/width: (\d+), height: (\d+)/g)]
     .map((match) => [Number(match[1]), Number(match[2])]);
-  assert.deepEqual(viewportPairs, [[1440, 900], [1280, 720], [768, 1024], [390, 844], [320, 700]]);
+  assert.deepEqual(viewportPairs, [[1440, 900], [1280, 720], [768, 1024], [390, 844], [320, 844]]);
   assert.equal((scenarioNames.length * 2) + (4 * 4 * 2), 50);
   assert.match(guard, /capturePlan\.length !== 50/);
 
@@ -1013,6 +1305,8 @@ test('wires the complete carbon route, state, geometry, focus, and evidence guar
     'assertFocusColors',
     'assertThemeLayoutInvariant',
     'assertAuthoritativeRatingFlow',
+    'assertInitialTheme',
+    'assertInstrumentConsole',
     'prepareScreenshot',
     'auditEvidence',
   ]) functionBody(name);
@@ -1037,6 +1331,19 @@ test('wires the complete carbon route, state, geometry, focus, and evidence guar
   assert.match(functionBody('assertFocusColors'), /assertOutline/);
   assert.match(functionBody('assertOutline'), /outlineStyle/);
   assert.match(functionBody('assertOutline'), /outlineWidth/);
+  assert.match(capture, /await assertInstrumentConsole\(/);
+  assert.match(capture, /context\.addInitScript\([\s\S]*THEME_STORAGE_KEY[\s\S]*THEME_STORAGE_VERSION/);
+  assert.match(main, /await assertInitialTheme\(browser\)/);
+  const instrumentConsole = functionBody('assertInstrumentConsole');
+  assert.match(instrumentConsole, /gridTemplateColumns/);
+  assert.match(instrumentConsole, /data-instrument-section/);
+  assert.match(instrumentConsole, /data-search-shell/);
+  assert.match(instrumentConsole, /content/);
+  assert.match(instrumentConsole, /display/);
+  assert.match(instrumentConsole, /visibility/);
+  assert.match(instrumentConsole, /outlineStyle/);
+  assert.match(functionBody('assertInitialTheme'), /THEME_STORAGE_KEY/);
+  assert.match(functionBody('assertInitialTheme'), /DEFAULT_THEME/);
   assert.match(main, /await assertAuthoritativeRatingFlow\(browser\)/);
 
   assert.match(main, /await prepareQaDir\(/);

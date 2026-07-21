@@ -168,13 +168,12 @@ test('uses the carbon console color system without animated grid decoration', ()
   assert.doesNotMatch(css, /gridMove|repeating-linear-gradient|--neon-purple/i);
 });
 
-test('ships a light default viewport and quiet directory navigation', () => {
+test('ships a dark-first viewport and quiet directory navigation', () => {
   const layout = read('src/app/layout.tsx');
   const navbar = read('src/components/layout/Navbar.tsx');
   const footer = read('src/components/layout/Footer.tsx');
 
-  assert.match(layout, /media: '\(prefers-color-scheme: light\)', color: '#F3F6F8'/);
-  assert.match(layout, /media: '\(prefers-color-scheme: dark\)', color: '#080B0E'/);
+  assert.match(layout, /themeColor: '#080B0E'/);
   assert.doesNotMatch(layout, /className="dark"|bg-gray-950|text-white/);
   assert.match(navbar, /label: '工具'/);
   assert.match(navbar, /label: '场景'/);

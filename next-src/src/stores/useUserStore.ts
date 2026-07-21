@@ -2,6 +2,13 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { toggleFavoriteAPI, submitRating } from '@/lib/api';
 import { isRatingAggregate, type RatingAggregate } from '@/lib/ratings';
+import {
+  createThemeStorage,
+  DEFAULT_THEME,
+  synchronizeTheme,
+  THEME_STORAGE_KEY,
+  THEME_STORAGE_VERSION,
+} from '@/lib/theme-bootstrap.mjs';
 
 interface UserStore {
   favorites: number[];
@@ -25,7 +32,7 @@ export const useUserStore = create<UserStore>()(
     (set, get) => ({
       favorites: [],
       ratings: {},
-      theme: 'light',
+      theme: DEFAULT_THEME,
       isLoggedIn: false,
       pendingMigration: false,
 
@@ -63,9 +70,7 @@ export const useUserStore = create<UserStore>()(
       toggleTheme: () => {
         const newTheme = get().theme === 'dark' ? 'light' : 'dark';
         set({ theme: newTheme });
-        if (typeof document !== 'undefined') {
-          document.documentElement.classList.toggle('dark', newTheme === 'dark');
-        }
+        synchronizeTheme(newTheme);
       },
 
       login: () => {
@@ -87,11 +92,14 @@ export const useUserStore = create<UserStore>()(
       },
     }),
     {
-      name: 'ai-tool-hub-user',
+      name: THEME_STORAGE_KEY,
+      storage: createThemeStorage<UserStore>(() => window.localStorage),
+      version: THEME_STORAGE_VERSION,
       // D-06: Add localStorage capacity monitoring
       onRehydrateStorage: () => {
         return (state) => {
           if (typeof window !== 'undefined' && state) {
+            synchronizeTheme(state.theme);
             try {
               const used = new Blob([JSON.stringify(localStorage)]).size;
               const maxBytes = 5 * 1024 * 1024; // 5MB typical limit

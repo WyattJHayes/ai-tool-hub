@@ -161,6 +161,60 @@ summary {
   background-clip: padding-box;
 }
 
+.instrument-nav-item {
+  position: relative;
+}
+
+.instrument-nav-item::after {
+  position: absolute;
+  height: 2px;
+  background: transparent;
+  content: '';
+  pointer-events: none;
+  transition: background-color var(--transition-duration) ease-out;
+}
+
+.instrument-nav-item[data-orientation='desktop']::after {
+  right: 0;
+  bottom: 0;
+  left: 0;
+}
+
+.instrument-nav-item[data-orientation='mobile']::after {
+  top: 0;
+  right: 16px;
+  left: 16px;
+}
+
+.instrument-nav-item[data-active='true']::after {
+  background: var(--accent);
+}
+
+.instrument-section {
+  position: relative;
+}
+
+@media (min-width: 768px) {
+  .instrument-section::before,
+  .instrument-section::after {
+    position: absolute;
+    top: -1px;
+    width: 20px;
+    height: 1px;
+    background: var(--line-strong);
+    content: '';
+    pointer-events: none;
+  }
+
+  .instrument-section::before {
+    left: max(16px, calc((100% - 1160px) / 2));
+  }
+
+  .instrument-section::after {
+    right: max(16px, calc((100% - 1160px) / 2));
+  }
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;

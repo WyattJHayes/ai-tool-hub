@@ -62,7 +62,7 @@ test('decision rows preserve the approved field and accessibility contract', () 
 
 test('compact decision rows restore the six-field desktop grid', () => {
   const row = read('src/components/tools/ToolDecisionRow.tsx');
-  assert.match(row, /: 'grid-cols-\[minmax\(0,1fr\)_44px\] rounded-md border md:grid-cols-\[44px_minmax\(120px,.9fr\)_minmax\(110px,.75fr\)_minmax\(180px,1.25fr\)_minmax\(88px,.6fr\)_44px\] md:rounded-none md:border-x-0 md:border-t-0 lg:grid-cols-\[44px_minmax\(150px,1fr\)_minmax\(130px,.85fr\)_minmax\(220px,1.35fr\)_minmax\(100px,.65fr\)_44px\]'/);
+  assert.match(row, /: 'grid-cols-\[minmax\(0,1fr\)_44px\] md:grid-cols-\[44px_minmax\(120px,.9fr\)_minmax\(110px,.75fr\)_minmax\(180px,1.25fr\)_minmax\(88px,.6fr\)_44px\] lg:grid-cols-\[44px_minmax\(150px,1fr\)_minmax\(130px,.85fr\)_minmax\(220px,1.35fr\)_minmax\(100px,.65fr\)_44px\]'/);
   assert.match(row, /col-start-2 row-start-1 md:col-start-1 md:row-start-1/);
   assert.match(row, /col-start-1 row-start-1 md:col-start-2 md:row-start-1/);
   assert.match(row, /col-span-2 md:col-span-1 md:col-start-3 md:row-start-1/);
@@ -158,6 +158,27 @@ test('reference-locked discovery copy and compact composition stay normalized', 
   assert.match(row, /const platformLabels/);
   assert.match(row, /model\.platforms\.map\(\(platform\) => platformLabels\[platform\]\)/);
   assert.match(row, /max-md:flex max-md:items-center max-md:gap-2/);
+});
+
+test('homepage uses instrument sections and one continuous task-first list', () => {
+  const home = read('src/app/page.tsx');
+  const tasks = read('src/components/home/TaskEntryList.tsx');
+  const list = read('src/components/tools/ToolDecisionList.tsx');
+  const row = read('src/components/tools/ToolDecisionRow.tsx');
+
+  assert.match(home, /data-console-home/);
+  assert.deepEqual(
+    [...home.matchAll(/data-instrument-section="([^"]+)"/g)].map((match) => match[1]),
+    ['primary', 'tasks', 'weekly'],
+  );
+  assert.match(home, /data-instrument-section="tasks" className="instrument-section border-t border-\[var\(--line\)\]"/);
+  assert.match(home, /data-instrument-section="weekly" className="instrument-section border-t border-\[var\(--line\)\]"/);
+  assert.match(tasks, /data-task-entry-list/);
+  assert.match(tasks, /data-task-entry/);
+  assert.match(tasks, /focus-visible:border-l-\[var\(--accent\)\]/);
+  assert.match(tasks, /group-focus-visible:text-\[var\(--accent\)\]/);
+  assert.match(list, /data-decision-list/);
+  assert.doesNotMatch(row, /rounded-md border md:grid-cols/);
 });
 
 test('directory controls are URL-driven and mobile filters use a dialog', () => {
