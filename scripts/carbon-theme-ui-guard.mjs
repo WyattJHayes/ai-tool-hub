@@ -95,6 +95,16 @@ async function requireCount(locator, expected, label) {
   if (count !== expected) throw new Error(`${label}: found ${count}, expected ${expected}`);
 }
 
+async function assertAuthAvailability(dialog, label) {
+  const riskState = dialog.getByText('云同步服务当前不可用，仍可继续使用本地收藏和评分。', { exact: true });
+  const submit = dialog.getByRole('button', { name: '登录', exact: true });
+  const riskCount = await riskState.count();
+  const enabled = await submit.isEnabled();
+  if (riskCount === 1 && enabled) throw new Error(`${label}: unavailable auth state has an enabled submit action`);
+  if (riskCount === 0 && !enabled) throw new Error(`${label}: configured auth state has a disabled submit action`);
+  if (riskCount > 1) throw new Error(`${label}: found ${riskCount} auth risk states, expected at most 1`);
+}
+
 async function selectedToolNames(page) {
   return page.locator('[data-tool-decision-row][data-selected="true"] [data-field="tool"] strong').allTextContents();
 }
@@ -135,7 +145,7 @@ async function openScenario(page, scenario) {
     const dialog = page.getByRole('dialog', { name: '登录' });
     await requireCount(dialog, 1, 'login dialog');
     await dialog.waitFor();
-    await requireCount(dialog.getByText('云同步服务当前不可用，仍可继续使用本地收藏和评分。', { exact: true }), 1, 'auth risk state');
+    await assertAuthAvailability(dialog, 'auth availability');
   }
 }
 
@@ -295,7 +305,7 @@ async function assertScenarioIdentity(page, scenario, label) {
     if (scenario.name === 'auth') {
       const dialog = page.getByRole('dialog', { name: '登录' });
       await requireCount(dialog, 1, `${label} auth dialog`);
-      await requireCount(dialog.getByText('云同步服务当前不可用，仍可继续使用本地收藏和评分。', { exact: true }), 1, `${label} auth risk state`);
+      await assertAuthAvailability(dialog, `${label} auth availability`);
       await requireCount(dialog.getByRole('textbox', { name: '邮箱' }), 1, `${label} auth email`);
       await requireCount(dialog.getByLabel('密码'), 1, `${label} auth password`);
     } else if (await page.getByRole('dialog').count()) {

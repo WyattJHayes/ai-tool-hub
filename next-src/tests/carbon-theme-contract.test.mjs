@@ -1297,6 +1297,7 @@ test('wires the complete carbon route, state, geometry, focus, and evidence guar
 
   for (const name of [
     'assertScenarioIdentity',
+    'assertAuthAvailability',
     'assertHomeHover',
     'assertResponsiveGeometry',
     'assertCarbonSurfaces',
@@ -1310,6 +1311,12 @@ test('wires the complete carbon route, state, geometry, focus, and evidence guar
     'prepareScreenshot',
     'auditEvidence',
   ]) functionBody(name);
+  const authAvailability = functionBody('assertAuthAvailability');
+  assert.match(authAvailability, /await riskState\.count\(\)/);
+  assert.match(authAvailability, /await submit\.isEnabled\(\)/);
+  assert.match(authAvailability, /riskCount === 1 && enabled/);
+  assert.match(authAvailability, /riskCount === 0 && !enabled/);
+  assert.equal((guard.match(/await assertAuthAvailability\(dialog,/g) || []).length, 2);
   assert.match(functionBody('assertScenarioIdentity'), /404|not-found|nextjs-portal/);
   assert.match(functionBody('assertScenarioIdentity'), /searchParams/);
   assert.match(functionBody('assertHomeHover'), /backgroundColor/);
