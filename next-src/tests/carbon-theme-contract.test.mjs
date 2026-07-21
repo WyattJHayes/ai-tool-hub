@@ -728,6 +728,8 @@ test('boots dark before paint while honoring a persisted theme', async () => {
   assert.equal(resolveStoredTheme(JSON.stringify({ state: { theme: 'dark' }, version: THEME_STORAGE_VERSION }), DEFAULT_THEME), 'dark');
   assert.equal(resolveStoredTheme(JSON.stringify({ state: { theme: 'green' }, version: THEME_STORAGE_VERSION }), DEFAULT_THEME), 'dark');
   assert.equal(resolveStoredTheme(JSON.stringify({ state: { theme: 'green' } }), DEFAULT_THEME), 'dark');
+  assert.match(THEME_BOOTSTRAP_SCRIPT, /const parsed = parseStoredThemeEnvelope\(stored\)/);
+  assert.doesNotMatch(THEME_BOOTSTRAP_SCRIPT, /const resolveStoredTheme =/);
 
   const safeStorage = createSafeStorage({
     getItem() { throw new Error('read denied'); },

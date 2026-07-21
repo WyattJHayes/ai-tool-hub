@@ -88,7 +88,6 @@ export const THEME_BOOTSTRAP_SCRIPT = `(() => {
   const THEME_STORAGE_VERSION = ${THEME_STORAGE_VERSION};
   const createSafeStorage = ${createSafeStorage.toString()};
   const parseStoredThemeEnvelope = ${parseStoredThemeEnvelope.toString()};
-  const resolveStoredTheme = ${resolveStoredTheme.toString()};
   const synchronizeTheme = ${synchronizeTheme.toString()};
   let storageSource = null;
   try {
@@ -97,9 +96,7 @@ export const THEME_BOOTSTRAP_SCRIPT = `(() => {
     storageSource = null;
   }
   const stored = createSafeStorage(storageSource).getItem(${JSON.stringify(THEME_STORAGE_KEY)});
-  const theme = resolveStoredTheme(
-    stored,
-    ${JSON.stringify(DEFAULT_THEME)},
-  );
+  const parsed = parseStoredThemeEnvelope(stored);
+  const theme = parsed?.state?.theme || ${JSON.stringify(DEFAULT_THEME)};
   synchronizeTheme(theme, document);
 })();`;
