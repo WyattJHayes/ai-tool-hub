@@ -89,29 +89,29 @@ async function loadUserStore() {
   return module.exports.useUserStore;
 }
 
-function createThemeDocument() {
-  const classes = new Set(['dark']);
-  const meta = { content: '#080B0E' };
+function createThemeDocument(initialTheme = 'dark') {
+  const classes = new Set(initialTheme === 'dark' ? ['dark'] : []);
+  const meta = { content: initialTheme === 'dark' ? '#080B0E' : '#F3F6F8' };
   return {
     documentElement: {
       classList: {
         contains: (name) => classes.has(name),
         toggle: (name, enabled) => enabled ? classes.add(name) : classes.delete(name),
       },
-      style: { colorScheme: 'dark' },
+      style: { colorScheme: initialTheme },
     },
     meta,
     querySelectorAll: () => [meta],
   };
 }
 
-async function withUserStoreEnvironment({ raw = null, throwOnSet = false }, run) {
+async function withUserStoreEnvironment({ initialTheme = 'dark', raw = null, throwOnSet = false }, run) {
   const original = {
     document: globalThis.document,
     localStorage: globalThis.localStorage,
     window: globalThis.window,
   };
-  const document = createThemeDocument();
+  const document = createThemeDocument(initialTheme);
   const localStorage = {
     getItem: () => raw,
     setItem: () => {
@@ -801,9 +801,24 @@ test('executes persisted user theme synchronization through Zustand storage', as
     assert.equal(document.meta.content, '#F3F6F8');
   });
 
+  await withUserStoreEnvironment({
+    initialTheme: 'light',
+    raw: JSON.stringify({ state: { favorites: [42], theme: 'dark' }, version: 0 }),
+  }, async ({ document }) => {
+    const useUserStore = await loadUserStore();
+    await useUserStore.persist.rehydrate();
+    assert.equal(useUserStore.getState().theme, 'dark');
+    assert.deepEqual(useUserStore.getState().favorites, [42]);
+    assert.equal(document.documentElement.classList.contains('dark'), true);
+    assert.equal(document.documentElement.style.colorScheme, 'dark');
+    assert.equal(document.meta.content, '#080B0E');
+  });
+
   for (const raw of [
+    '{bad json',
     JSON.stringify({ state: { theme: 'light' } }),
     JSON.stringify({ state: { theme: 'green' }, version: 0 }),
+    JSON.stringify({ state: { theme: 'light' }, version: 1 }),
   ]) {
     await withUserStoreEnvironment({ raw }, async ({ document }) => {
       const useUserStore = await loadUserStore();
