@@ -256,7 +256,7 @@ export const useResumeStore = create<ResumeStore>()(persist(
       const result = applyChange(state.document, change);
       if (!result.applied) return {};
       return {
-        document: withTimestamp(result.document),
+        document: withTimestamp(normalizeResumeDocument(result.document)),
         undoStack: pushUndo(state.undoStack, state.document),
         changeUndoStack: pushChangeUndo(state.changeUndoStack, state.changes),
         changes: state.changes.map(candidate => candidate.id === changeId ? { ...candidate, accepted: true } : candidate),
@@ -276,7 +276,7 @@ export const useResumeStore = create<ResumeStore>()(persist(
       }
       if (!acceptedChangeIds.size) return {};
       return {
-        document: withTimestamp(document),
+        document: withTimestamp(normalizeResumeDocument(document)),
         undoStack: pushUndo(state.undoStack, state.document),
         changeUndoStack: pushChangeUndo(state.changeUndoStack, state.changes),
         changes: state.changes.map(change => (

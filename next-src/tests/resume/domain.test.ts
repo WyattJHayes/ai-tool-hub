@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { createEmptyResume, normalizeResumeDocument, ResumeSchemaError } from '../../src/features/resume/schema';
 import { createResumeStorage, RESUME_STORAGE_KEY, useResumeStore } from '../../src/features/resume/store';
@@ -115,6 +116,37 @@ test('accepts one pending change and marks it accepted', () => {
   assert.equal(useResumeStore.getState().changes[0].accepted, true);
 });
 
+test('normalizes an oversized single accepted change before persistence', () => {
+  resetStore();
+  useResumeStore.getState().setChanges([
+    { id: 'oversized', section: 'summary', field: 'summary', before: '', after: 'x'.repeat(10_001), accepted: false },
+  ]);
+
+  useResumeStore.getState().acceptChange('oversized');
+
+  assert.equal(useResumeStore.getState().document.summary.length, 10_000);
+  assert.equal(useResumeStore.persist.getOptions().partialize?.(useResumeStore.getState()).document.summary.length, 10_000);
+});
+
+test('normalizes invalid runtime diff values when accepting all changes', () => {
+  resetStore();
+  useResumeStore.getState().setChanges([
+    {
+      id: 'invalid-runtime-value',
+      section: 'profile',
+      field: 'fullName',
+      before: '',
+      after: { value: 'not text' },
+      accepted: false,
+    } as unknown as ResumeChange,
+  ]);
+
+  useResumeStore.getState().acceptAllChanges();
+
+  assert.equal(useResumeStore.getState().document.profile.fullName, '');
+  assert.equal(typeof useResumeStore.persist.getOptions().partialize?.(useResumeStore.getState()).document.profile.fullName, 'string');
+});
+
 test('undo restores a change to pending after accepting it', () => {
   resetStore();
   useResumeStore.getState().setChanges([
@@ -196,3 +228,27 @@ test('drops malformed persisted resume state and clears its storage entry', asyn
   assert.equal(await storage.getItem(RESUME_STORAGE_KEY), null);
   assert.equal(cleared, true);
 });
+
+test('resolves the direct jsPDF dependency at or above the safe version', () => {
+  const packageJson = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as {
+    dependencies: Record<string, string>;
+  };
+  const lockfile = JSON.parse(readFileSync(new URL('../../package-lock.json', import.meta.url), 'utf8')) as {
+    packages: Record<string, { dependencies?: Record<string, string>; version?: string }>;
+  };
+  const resolvedVersion = lockfile.packages['node_modules/jspdf']?.version;
+
+  assert.equal(packageJson.dependencies.jspdf, '4.2.1');
+  assert.equal(lockfile.packages['']?.dependencies?.jspdf, '4.2.1');
+  assert.ok(resolvedVersion && isAtLeastVersion(resolvedVersion, '4.2.1'));
+});
+
+function isAtLeastVersion(version: string, minimum: string): boolean {
+  const current = version.split('.').map(Number);
+  const required = minimum.split('.').map(Number);
+  for (let index = 0; index < required.length; index += 1) {
+    if (current[index] > required[index]) return true;
+    if (current[index] < required[index]) return false;
+  }
+  return true;
+}
