@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { inspectA4 } from '../../src/features/resume/pdf';
+import { exportResumePdf, inspectA4 } from '../../src/features/resume/pdf';
 
 interface FakeElement {
   clientWidth: number;
@@ -58,6 +58,90 @@ test('returns empty-page when a page has no visible text', () => {
   });
 });
 
+test('treats hidden text as an empty page when innerText is available', () => {
+  assert.deepEqual(inspectA4(preview([page({ innerText: '', textContent: 'hidden' })])), {
+    ok: false,
+    reasons: ['empty-page'],
+  });
+});
+
 test('accepts bounded A4 pages that contain visible text', () => {
   assert.deepEqual(inspectA4(preview([page(), page()])), { ok: true, reasons: [] });
+});
+
+test('waits for fonts then renders A4 pages in order with sanitized output names', async () => {
+  let releaseFonts: (() => void) | undefined;
+  const fontsReady = new Promise<void>(resolve => { releaseFonts = resolve; });
+  const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  Object.defineProperty(globalThis, 'document', {
+    configurable: true,
+    value: { fonts: { ready: fontsReady } },
+  });
+
+  const calls: string[] = [];
+  const firstPage = page({ innerText: 'First' });
+  const secondPage = page({ innerText: 'Second' });
+  const firstPageElement = firstPage as unknown as HTMLElement;
+  const loadDependencies = async () => ({
+    renderPage: async (element: HTMLElement, options: { scale: number }) => {
+      const pageName = element === firstPageElement ? 'first' : 'second';
+      calls.push(`render:${pageName}:${options.scale}`);
+      return { width: 10, height: 10, toDataURL: () => `image:${pageName}` };
+    },
+    createPdf: (options: { orientation: string; unit: string; format: string }) => {
+      calls.push(`create:${options.format}:${options.orientation}:${options.unit}`);
+      return {
+        addPage: (format: string, orientation: string) => calls.push(`page:${format}:${orientation}`),
+        addImage: (image: string) => calls.push(`image:${image}`),
+        save: (name: string) => calls.push(`save:${name}`),
+      };
+    },
+  });
+
+  try {
+    const exported = exportResumePdf(preview([firstPage, secondPage]), '../Wei Jiahao?.pdf', loadDependencies);
+    await Promise.resolve();
+    assert.deepEqual(calls, []);
+    releaseFonts?.();
+    await exported;
+    assert.deepEqual(calls, [
+      'create:a4:portrait:mm',
+      'render:first:2',
+      'image:image:first',
+      'page:a4:portrait',
+      'render:second:2',
+      'image:image:second',
+      'save:WeiJiahao.pdf',
+    ]);
+
+    calls.length = 0;
+    await exportResumePdf(preview([firstPage]), '???', loadDependencies);
+    assert.equal(calls.at(-1), 'save:resume.pdf');
+  } finally {
+    if (originalDocument) Object.defineProperty(globalThis, 'document', originalDocument);
+    else Reflect.deleteProperty(globalThis, 'document');
+  }
+});
+
+test('refuses an invalid preview before loading PDF dependencies', async () => {
+  const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  Object.defineProperty(globalThis, 'document', {
+    configurable: true,
+    value: { fonts: { ready: Promise.resolve() } },
+  });
+
+  let loaded = false;
+  try {
+    await assert.rejects(
+      () => exportResumePdf(preview([page({ innerText: '', textContent: 'hidden' })]), '???', async () => {
+        loaded = true;
+        throw new Error('must not load');
+      }),
+      /empty-page/,
+    );
+  } finally {
+    if (originalDocument) Object.defineProperty(globalThis, 'document', originalDocument);
+    else Reflect.deleteProperty(globalThis, 'document');
+  }
+  assert.equal(loaded, false);
 });
