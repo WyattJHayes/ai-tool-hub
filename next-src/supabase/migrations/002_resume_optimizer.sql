@@ -206,6 +206,8 @@ begin
   end if;
 
   if p_user_id is null
+    or p_action is null
+    or p_idempotency_key is null
     or p_request_id is null
     or nullif(btrim(p_action), '') is null
     or nullif(btrim(p_idempotency_key), '') is null then
@@ -337,7 +339,9 @@ begin
     raise exception using errcode = '42501', message = 'RESUME_SERVICE_ROLE_REQUIRED';
   end if;
 
-  if p_ledger_id is null or p_outcome not in ('consumed', 'refunded') then
+  if p_ledger_id is null
+    or p_outcome is null
+    or p_outcome not in ('consumed', 'refunded') then
     raise exception using errcode = '22023', message = 'RESUME_INVALID_SETTLEMENT';
   end if;
 
@@ -419,7 +423,10 @@ begin
     raise exception using errcode = '42501', message = 'RESUME_SERVICE_ROLE_REQUIRED';
   end if;
 
-  if p_user_id is null or p_plan not in ('basic', 'vip')
+  if p_user_id is null
+    or p_plan is null
+    or p_plan not in ('basic', 'vip')
+    or p_order_number is null
     or nullif(btrim(p_order_number), '') is null then
     raise exception using errcode = '22023', message = 'RESUME_INVALID_ORDER';
   end if;
@@ -517,10 +524,13 @@ begin
   v_is_service := session_user in ('postgres', 'supabase_admin')
     or coalesce((select auth.jwt() ->> 'role'), '') = 'service_role';
 
-  if p_user_id is null or nullif(btrim(p_order_number), '') is null then
+  if p_order_number is null
+    or p_user_id is null
+    or nullif(btrim(p_order_number), '') is null then
     raise exception using errcode = '22023', message = 'RESUME_INVALID_ORDER';
   end if;
-  if p_failure_reason not in ('payment_creation_failed', 'user_cancelled', 'order_timeout') then
+  if p_failure_reason is null
+    or p_failure_reason not in ('payment_creation_failed', 'user_cancelled', 'order_timeout') then
     raise exception using errcode = '22023', message = 'RESUME_INVALID_FAILURE_REASON';
   end if;
   if not v_is_service and (v_caller_id is null or v_caller_id <> p_user_id) then
@@ -581,12 +591,15 @@ begin
     raise exception using errcode = '42501', message = 'RESUME_SERVICE_ROLE_REQUIRED';
   end if;
 
-  if nullif(btrim(p_order_number), '') is null
+  if p_order_number is null
+    or p_channel_event_id is null
+    or p_channel_transaction_id is null
+    or p_amount_fen is null
+    or p_sanitized_payload is null
+    or nullif(btrim(p_order_number), '') is null
     or nullif(btrim(p_channel_event_id), '') is null
     or nullif(btrim(p_channel_transaction_id), '') is null
-    or p_amount_fen is null
     or p_amount_fen <= 0
-    or p_sanitized_payload is null
     or pg_catalog.jsonb_typeof(p_sanitized_payload) <> 'object' then
     raise exception using errcode = '22023', message = 'RESUME_INVALID_PAYMENT_EVENT';
   end if;

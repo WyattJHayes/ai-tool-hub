@@ -5,6 +5,14 @@ import { tsImport } from 'tsx/esm/api';
 
 const { normalizeResumeDocument } = await tsImport('../src/features/resume/schema.ts', import.meta.url);
 
+function functionDefinition(sql, name) {
+  const startMarker = `create or replace function ${name}(`;
+  const start = sql.toLowerCase().indexOf(startMarker);
+  assert.notEqual(start, -1, `missing function ${name}`);
+  const next = sql.toLowerCase().indexOf('\ncreate or replace function ', start + startMarker.length);
+  return sql.slice(start, next === -1 ? sql.length : next);
+}
+
 test('retains the persisted v1 resume schema version', () => {
   assert.equal(normalizeResumeDocument({ schemaVersion: 1 }).schemaVersion, 1);
 });
@@ -57,6 +65,71 @@ test('defines the atomic resume billing schema contract', () => {
   assert.doesNotMatch(sql, /resume_(?:text|content)|job_description|jd_text|ai_output/i);
 });
 
+test('rejects null and blank RPC inputs before enum comparisons', () => {
+  const sql = readFileSync(
+    new URL('../supabase/migrations/002_resume_optimizer.sql', import.meta.url),
+    'utf8',
+  );
+
+  const requiredNullChecks = {
+    reserve_resume_quota: ['p_user_id', 'p_action', 'p_idempotency_key', 'p_request_id'],
+    settle_resume_quota: ['p_ledger_id', 'p_outcome'],
+    create_resume_order: ['p_user_id', 'p_plan', 'p_order_number'],
+    expire_resume_order: ['p_order_number', 'p_user_id', 'p_failure_reason'],
+    fulfill_resume_order: [
+      'p_order_number',
+      'p_channel_event_id',
+      'p_channel_transaction_id',
+      'p_amount_fen',
+      'p_sanitized_payload',
+    ],
+  };
+
+  for (const [name, parameters] of Object.entries(requiredNullChecks)) {
+    const definition = functionDefinition(sql, name);
+    for (const parameter of parameters) {
+      assert.match(definition, new RegExp(`${parameter}\\s+is null`, 'i'));
+    }
+  }
+
+  assert.match(functionDefinition(sql, 'settle_resume_quota'), /p_outcome\s+is null[\s\S]*p_outcome\s+not in/i);
+  assert.match(functionDefinition(sql, 'create_resume_order'), /p_plan\s+is null[\s\S]*p_plan\s+not in/i);
+  assert.match(functionDefinition(sql, 'expire_resume_order'), /p_failure_reason\s+is null[\s\S]*p_failure_reason\s+not in/i);
+});
+
+test('fixes search path and narrows execute grants for every definer RPC', () => {
+  const sql = readFileSync(
+    new URL('../supabase/migrations/002_resume_optimizer.sql', import.meta.url),
+    'utf8',
+  );
+  const permissions = [
+    ['reserve_resume_quota', 'uuid, text, text, uuid', 'service_role'],
+    ['settle_resume_quota', 'uuid, text', 'service_role'],
+    ['create_resume_order', 'uuid, text, text', 'service_role'],
+    ['expire_resume_order', 'text, uuid, text', 'authenticated, service_role'],
+    ['fulfill_resume_order', 'text, text, text, integer, jsonb', 'service_role'],
+  ];
+
+  for (const [name, signature, grantees] of permissions) {
+    const definition = functionDefinition(sql, name);
+    assert.match(definition, /security definer\s+set search_path\s*=\s*''/i);
+    const escapedSignature = signature.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    assert.match(
+      sql,
+      new RegExp(`revoke execute on function ${name}\\(${escapedSignature}\\) from public, anon, authenticated;`, 'i'),
+    );
+    assert.match(
+      sql,
+      new RegExp(`grant execute on function ${name}\\(${escapedSignature}\\) to ${grantees};`, 'i'),
+    );
+    assert.equal(
+      sql.match(new RegExp(`grant execute on function ${name}\\(${escapedSignature}\\)`, 'gi'))?.length,
+      1,
+      `${name} must have exactly one narrow execute grant`,
+    );
+  }
+});
+
 test('defines rollback-only executable billing cases', () => {
   const sql = readFileSync(
     new URL('../supabase/tests/resume_billing.sql', import.meta.url),
@@ -66,10 +139,17 @@ test('defines rollback-only executable billing cases', () => {
   assert.match(sql, /^begin;/im);
   assert.match(sql, /^rollback;/im);
   assert.match(sql, /duplicate free reservation/i);
-  assert.match(sql, /refund restores once/i);
+  assert.match(sql, /exactly-once refund leaves one independent reservation/i);
   assert.match(sql, /basic rejects the eleventh reservation/i);
   assert.match(sql, /vip remains unlimited/i);
   assert.match(sql, /duplicate payment identifiers grant once/i);
   assert.match(sql, /authenticated users cannot read or mutate another user's rows/i);
+  assert.match(sql, /null enum and identifier inputs are rejected/i);
+  assert.match(sql, /settle_resume_quota\s*\([^,]+,\s*null\s*\)/i);
+  assert.match(sql, /create_resume_order\s*\([^,]+,\s*null\s*,/i);
+  assert.match(sql, /same event with a new transaction is rejected/i);
+  assert.match(sql, /new event with the same transaction is idempotent/i);
+  assert.match(sql, /unused authenticated user sees zero rows in all five tables/i);
+  assert.match(sql, /direct mutations are denied across every billing table/i);
   assert.doesNotMatch(sql, /commit\s*;/i);
 });
