@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils';
 const navItems = [
   { icon: Home, label: '首页', href: '/' },
   { icon: LayoutGrid, label: '工具', href: '/tools' },
-  { icon: FileText, label: '简历', href: '/resume' },
+  { icon: FileText, label: '简历', href: '/resume/' },
   { icon: Trophy, label: '排行', href: '/leaderboard' },
   { icon: Heart, label: '我的', href: '/user' },
 ];
@@ -30,9 +30,10 @@ export default function BottomNav() {
       <div className="mx-auto grid max-w-[500px] grid-cols-5 px-2 py-1">
         {navItems.map((item) => {
           const Icon = item.icon;
+          const activeHref = item.href.replace(/\/$/, '');
           const active = item.href === '/'
             ? pathname === '/'
-            : pathname === item.href || pathname.startsWith(`${item.href}/`);
+            : pathname === activeHref || pathname.startsWith(`${activeHref}/`);
           return (
             <Link
               key={item.href}

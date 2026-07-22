@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { buildCustomRoute } from 'next/dist/lib/build-custom-route.js';
+import nextConfig from '../next.config.mjs';
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
@@ -22,7 +24,7 @@ test('publishes one anonymous canonical resume optimizer entry with effective pl
   assert.deepEqual(entry.pricing, [
     { plan: 'Free', price: 0, unit: '', quota: '本地编辑、导入、预览与 PDF 导出', highlight: true },
     { plan: 'Basic', price: 9.9, unit: 'CNY', quota: 'AI 优化 10 次', highlight: false },
-    { plan: 'VIP', price: 99, unit: 'CNY', quota: 'AI 优化不限次', highlight: false },
+    { plan: '永久 VIP', price: 99, unit: 'CNY', quota: 'AI 优化不限次', highlight: false },
   ]);
 });
 
@@ -30,20 +32,26 @@ test('keeps resume navigation active and preserves the five-column mobile geomet
   const navbar = read('src/components/layout/Navbar.tsx');
   const bottomNav = read('src/components/layout/BottomNav.tsx');
 
-  assert.match(navbar, /href:\s*['"]\/resume['"],\s*label:\s*['"]简历优化['"]/);
-  assert.match(navbar, /pathname === item\.href \|\| pathname\.startsWith\(/);
+  assert.match(navbar, /href:\s*['"]\/resume\/['"],\s*label:\s*['"]简历优化['"]/);
+  assert.match(navbar, /const activeHref = item\.href\.replace\(/);
+  assert.match(navbar, /pathname === activeHref \|\| pathname\.startsWith\(`\$\{activeHref\}\//);
   assert.match(bottomNav, /FileText/);
-  assert.match(bottomNav, /label:\s*['"]简历['"],\s*href:\s*['"]\/resume['"]/);
-  assert.match(bottomNav, /pathname === item\.href \|\| pathname\.startsWith\(/);
+  assert.match(bottomNav, /label:\s*['"]简历['"],\s*href:\s*['"]\/resume\/['"]/);
+  assert.match(bottomNav, /const activeHref = item\.href\.replace\(/);
+  assert.match(bottomNav, /pathname === activeHref \|\| pathname\.startsWith\(`\$\{activeHref\}\//);
   assert.match(bottomNav, /h-\[calc\(64px\+env\(safe-area-inset-bottom,0px\)\)\]/);
   assert.match(bottomNav, /grid-cols-5/);
 });
 
-test('permanently redirects every legacy resume optimizer path to the canonical route', () => {
-  const config = read('next.config.mjs');
+test('compiles both legacy resume optimizer redirects as permanent Next 308 routes', async () => {
+  const redirects = await nextConfig.redirects();
 
   for (const source of ['/tools/resume-optimizer', '/tools/resume-optimizer/']) {
-    const escaped = source.replaceAll('/', '\\/');
-    assert.match(config, new RegExp(`source:\\s*['\"]${escaped}['\"][\\s\\S]{0,120}destination:\\s*['\"]\\/resume\\/['\"][\\s\\S]{0,120}permanent:\\s*true`));
+    const redirect = redirects.find((route) => route.source === source);
+    assert.ok(redirect, `missing redirect for ${source}`);
+
+    const compiled = buildCustomRoute('redirect', redirect, []);
+    assert.equal(compiled.destination, '/resume/');
+    assert.equal(compiled.statusCode, 308);
   }
 });
