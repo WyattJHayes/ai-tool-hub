@@ -286,6 +286,7 @@ test('wires downloaded PDF rendering and redacted all-context evidence into the 
 
   assert.match(guard, /pdfjs-dist\/legacy\/build\/pdf\.mjs/);
   assert.match(guard, /@napi-rs\/canvas/);
+  assert.match(guard, /import \{ analyzeStructuralSimilarity \} from '\.\/resume-pdf-profile\.mjs'/);
   assert.match(guard, /resume-export-page\.png/);
   assert.match(guard, /createHash/);
   assert.match(guard, /sha256/);
@@ -300,7 +301,7 @@ test('runs the exact resume acceptance sequence before deployment', () => {
   const workflow = readFileSync(new URL('../../.github/workflows/deploy.yml', import.meta.url), 'utf8');
   const commands = [
     'npm --prefix next-src run test:resume',
-    'node --test next-src/tests/resume-ui-contract.test.mjs next-src/tests/resume-entry.test.mjs',
+    'node --test next-src/tests/resume-ui-contract.test.mjs next-src/tests/resume-ui-profile.test.mjs next-src/tests/resume-entry.test.mjs',
     'npm --prefix next-src run lint',
     'npm --prefix next-src run build',
     'RESUME_UI_URL=http://127.0.0.1:4181 RESUME_QA_DIR=/tmp/resume-ui-qa node scripts/resume-ui-guard.mjs',

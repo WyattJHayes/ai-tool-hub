@@ -97,7 +97,7 @@ jobs:
         run: |
           set -euo pipefail
           npm --prefix next-src run test:resume
-          node --test next-src/tests/resume-ui-contract.test.mjs next-src/tests/resume-entry.test.mjs
+          node --test next-src/tests/resume-ui-contract.test.mjs next-src/tests/resume-ui-profile.test.mjs next-src/tests/resume-entry.test.mjs
           npm --prefix next-src run lint
           export NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:4192
           export NEXT_PUBLIC_SUPABASE_ANON_KEY=resume-ui-qa-anon-key

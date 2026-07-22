@@ -7,6 +7,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
 import { prepareQaDir } from './carbon-qa-path.mjs';
+import { analyzeStructuralSimilarity } from './resume-pdf-profile.mjs';
 
 const baseUrl = process.env.RESUME_UI_URL || 'http://127.0.0.1:4181';
 const qaDir = await prepareQaDir(process.env.RESUME_QA_DIR || '/tmp/resume-ui-qa');
@@ -649,32 +650,12 @@ async function exerciseCommittedImports(page, fixtures) {
   }
 }
 
-async function grayscaleSample(input) {
+async function colorSample(input) {
   return sharp(input)
     .flatten({ background: '#ffffff' })
     .resize(180, 255, { fit: 'fill' })
-    .grayscale()
     .raw()
     .toBuffer();
-}
-
-function inkProfile(sample, width, height) {
-  const rows = Array.from({ length: height }, () => 0);
-  const columns = Array.from({ length: width }, () => 0);
-  let count = 0;
-  for (let index = 0; index < sample.length; index += 1) {
-    if (sample[index] >= 245) continue;
-    const row = Math.floor(index / width);
-    const column = index % width;
-    rows[row] += 1;
-    columns[column] += 1;
-    count += 1;
-  }
-  return { columns, count, rows };
-}
-
-function normalizedProfileDifference(left, right, scale) {
-  return left.reduce((total, value, index) => total + Math.abs(value - right[index]) / scale, 0) / left.length;
 }
 
 async function renderDownloadedPdf(pdfPath, sourcePngPath) {
@@ -701,17 +682,12 @@ async function renderDownloadedPdf(pdfPath, sourcePngPath) {
     assert.equal(stats.channels.slice(0, 3).some((channel) => channel.min !== channel.max), true, 'rendered PDF page has no pixel variation');
 
     const [sourceSample, renderedSample] = await Promise.all([
-      grayscaleSample(sourcePngPath),
-      grayscaleSample(renderedPng),
+      colorSample(sourcePngPath),
+      colorSample(renderedPng),
     ]);
-    const sourceInk = inkProfile(sourceSample, 180, 255);
-    const renderedInk = inkProfile(renderedSample, 180, 255);
-    assert.equal(sourceInk.count > 0 && renderedInk.count > 0, true, 'source or rendered PDF content is blank');
-    const inkRatio = renderedInk.count / sourceInk.count;
-    const rowDifference = normalizedProfileDifference(sourceInk.rows, renderedInk.rows, 180);
-    const columnDifference = normalizedProfileDifference(sourceInk.columns, renderedInk.columns, 255);
-    assert.equal(inkRatio >= 0.65 && inkRatio <= 1.45, true, `rendered PDF content density diverged from source (${inkRatio.toFixed(3)})`);
-    assert.equal(rowDifference <= 0.08 && columnDifference <= 0.08, true, `rendered PDF layout diverged from source (rows=${rowDifference.toFixed(3)}, columns=${columnDifference.toFixed(3)})`);
+    const similarity = analyzeStructuralSimilarity(sourceSample, renderedSample, 180, 255);
+    assert.equal(similarity.sourceInk.count > 0 && similarity.renderedInk.count > 0, true, 'source or rendered PDF content is blank');
+    assert.equal(similarity.matches, true, `rendered PDF layout diverged from source (density=${similarity.inkRatio.toFixed(3)}, rows=${similarity.rowDifference.toFixed(3)}, columns=${similarity.columnDifference.toFixed(3)}, rowShift=${similarity.rowDisplacement.toFixed(3)}, columnShift=${similarity.columnDisplacement.toFixed(3)})`);
   } finally {
     await loadingTask.destroy();
   }
