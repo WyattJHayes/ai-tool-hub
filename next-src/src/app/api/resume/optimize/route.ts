@@ -3,6 +3,7 @@ import type { AIStreamEvent, OptimizationLevel } from '@/features/resume/types';
 import { streamResumeOptimization } from '@/server/resume/ai';
 import { ResumeApiError, toResumeErrorBody } from '@/server/resume/errors';
 import { reserveQuota, settleQuota, type QuotaReservation, type ReserveQuotaInput } from '@/server/resume/quota';
+import { createSettlementCoordinator } from '@/server/resume/settlement';
 import { requireSupabaseUser, type SupabaseUserIdentity } from '@/server/supabase-admin';
 
 const MAX_RESUME_LENGTH = 50_000;
@@ -18,7 +19,7 @@ interface RouteLogger {
 export interface OptimizeRouteDependencies {
   authenticate(request: Request): Promise<SupabaseUserIdentity>;
   reserve(input: ReserveQuotaInput): Promise<QuotaReservation>;
-  settle(ledgerId: string, outcome: 'consumed' | 'refunded'): Promise<unknown>;
+  settle(ledgerId: string, outcome: 'consumed' | 'refunded', signal?: AbortSignal): Promise<unknown>;
   streamResumeOptimization(
     level: OptimizationLevel,
     resumeText: string,
@@ -90,76 +91,106 @@ export function createOptimizeRoute(dependencies: OptimizeRouteDependencies = pr
         idempotencyKey: idempotencyKey(request),
         requestId: id,
       });
-      const abortController = new AbortController();
-      const abortFromRequest = () => abortController.abort(request.signal.reason);
-      if (request.signal.aborted) abortFromRequest();
-      else request.signal.addEventListener('abort', abortFromRequest, { once: true });
-      let settled = false;
-      let cancelled = false;
+      const upstreamController = new AbortController();
+      const consumeSettlementController = new AbortController();
+      const settlement = createSettlementCoordinator(outcome => dependencies.settle(
+        reservation.ledgerId,
+        outcome,
+        outcome === 'consumed' ? consumeSettlementController.signal : undefined,
+      ));
+      type StreamPhase = 'open' | 'consuming' | 'terminating' | 'done' | 'closed';
+      let phase: StreamPhase = 'open';
+      let consumerCancelled = false;
       let generator: AsyncGenerator<AIStreamEvent> | undefined;
-      const settleOnce = async (outcome: 'consumed' | 'refunded') => {
-        if (settled) return;
-        settled = true;
-        await dependencies.settle(reservation.ledgerId, outcome);
+      let streamController: ReadableStreamDefaultController<Uint8Array> | undefined;
+      let termination: Promise<void> | undefined;
+
+      const detachRequestAbort = () => request.signal.removeEventListener('abort', abortFromRequest);
+      const stopGenerator = () => {
+        upstreamController.abort(new DOMException('Request cancelled', 'AbortError'));
+        consumeSettlementController.abort(new DOMException('Request cancelled', 'AbortError'));
+        void generator?.return(undefined).catch(() => undefined);
+      };
+      const closeStream = () => {
+        if (phase === 'closed' || consumerCancelled) return;
+        phase = 'closed';
+        streamController?.close();
+      };
+      const terminate = (error: ResumeApiError, emitError: boolean): Promise<void> => {
+        if (phase === 'done' || phase === 'closed') return Promise.resolve();
+        if (termination) return termination;
+        phase = 'terminating';
+        stopGenerator();
+        termination = (async () => {
+          try {
+            await settlement.settle('refunded');
+          } catch {
+            dependencies.logger.error({ action: `optimize-${level}`, requestId: id, code: 'QUOTA_UNAVAILABLE' });
+          }
+          dependencies.logger.error({ action: `optimize-${level}`, requestId: id, code: error.code });
+          detachRequestAbort();
+          if (emitError && !consumerCancelled) {
+            streamController?.enqueue(sse('error', toResumeErrorBody(error, id)));
+          }
+          closeStream();
+        })();
+        return termination;
+      };
+      const abortFromRequest = () => {
+        void terminate(new ResumeApiError('AI_CANCELLED', 499), true);
+      };
+
+      const pump = async () => {
+        let doneReceived = false;
+        try {
+          generator = dependencies.streamResumeOptimization(level, input.resumeText as string, jdText, upstreamController.signal);
+          for await (const event of generator) {
+            if (phase !== 'open') return;
+            if (event.type === 'progress') {
+              streamController?.enqueue(sse('progress', event.data));
+            } else if (event.type === 'token' && typeof event.data?.content === 'string') {
+              streamController?.enqueue(sse('token', { content: event.data.content }));
+            } else if (event.type === 'done') {
+              const result = parseAIOptimizationResult(event.data);
+              if (result.level !== level) throw new ResumeApiError('AI_INVALID_RESPONSE', 502);
+              phase = 'consuming';
+              await settlement.settle('consumed');
+              if (phase !== 'consuming') return;
+              phase = 'done';
+              streamController?.enqueue(sse('done', { ...result, quota: {
+                plan: reservation.plan,
+                remaining: reservation.remaining,
+                total: reservation.total,
+                resetAt: reservation.resetAt,
+              } }));
+              doneReceived = true;
+              dependencies.logger.info({ action: `optimize-${level}`, requestId: id, status: 'consumed' });
+              detachRequestAbort();
+              streamController?.close();
+              break;
+            }
+          }
+          if (!doneReceived && phase === 'open') {
+            throw new ResumeApiError('STREAM_INCOMPLETE', 502);
+          }
+        } catch (error) {
+          await terminate(normalizedError(error), !consumerCancelled);
+        }
       };
 
       const stream = new ReadableStream<Uint8Array>({
-        async start(controller) {
-          let doneReceived = false;
-          try {
-            generator = dependencies.streamResumeOptimization(level, input.resumeText as string, jdText, abortController.signal);
-            for await (const event of generator) {
-              if (cancelled) return;
-              if (event.type === 'progress') {
-                controller.enqueue(sse('progress', event.data));
-              } else if (event.type === 'token' && typeof event.data?.content === 'string') {
-                controller.enqueue(sse('token', { content: event.data.content }));
-              } else if (event.type === 'done') {
-                const result = parseAIOptimizationResult(event.data);
-                if (result.level !== level) throw new ResumeApiError('AI_INVALID_RESPONSE', 502);
-                await settleOnce('consumed');
-                if (cancelled) return;
-                controller.enqueue(sse('done', { ...result, quota: {
-                  plan: reservation.plan,
-                  remaining: reservation.remaining,
-                  total: reservation.total,
-                  resetAt: reservation.resetAt,
-                } }));
-                doneReceived = true;
-                dependencies.logger.info({ action: `optimize-${level}`, requestId: id, status: 'consumed' });
-                break;
-              }
-            }
-            if (!doneReceived && !cancelled) throw new ResumeApiError('STREAM_INCOMPLETE', 502);
-            if (!cancelled) controller.close();
-          } catch (error) {
-            try {
-              await settleOnce('refunded');
-            } catch {
-              dependencies.logger.error({ action: `optimize-${level}`, requestId: id, code: 'QUOTA_UNAVAILABLE' });
-            }
-            const normalized = normalizedError(error);
-            dependencies.logger.error({ action: `optimize-${level}`, requestId: id, code: normalized.code });
-            if (!cancelled) {
-              controller.enqueue(sse('error', toResumeErrorBody(normalized, id)));
-              controller.close();
-            }
-          } finally {
-            request.signal.removeEventListener('abort', abortFromRequest);
-          }
+        start(controller) {
+          streamController = controller;
+          void pump();
         },
         async cancel() {
-          cancelled = true;
-          abortController.abort(new DOMException('Client cancelled', 'AbortError'));
-          try {
-            await settleOnce('refunded');
-          } catch {
-            dependencies.logger.error({ action: `optimize-${level}`, requestId: id, code: 'QUOTA_UNAVAILABLE' });
-          } finally {
-            await generator?.return(undefined);
-          }
+          consumerCancelled = true;
+          await terminate(new ResumeApiError('AI_CANCELLED', 499), false);
         },
       });
+
+      if (request.signal.aborted) abortFromRequest();
+      else request.signal.addEventListener('abort', abortFromRequest, { once: true });
 
       return new Response(stream, {
         headers: {

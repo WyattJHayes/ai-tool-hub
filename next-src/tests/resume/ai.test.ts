@@ -228,7 +228,7 @@ function routeHarness() {
   return { state, dependencies };
 }
 
-function postRequest(path: string, body: unknown, idempotencyKey = 'idem-1'): Request {
+function postRequest(path: string, body: unknown, idempotencyKey = 'idem-1', signal?: AbortSignal): Request {
   return new Request(`https://app.example.com${path}`, {
     method: 'POST',
     headers: {
@@ -238,6 +238,7 @@ function postRequest(path: string, body: unknown, idempotencyKey = 'idem-1'): Re
       'x-request-id': '00000000-0000-4000-8000-000000000001',
     },
     body: JSON.stringify(body),
+    signal,
   });
 }
 
@@ -301,6 +302,44 @@ test('settles parse and JD reservations consumed on success and refunded once on
   assert.equal(parse.state.reservations[0].idempotencyKey, 'same-key');
   assert.equal(analyze.state.reservations[0].idempotencyKey, 'same-key');
   assert.doesNotMatch(JSON.stringify([...parse.state.logs, ...analyze.state.logs]), /PRIVATE_RESUME_TEXT|PRIVATE_JD_TEXT/);
+});
+
+test('parse and JD each refund exactly once after consumed settlement fails', async () => {
+  const scenarios = [
+    {
+      path: '/api/resume/parse',
+      body: { text: 'resume' },
+      create: (settle: (ledgerId: string, outcome: 'consumed' | 'refunded') => Promise<unknown>) => {
+        const harness = routeHarness();
+        return createParseRoute({ ...harness.dependencies, settle, parseResume: async () => documentFixture() });
+      },
+    },
+    {
+      path: '/api/resume/analyze-jd',
+      body: { jdText: 'job description' },
+      create: (settle: (ledgerId: string, outcome: 'consumed' | 'refunded') => Promise<unknown>) => {
+        const harness = routeHarness();
+        return createAnalyzeJdRoute({ ...harness.dependencies, settle, analyzeJobDescription: async () => jdFixture() });
+      },
+    },
+  ];
+
+  for (const scenario of scenarios) {
+    const attempts: Array<'consumed' | 'refunded'> = [];
+    const completed: Array<'consumed' | 'refunded'> = [];
+    const route = scenario.create(async (_ledgerId, outcome) => {
+      attempts.push(outcome);
+      if (outcome === 'consumed') throw new ResumeApiError('QUOTA_UNAVAILABLE', 503);
+      completed.push(outcome);
+      return {};
+    });
+
+    const response = await route(postRequest(scenario.path, scenario.body));
+
+    assert.equal(response.status, 503);
+    assert.deepEqual(attempts, ['consumed', 'refunded']);
+    assert.deepEqual(completed, ['refunded']);
+  }
 });
 
 test('forwards duplicate idempotency keys to the atomic reservation adapter without deriving identity from input', async () => {
@@ -397,6 +436,93 @@ test('refunds cancellation before waiting for an abort-insensitive upstream gene
   } finally {
     releaseUpstream();
     await cancelling;
+  }
+});
+
+test('cancellation racing a deferred failed consume refunds once and never delivers done', async () => {
+  const { dependencies } = routeHarness();
+  const attempts: Array<'consumed' | 'refunded'> = [];
+  const completed: Array<'consumed' | 'refunded'> = [];
+  let consumeStarted!: () => void;
+  let rejectConsume!: (error: Error) => void;
+  let consumeSignal: AbortSignal | undefined;
+  const started = new Promise<void>(resolve => { consumeStarted = resolve; });
+  const deferredConsume = new Promise<unknown>((_resolve, reject) => { rejectConsume = reject; });
+  const route = createOptimizeRoute({
+    ...dependencies,
+    settle: async (_ledgerId, outcome, signal?: AbortSignal) => {
+      attempts.push(outcome);
+      if (outcome === 'consumed') {
+        consumeSignal = signal;
+        consumeStarted();
+        signal?.addEventListener(
+          'abort',
+          () => rejectConsume(new ResumeApiError('QUOTA_UNAVAILABLE', 503)),
+          { once: true },
+        );
+        return deferredConsume;
+      }
+      completed.push(outcome);
+      return {};
+    },
+    streamResumeOptimization: async function* () {
+      yield { type: 'done', data: optimizationFixture() };
+    },
+  });
+  const response = await route(postRequest('/api/resume/optimize', { level: 'light', resumeText: 'resume' }));
+  const reader = response.body!.getReader();
+  const pendingRead = reader.read();
+  await started;
+  const cancelling = reader.cancel();
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  try {
+    assert.equal(consumeSignal?.aborted, true);
+    const read = await pendingRead;
+    await cancelling;
+    assert.equal(read.done, true);
+    assert.equal(read.value, undefined);
+    assert.deepEqual(attempts, ['consumed', 'refunded']);
+    assert.deepEqual(completed, ['refunded']);
+  } finally {
+    if (!consumeSignal?.aborted) rejectConsume(new ResumeApiError('QUOTA_UNAVAILABLE', 503));
+    await cancelling;
+  }
+});
+
+test('request abort promptly refunds and terminates despite an abort-insensitive upstream generator', async () => {
+  const { state, dependencies } = routeHarness();
+  let releaseUpstream!: () => void;
+  const upstreamReleased = new Promise<void>(resolve => { releaseUpstream = resolve; });
+  const route = createOptimizeRoute({
+    ...dependencies,
+    streamResumeOptimization: async function* () {
+      yield { type: 'progress', data: { status: 'analyzing', level: 'light' } };
+      await upstreamReleased;
+    },
+  });
+  const requestController = new AbortController();
+  const response = await route(postRequest(
+    '/api/resume/optimize',
+    { level: 'light', resumeText: 'resume' },
+    'abort-request',
+    requestController.signal,
+  ));
+  const reader = response.body!.getReader();
+  await reader.read();
+  const pendingRead = reader.read();
+  requestController.abort();
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  try {
+    assert.deepEqual(state.settlements, [['ledger-1', 'refunded']]);
+    const errorFrame = await pendingRead;
+    assert.equal(errorFrame.done, false);
+    assert.match(new TextDecoder().decode(errorFrame.value), /event: error[\s\S]*AI_CANCELLED/);
+    assert.equal((await reader.read()).done, true);
+  } finally {
+    releaseUpstream();
+    await pendingRead;
   }
 });
 

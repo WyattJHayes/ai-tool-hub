@@ -6,6 +6,7 @@ import {
   settleQuota,
   toResumeErrorBody,
   type ResumeRpcClient,
+  type ResumeRpcResult,
 } from '../../src/server/resume/quota';
 
 test('reserves quota with the exact Task 3 RPC name and arguments', async () => {
@@ -65,6 +66,23 @@ test('settles quota with the exact Task 3 RPC name and arguments', async () => {
     p_outcome: 'refunded',
   }]]);
   assert.equal(result, settledRow);
+});
+
+test('forwards an abort signal to an abortable settlement RPC', async () => {
+  const controller = new AbortController();
+  const seenSignals: AbortSignal[] = [];
+  const operation = Promise.resolve({ data: { id: 'ledger-1', status: 'refunded' }, error: null }) as Promise<ResumeRpcResult> & {
+    abortSignal(signal: AbortSignal): PromiseLike<ResumeRpcResult>;
+  };
+  operation.abortSignal = signal => {
+    seenSignals.push(signal);
+    return operation;
+  };
+  const client: ResumeRpcClient = { rpc: () => operation };
+
+  await settleQuota(client, 'ledger-1', 'refunded', controller.signal);
+
+  assert.deepEqual(seenSignals, [controller.signal]);
 });
 
 test('maps quota exhaustion to a stable 429 error without SQL details', async () => {

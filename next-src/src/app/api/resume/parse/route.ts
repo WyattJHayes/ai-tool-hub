@@ -3,6 +3,7 @@ import type { ResumeDocumentV1 } from '@/features/resume/types';
 import { parseResume } from '@/server/resume/ai';
 import { ResumeApiError, toResumeErrorBody } from '@/server/resume/errors';
 import { reserveQuota, settleQuota, type QuotaReservation, type ReserveQuotaInput } from '@/server/resume/quota';
+import { createSettlementCoordinator, type SettlementCoordinator } from '@/server/resume/settlement';
 import { requireSupabaseUser, type SupabaseUserIdentity } from '@/server/supabase-admin';
 
 const MAX_RESUME_LENGTH = 50_000;
@@ -54,13 +55,7 @@ function idempotencyKey(request: Request): string {
 export function createParseRoute(dependencies: ParseRouteDependencies = productionDependencies) {
   return async function POST(request: Request): Promise<Response> {
     const id = requestId(request);
-    let ledgerId: string | undefined;
-    let settlementStarted = false;
-    const settleOnce = async (outcome: 'consumed' | 'refunded') => {
-      if (!ledgerId || settlementStarted) return;
-      settlementStarted = true;
-      await dependencies.settle(ledgerId, outcome);
-    };
+    let settlement: SettlementCoordinator | undefined;
 
     try {
       const user = await dependencies.authenticate(request);
@@ -80,14 +75,14 @@ export function createParseRoute(dependencies: ParseRouteDependencies = producti
         idempotencyKey: idempotencyKey(request),
         requestId: id,
       });
-      ledgerId = reservation.ledgerId;
+      settlement = createSettlementCoordinator(outcome => dependencies.settle(reservation.ledgerId, outcome));
       const result = parseResumeDocument(await dependencies.parseResume(text, request.signal));
-      await settleOnce('consumed');
+      await settlement.settle('consumed');
       dependencies.logger.info({ action: 'parse', requestId: id, status: 'consumed' });
       return Response.json(result);
     } catch (error) {
       try {
-        await settleOnce('refunded');
+        await settlement?.settle('refunded');
       } catch {
         dependencies.logger.error({ action: 'parse', requestId: id, code: 'QUOTA_UNAVAILABLE' });
       }

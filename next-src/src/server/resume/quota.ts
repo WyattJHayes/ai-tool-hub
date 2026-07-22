@@ -10,8 +10,12 @@ export interface ResumeRpcResult {
   error: unknown | null;
 }
 
+export interface ResumeRpcOperation extends PromiseLike<ResumeRpcResult> {
+  abortSignal?(signal: AbortSignal): PromiseLike<ResumeRpcResult>;
+}
+
 export interface ResumeRpcClient {
-  rpc(name: string, args: Record<string, unknown>): PromiseLike<ResumeRpcResult>;
+  rpc(name: string, args: Record<string, unknown>): ResumeRpcOperation;
 }
 
 export interface ReserveQuotaInput {
@@ -128,30 +132,43 @@ export async function reserveQuota(
   };
 }
 
-export function settleQuota(ledgerId: string, outcome: QuotaSettlementOutcome): Promise<unknown>;
+export function settleQuota(
+  ledgerId: string,
+  outcome: QuotaSettlementOutcome,
+  signal?: AbortSignal,
+): Promise<unknown>;
 export function settleQuota(
   client: ResumeRpcClient,
   ledgerId: string,
   outcome: QuotaSettlementOutcome,
+  signal?: AbortSignal,
 ): Promise<unknown>;
 export async function settleQuota(
   clientOrLedgerId: ResumeRpcClient | string,
   ledgerIdOrOutcome: string,
-  injectedOutcome?: QuotaSettlementOutcome,
+  outcomeOrSignal?: QuotaSettlementOutcome | AbortSignal,
+  injectedSignal?: AbortSignal,
 ): Promise<unknown> {
   const client = typeof clientOrLedgerId === 'string' ? defaultClient() : clientOrLedgerId;
   const ledgerId = typeof clientOrLedgerId === 'string' ? clientOrLedgerId : ledgerIdOrOutcome;
   const outcome = typeof clientOrLedgerId === 'string'
     ? ledgerIdOrOutcome as QuotaSettlementOutcome
-    : injectedOutcome;
+    : outcomeOrSignal as QuotaSettlementOutcome;
+  const signal = typeof clientOrLedgerId === 'string'
+    ? outcomeOrSignal as AbortSignal | undefined
+    : injectedSignal;
   if (!outcome) throw new ResumeApiError('QUOTA_INVALID_REQUEST', 400);
 
   let result: ResumeRpcResult;
   try {
-    result = await client.rpc('settle_resume_quota', {
+    let operation = client.rpc('settle_resume_quota', {
       p_ledger_id: ledgerId,
       p_outcome: outcome,
     });
+    if (signal && operation.abortSignal) {
+      operation = operation.abortSignal(signal) as ResumeRpcOperation;
+    }
+    result = await operation;
   } catch {
     throw new ResumeApiError('QUOTA_UNAVAILABLE', 503);
   }
