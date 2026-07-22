@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { Loader2, LockKeyhole } from 'lucide-react';
 import { createPasswordRecoveryController } from '@/features/auth/recovery';
-import { isSupabaseConfigured, supabase } from '@/lib/supabase';
+import { isSupabaseConfigured, passwordRecoveryIntent, supabase } from '@/lib/supabase';
 
 type RecoveryState = 'checking' | 'ready' | 'invalid' | 'saving' | 'complete';
 
@@ -16,13 +16,13 @@ export default function PasswordRecoveryPage() {
   const controllerRef = useRef<ReturnType<typeof createPasswordRecoveryController> | null>(null);
 
   useEffect(() => {
-    if (!isSupabaseConfigured || !supabase) {
+    if (!isSupabaseConfigured || !supabase || !passwordRecoveryIntent) {
       return;
     }
     const controller = createPasswordRecoveryController({
       auth: supabase.auth,
-      hasRecoveryEntry: () => new URLSearchParams(window.location.hash.slice(1)).get('type') === 'recovery',
-      clearRecoveryEntry: () => window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`),
+      intent: passwordRecoveryIntent,
+      clearRecoveryUrl: () => window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`),
       onAuthorized: () => setState('ready'),
     });
     controllerRef.current = controller;
