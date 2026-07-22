@@ -75,9 +75,12 @@ const serverStorage: StateStorage = {
 };
 
 export function createResumeStorage(
-  storage: StateStorage,
+  storageSource: StateStorage | (() => StateStorage),
   options: ResumeStorageOptions = {},
 ): ResumePersistStorage {
+  const getStorage = typeof storageSource === 'function'
+    ? storageSource
+    : () => storageSource;
   const normalize = options.normalize ?? normalizeResumeDocument;
   let issue: ResumeStorageIssue | null = null;
   let blocked = false;
@@ -104,7 +107,7 @@ export function createResumeStorage(
       return null;
     };
     try {
-      const stored = storage.setItem(RESUME_STORAGE_BACKUP_KEY, serialized);
+      const stored = getStorage().setItem(RESUME_STORAGE_BACKUP_KEY, serialized);
       return stored instanceof Promise ? stored.then(finish, finish) : finish();
     } catch {
       return finish();
@@ -157,7 +160,7 @@ export function createResumeStorage(
   return {
     getItem: (name) => {
       try {
-        const value = storage.getItem(name);
+        const value = getStorage().getItem(name);
         return value instanceof Promise
           ? value.then(parse, () => {
             fail('read-failed', true, false);
@@ -183,7 +186,7 @@ export function createResumeStorage(
         throw new Error('Resume persistence failed.');
       };
       try {
-        const result = storage.setItem(name, serialized);
+        const result = getStorage().setItem(name, serialized);
         return result instanceof Promise ? result.then(finish, reject) : finish();
       } catch {
         return reject();
@@ -199,7 +202,7 @@ export function createResumeStorage(
         throw new Error('Resume persistence removal failed.');
       };
       try {
-        const result = storage.removeItem(name);
+        const result = getStorage().removeItem(name);
         return result instanceof Promise ? result.then(finish, reject) : finish();
       } catch {
         return reject();
@@ -207,10 +210,19 @@ export function createResumeStorage(
     },
     getIssue: () => issue,
     async getRecoveryItem() {
+      let primaryReadFailed = false;
       try {
-        const backup = await storage.getItem(RESUME_STORAGE_BACKUP_KEY);
-        if (backup !== null) return backup;
-        return await storage.getItem(RESUME_STORAGE_KEY);
+        const primary = await getStorage().getItem(RESUME_STORAGE_KEY);
+        if (primary !== null) return primary;
+      } catch {
+        primaryReadFailed = true;
+      }
+      try {
+        const backup = await getStorage().getItem(RESUME_STORAGE_BACKUP_KEY);
+        if (primaryReadFailed) {
+          fail('read-failed', true, backup !== null);
+        }
+        return backup;
       } catch {
         fail('read-failed', true, false);
         return null;
@@ -219,21 +231,21 @@ export function createResumeStorage(
     async resolve() {
       let primary: string | null;
       try {
-        primary = await storage.getItem(RESUME_STORAGE_KEY);
+        primary = await getStorage().getItem(RESUME_STORAGE_KEY);
       } catch {
         fail('read-failed', true, false);
         throw new Error('Resume persistence read failed.');
       }
       if (primary !== null) {
         try {
-          await storage.setItem(RESUME_STORAGE_BACKUP_KEY, primary);
+          await getStorage().setItem(RESUME_STORAGE_BACKUP_KEY, primary);
         } catch {
           fail('write-failed', true, true);
           throw new Error('Resume recovery backup failed.');
         }
       }
       try {
-        await storage.removeItem(RESUME_STORAGE_KEY);
+        await getStorage().removeItem(RESUME_STORAGE_KEY);
       } catch {
         fail('remove-failed', true, primary !== null);
         throw new Error('Resume persistence removal failed.');
@@ -265,7 +277,7 @@ export function useResumeStorageIssue(): ResumeStorageIssue | null {
 }
 
 const browserStorage = createResumeStorage(
-  typeof window === 'undefined' ? serverStorage : window.localStorage,
+  () => typeof window === 'undefined' ? serverStorage : window.localStorage,
   { onIssue: publishBrowserStorageIssue },
 );
 

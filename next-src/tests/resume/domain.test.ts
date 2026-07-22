@@ -257,6 +257,126 @@ test('persists only the document under the versioned storage key', () => {
   assert.deepEqual(Object.keys(partialize?.(useResumeStore.getState()) ?? {}), ['document']);
 });
 
+test('recovery download prefers current primary bytes after a later write failure', async () => {
+  const currentRaw = JSON.stringify({
+    state: { document: createEmptyResume(() => 'current-document') },
+    version: 0,
+  });
+  const staleBackup = '{stale-backup';
+  const values = new Map([
+    [RESUME_STORAGE_KEY, currentRaw],
+    [RESUME_STORAGE_BACKUP_KEY, staleBackup],
+  ]);
+  let failWrites = false;
+  const storage = createResumeStorage({
+    getItem: key => values.get(key) ?? null,
+    setItem: (key, value) => {
+      if (failWrites) throw new Error('write denied');
+      values.set(key, value);
+    },
+    removeItem: key => { values.delete(key); },
+  });
+  assert.ok(await storage.getItem(RESUME_STORAGE_KEY));
+  failWrites = true;
+  await assert.rejects(async () => storage.setItem(RESUME_STORAGE_KEY, {
+    state: { document: createEmptyResume(() => 'unwritten-document') },
+    version: 0,
+  }));
+
+  assert.equal(await storage.getRecoveryItem(), currentRaw);
+});
+
+test('recovery download falls back to backup bytes when primary is absent', async () => {
+  const backupRaw = '{backup-only';
+  const values = new Map([[RESUME_STORAGE_BACKUP_KEY, backupRaw]]);
+  const storage = createResumeStorage({
+    getItem: key => values.get(key) ?? null,
+    setItem: (key, value) => { values.set(key, value); },
+    removeItem: key => { values.delete(key); },
+  });
+
+  assert.equal(await storage.getRecoveryItem(), backupRaw);
+});
+
+test('recovery download preserves and returns exact malformed primary bytes', async () => {
+  const malformedPrimary = '{primary-not-json';
+  const values = new Map([
+    [RESUME_STORAGE_KEY, malformedPrimary],
+    [RESUME_STORAGE_BACKUP_KEY, '{older-backup'],
+  ]);
+  const storage = createResumeStorage({
+    getItem: key => values.get(key) ?? null,
+    setItem: (key, value) => { values.set(key, value); },
+    removeItem: key => { values.delete(key); },
+  });
+
+  assert.equal(await storage.getRecoveryItem(), malformedPrimary);
+  assert.equal(values.get(RESUME_STORAGE_KEY), malformedPrimary);
+});
+
+test('recovery download falls back to backup and reports a typed issue when primary read fails', async () => {
+  const backupRaw = '{readable-backup';
+  const storage = createResumeStorage({
+    getItem: key => {
+      if (key === RESUME_STORAGE_KEY) throw new Error('primary read denied');
+      return key === RESUME_STORAGE_BACKUP_KEY ? backupRaw : null;
+    },
+    setItem: () => undefined,
+    removeItem: () => undefined,
+  });
+
+  assert.equal(await storage.getRecoveryItem(), backupRaw);
+  assert.deepEqual(storage.getIssue(), { code: 'read-failed', blocking: true, recoverable: true });
+});
+
+test('recovery download does not clear a read failure until primary hydration succeeds', async () => {
+  const primaryRaw = JSON.stringify({
+    state: { document: createEmptyResume(() => 'retry-document') },
+    version: 0,
+  });
+  let failPrimaryRead = true;
+  const storage = createResumeStorage({
+    getItem: key => {
+      if (key === RESUME_STORAGE_KEY && failPrimaryRead) throw new Error('primary read denied');
+      return key === RESUME_STORAGE_KEY ? primaryRaw : null;
+    },
+    setItem: () => undefined,
+    removeItem: () => undefined,
+  });
+  assert.equal(await storage.getItem(RESUME_STORAGE_KEY), null);
+
+  failPrimaryRead = false;
+  assert.equal(await storage.getRecoveryItem(), primaryRaw);
+  assert.deepEqual(storage.getIssue(), { code: 'read-failed', blocking: true, recoverable: false });
+
+  assert.ok(await storage.getItem(RESUME_STORAGE_KEY));
+  assert.equal(storage.getIssue(), null);
+});
+
+test('acquires storage lazily and clears a getter failure after a successful retry', async () => {
+  let acquisitions = 0;
+  let available = false;
+  const storage = createResumeStorage(() => {
+    acquisitions += 1;
+    if (!available) throw new Error('storage getter denied');
+    return {
+      getItem: () => null,
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    };
+  });
+
+  assert.equal(acquisitions, 0);
+  assert.equal(await storage.getItem(RESUME_STORAGE_KEY), null);
+  assert.equal(acquisitions, 1);
+  assert.deepEqual(storage.getIssue(), { code: 'read-failed', blocking: true, recoverable: false });
+
+  available = true;
+  assert.equal(await storage.getItem(RESUME_STORAGE_KEY), null);
+  assert.equal(acquisitions, 2);
+  assert.equal(storage.getIssue(), null);
+});
+
 test('backs up malformed JSON exactly and blocks the first edit without overwriting primary bytes', async () => {
   const raw = '{not-json';
   const values = new Map([[RESUME_STORAGE_KEY, raw]]);
