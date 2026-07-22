@@ -67,6 +67,7 @@ test('uses semantic React preview pages with fixed A4 geometry', () => {
 
 test('requires a local import preview before merge or replacement', () => {
   const dialog = read('src/components/resume/ImportDialog.tsx');
+  const ui = read('src/features/resume/ui.ts');
 
   assert.match(dialog, /extractResumeFile/);
   assert.match(dialog, /parseResumeTextLocally/);
@@ -78,13 +79,18 @@ test('requires a local import preview before merge or replacement', () => {
   assert.match(dialog, /人工核对/);
   assert.match(dialog, /role=['"]dialog['"]/);
   assert.match(dialog, /role=['"]alert['"]/);
-  assert.match(dialog, /commitResumeImport/);
+  assert.match(ui, /commitResumeImport/);
   assert.match(dialog, /resetAndClose/);
   assert.match(dialog, /event\.key === 'Escape'[\s\S]{0,160}resetAndClose/);
   assert.match(dialog, /event\.key === 'Tab'/);
   assert.match(dialog, /dialogRef/);
   assert.match(dialog, /openerRef/);
   assert.match(dialog, /\.focus\(\)/);
+  assert.match(dialog, /createResumeImportConfirmation/);
+  assert.match(dialog, /trapDialogTabKey/);
+  assert.match(dialog, /tabIndex=\{-1\}/);
+  assert.match(ui, /:not\(\[hidden\]\)/);
+  assert.match(ui, /getClientRects\(\)/);
 });
 
 test('exposes a post-import undo action wired to the canonical store', () => {

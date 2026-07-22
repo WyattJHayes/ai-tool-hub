@@ -8,10 +8,11 @@ import {
 } from '@/features/resume/importer';
 import { useResumeStore } from '@/features/resume/store';
 import {
-  commitResumeImport,
   countPopulatedResumeFields,
+  createResumeImportConfirmation,
   initialImportDialogState,
   reduceImportDialogState,
+  trapDialogTabKey,
   type ResumeImportMode,
 } from '@/features/resume/ui';
 import type { ResumeDocumentV1 } from '@/features/resume/types';
@@ -22,15 +23,6 @@ interface ImportDialogProps {
   onClose: () => void;
   onImported: () => void;
 }
-
-const FOCUSABLE_SELECTOR = [
-  'button:not([disabled])',
-  'input:not([disabled]):not([type="hidden"])',
-  'select:not([disabled])',
-  'textarea:not([disabled])',
-  '[href]',
-  '[tabindex]:not([tabindex="-1"])',
-].join(',');
 
 export function ImportDialog({ open, currentDocument, onClose, onImported }: ImportDialogProps) {
   const stageImport = useResumeStore(state => state.stageImport);
@@ -56,29 +48,20 @@ export function ImportDialog({ open, currentDocument, onClose, onImported }: Imp
   useEffect(() => {
     if (!open) return;
     openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const focusFrame = window.requestAnimationFrame(() => closeButtonRef.current?.focus());
+    const focusFrame = window.requestAnimationFrame(() => {
+      if (closeButtonRef.current && !closeButtonRef.current.disabled) {
+        closeButtonRef.current.focus();
+      } else {
+        dialogRef.current?.focus();
+      }
+    });
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !busyRef.current) {
         event.preventDefault();
         resetAndClose();
         return;
       }
-      if (event.key === 'Tab') {
-        const focusable = [...(dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ?? [])];
-        if (!focusable.length) {
-          event.preventDefault();
-          return;
-        }
-        const first = focusable[0];
-        const last = focusable.at(-1)!;
-        if (event.shiftKey && (document.activeElement === first || !dialogRef.current?.contains(document.activeElement))) {
-          event.preventDefault();
-          last.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first.focus();
-        }
-      }
+      if (event.key === 'Tab' && dialogRef.current) trapDialogTabKey(event, dialogRef.current);
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => {
@@ -113,15 +96,21 @@ export function ImportDialog({ open, currentDocument, onClose, onImported }: Imp
     }
   };
 
-  const confirmImport = (mode: ResumeImportMode) => {
-    if (!state.preview || state.busy) return;
-    dispatch({ type: 'set-busy', busy: true });
-    const result = commitResumeImport(mode, currentDocument, state.preview.document, {
+  const importConfirmation = state.preview ? createResumeImportConfirmation(
+    currentDocument,
+    state.preview.document,
+    {
       getState: () => useResumeStore.getState(),
       stageImport,
       acceptStagedImport,
       restoreState: snapshot => useResumeStore.setState(snapshot),
-    });
+    },
+  ) : null;
+
+  const confirmImport = (mode: ResumeImportMode) => {
+    if (!importConfirmation || state.busy) return;
+    dispatch({ type: 'set-busy', busy: true });
+    const result = importConfirmation.confirm(mode);
     if (!result.ok) {
       dispatch({ type: 'failure', error: '导入保存失败，原简历已恢复。请检查浏览器存储空间后重试。' });
       return;
@@ -138,6 +127,7 @@ export function ImportDialog({ open, currentDocument, onClose, onImported }: Imp
         role="dialog"
         aria-modal="true"
         aria-labelledby="resume-import-title"
+        tabIndex={-1}
       >
         <header className="resume-import-dialog__header">
           <div>

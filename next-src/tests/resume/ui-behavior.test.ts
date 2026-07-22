@@ -77,11 +77,65 @@ test('builds replacement directly and merges without overwriting populated curre
   assert.deepEqual(merged.skills, ['TypeScript', 'React']);
 });
 
-test('does not stage or accept an import while only building its candidate', () => {
+test('treats whitespace-only current scalar values as empty during merge', () => {
   const buildResumeImportCandidate = requireExport('buildResumeImportCandidate');
-  const calls: string[] = [];
-  buildResumeImportCandidate('replace', resume(), resume({ name: 'Imported' }));
-  assert.deepEqual(calls, []);
+  const current = resume({
+    name: '   ',
+    profile: { id: 'profile-current', fullName: ' ', phone: '\t', email: 'current@example.com', location: '\n', title: '  ' },
+    target: '  ',
+    summary: '\t',
+  });
+  const imported = resume({
+    name: 'Imported resume',
+    profile: { id: 'profile-imported', fullName: 'Imported Name', phone: '123', email: 'imported@example.com', location: 'Shanghai', title: 'Engineer' },
+    target: 'Platform Engineer',
+    summary: 'Imported summary',
+  });
+
+  const merged = buildResumeImportCandidate('merge', current, imported);
+  assert.equal(merged.name, 'Imported resume');
+  assert.deepEqual(merged.profile, {
+    id: 'profile-current',
+    fullName: 'Imported Name',
+    phone: '123',
+    email: 'current@example.com',
+    location: 'Shanghai',
+    title: 'Engineer',
+  });
+  assert.equal(merged.target, 'Platform Engineer');
+  assert.equal(merged.summary, 'Imported summary');
+});
+
+test('does not stage or accept until production import confirmation explicitly confirms Merge or Replace', () => {
+  const createResumeImportConfirmation = requireExport('createResumeImportConfirmation');
+  const current = resume({ name: 'Current' });
+  const imported = resume({ name: 'Imported' });
+
+  for (const mode of ['merge', 'replace'] as const) {
+    const calls: string[] = [];
+    const state = {
+      document: current,
+      undoStack: [] as ResumeDocumentV1[],
+      changeUndoStack: [] as ResumeChange[][],
+      stagedImport: null as ResumeDocumentV1 | null,
+      changes: [] as ResumeChange[],
+      backup: null as ResumeDocumentV1 | null,
+    };
+    const confirmation = createResumeImportConfirmation(current, imported, {
+      getState: () => state,
+      stageImport: candidate => { calls.push('stage'); state.stagedImport = candidate; },
+      acceptStagedImport: () => { calls.push('accept'); state.document = state.stagedImport!; state.stagedImport = null; },
+      restoreState: snapshot => Object.assign(state, snapshot),
+    });
+
+    assert.deepEqual(calls, []);
+    const candidate = confirmation.prepare(mode);
+    assert.deepEqual(calls, []);
+    assert.equal(candidate.name, mode === 'replace' ? 'Imported' : 'Current');
+
+    assert.equal(confirmation.confirm(mode).ok, true);
+    assert.deepEqual(calls, ['stage', 'accept']);
+  }
 });
 
 test('commits an import by staging before accepting it', () => {
@@ -163,6 +217,53 @@ test('dialog reset clears preview, error, and busy state', () => {
     busy: true,
   };
   assert.deepEqual(reduceImportDialogState(dirty, { type: 'reset' }), initialImportDialogState);
+});
+
+test('keeps Tab and Shift+Tab inside the dialog when no enabled child can receive focus', () => {
+  const trapDialogTabKey = requireExport('trapDialogTabKey');
+  const focused: string[] = [];
+  const hiddenInput = {
+    hidden: true,
+    disabled: false,
+    tabIndex: 0,
+    getAttribute: () => null,
+    getClientRects: () => [{ width: 1 }],
+    focus: () => focused.push('hidden-input'),
+  };
+  const disabledButton = {
+    hidden: false,
+    disabled: true,
+    tabIndex: 0,
+    getAttribute: () => null,
+    getClientRects: () => [{ width: 1 }],
+    focus: () => focused.push('disabled-button'),
+  };
+  const nonRenderedControl = {
+    hidden: false,
+    disabled: false,
+    tabIndex: 0,
+    getAttribute: () => null,
+    getClientRects: () => [],
+    focus: () => focused.push('non-rendered'),
+  };
+  const dialog = {
+    querySelectorAll: () => [hiddenInput, disabledButton, nonRenderedControl],
+    contains: () => false,
+    focus: () => focused.push('dialog'),
+  };
+
+  for (const shiftKey of [false, true]) {
+    let prevented = false;
+    const event = {
+      key: 'Tab',
+      shiftKey,
+      preventDefault: () => { prevented = true; },
+    };
+    const contained = trapDialogTabKey(event as KeyboardEvent, dialog as unknown as HTMLElement);
+    assert.equal(contained, true);
+    assert.equal(prevented, true);
+  }
+  assert.deepEqual(focused, ['dialog', 'dialog']);
 });
 
 test('save controller makes unsaved, saving, and saved observable in order', () => {

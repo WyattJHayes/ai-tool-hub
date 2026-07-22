@@ -82,17 +82,17 @@ export function buildResumeImportCandidate(
 
   return {
     ...current,
-    name: current.name === 'Untitled resume' ? imported.name : current.name,
+    name: !hasText(current.name) || current.name.trim() === 'Untitled resume' ? imported.name : current.name,
     profile: {
       ...current.profile,
-      fullName: current.profile.fullName || imported.profile.fullName,
-      phone: current.profile.phone || imported.profile.phone,
-      email: current.profile.email || imported.profile.email,
-      location: current.profile.location || imported.profile.location,
-      title: current.profile.title || imported.profile.title,
+      fullName: preferPopulatedText(current.profile.fullName, imported.profile.fullName),
+      phone: preferPopulatedText(current.profile.phone, imported.profile.phone),
+      email: preferPopulatedText(current.profile.email, imported.profile.email),
+      location: preferPopulatedText(current.profile.location, imported.profile.location),
+      title: preferPopulatedText(current.profile.title, imported.profile.title),
     },
-    target: current.target || imported.target,
-    summary: current.summary || imported.summary,
+    target: preferPopulatedText(current.target, imported.target),
+    summary: preferPopulatedText(current.summary, imported.summary),
     experience: uniqueItems([...current.experience, ...imported.experience]),
     projects: uniqueItems([...current.projects, ...imported.projects]),
     education: uniqueItems([...current.education, ...imported.education]),
@@ -155,8 +155,72 @@ export function commitResumeImport(
   }
 }
 
+export interface ResumeImportConfirmation {
+  prepare: (mode: ResumeImportMode) => ResumeDocumentV1;
+  confirm: (mode: ResumeImportMode) => ResumeImportTransactionResult;
+}
+
+export function createResumeImportConfirmation(
+  current: ResumeDocumentV1,
+  imported: ResumeDocumentV1,
+  adapter: ResumeImportTransactionAdapter,
+): ResumeImportConfirmation {
+  return {
+    prepare: mode => buildResumeImportCandidate(mode, current, imported),
+    confirm: mode => commitResumeImport(mode, current, imported, adapter),
+  };
+}
+
 function hasText(value: string): boolean {
   return Boolean(value.trim());
+}
+
+function preferPopulatedText(current: string, imported: string): string {
+  return hasText(current) ? current : imported;
+}
+
+const DIALOG_FOCUSABLE_SELECTOR = [
+  'button:not([disabled]):not([hidden])',
+  'input:not([disabled]):not([hidden]):not([type="hidden"])',
+  'select:not([disabled]):not([hidden])',
+  'textarea:not([disabled]):not([hidden])',
+  '[href]:not([hidden])',
+  '[tabindex]:not([tabindex="-1"]):not([hidden])',
+].join(',');
+
+function isRenderedFocusable(element: HTMLElement): boolean {
+  if (element.hidden || element.tabIndex < 0 || element.getAttribute('aria-hidden') === 'true') return false;
+  if ('disabled' in element && Boolean((element as HTMLButtonElement).disabled)) return false;
+  return element.getClientRects().length > 0;
+}
+
+export function getDialogFocusableElements(dialog: HTMLElement): HTMLElement[] {
+  return [...dialog.querySelectorAll<HTMLElement>(DIALOG_FOCUSABLE_SELECTOR)].filter(isRenderedFocusable);
+}
+
+export function trapDialogTabKey(event: KeyboardEvent, dialog: HTMLElement): boolean {
+  if (event.key !== 'Tab') return false;
+  const focusable = getDialogFocusableElements(dialog);
+  if (!focusable.length) {
+    event.preventDefault();
+    dialog.focus();
+    return true;
+  }
+
+  const first = focusable[0];
+  const last = focusable.at(-1)!;
+  const activeElement = dialog.ownerDocument?.activeElement ?? null;
+  if (event.shiftKey && (activeElement === first || !dialog.contains(activeElement))) {
+    event.preventDefault();
+    last.focus();
+    return true;
+  }
+  if (!event.shiftKey && (activeElement === last || !dialog.contains(activeElement))) {
+    event.preventDefault();
+    first.focus();
+    return true;
+  }
+  return false;
 }
 
 export function isResumeExperiencePopulated(item: ResumeExperience): boolean {
