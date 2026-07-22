@@ -129,6 +129,19 @@ test('loads public plan availability without reading or persisting an auth sessi
   assert.equal(new Headers(calls[0][1]?.headers).has('authorization'), false);
 });
 
+test('invokes fetch with the browser global receiver instead of the dependency object', async () => {
+  let receiver: unknown;
+  const fetchImpl = async function (this: unknown) {
+    receiver = this;
+    return Response.json({ dailyQuota: 3, xddpay: { enabled: false } });
+  } as typeof fetch;
+  const client = createResumeApiClient(dependencies(fetchImpl, []));
+
+  await client.getPlansAvailability();
+
+  assert.equal(receiver, globalThis);
+});
+
 test('keeps the channel disabled while retaining effective quota from a valid plans response', async () => {
   for (const xddpay of [{ enabled: false }, {}]) {
     const client = createResumeApiClient(dependencies(async () => Response.json({ dailyQuota: 3, xddpay }), []));

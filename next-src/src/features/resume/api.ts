@@ -159,6 +159,8 @@ function plansAvailability(value: unknown): ResumePlansAvailability {
 }
 
 export function createResumeApiClient(dependencies: ResumeApiClientDependencies = productionDependencies): ResumeApiClient {
+  const request = (input: RequestInfo | URL, init?: RequestInit) => dependencies.fetch.call(globalThis, input, init);
+
   async function headers(billed: boolean): Promise<Headers> {
     const session = await dependencies.getSession();
     if (!session.accessToken) {
@@ -183,7 +185,7 @@ export function createResumeApiClient(dependencies: ResumeApiClientDependencies 
   ): Promise<T> {
     let response: Response;
     try {
-      response = await dependencies.fetch(path, {
+      response = await request(path, {
         method: 'POST',
         headers: await headers(true),
         body: JSON.stringify(body),
@@ -215,7 +217,7 @@ export function createResumeApiClient(dependencies: ResumeApiClientDependencies 
     async streamOptimize(level, resumeText, jdText, callbacks = {}, signal) {
       let response: Response;
       try {
-        response = await dependencies.fetch('/api/resume/optimize', {
+        response = await request('/api/resume/optimize', {
           method: 'POST',
           headers: await headers(true),
           body: JSON.stringify({ level, resumeText, jdText }),
@@ -300,7 +302,7 @@ export function createResumeApiClient(dependencies: ResumeApiClientDependencies 
     },
 
     async getQuota(signal) {
-      const response = await dependencies.fetch('/api/resume/quota', { headers: await headers(false), signal });
+      const response = await request('/api/resume/quota', { headers: await headers(false), signal });
       if (!response.ok) throw await responseError(response);
       try {
         return quotaSummary(await response.json());
@@ -311,7 +313,7 @@ export function createResumeApiClient(dependencies: ResumeApiClientDependencies 
 
     async getPlansAvailability(signal) {
       try {
-        const response = await dependencies.fetch('/api/resume/plans', {
+        const response = await request('/api/resume/plans', {
           headers: { 'x-request-id': dependencies.randomUUID() },
           signal,
         });

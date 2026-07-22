@@ -123,6 +123,41 @@ test('waits for fonts then renders A4 pages in order with sanitized output names
   }
 });
 
+test('removes preview-only scaling in the html2canvas clone before rendering', async () => {
+  const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  Object.defineProperty(globalThis, 'document', {
+    configurable: true,
+    value: { fonts: { ready: Promise.resolve() } },
+  });
+  const clonedPreview = { style: { position: 'absolute', transform: 'scale(0.68)' } };
+
+  try {
+    await exportResumePdf(preview([page()]), 'resume', async () => ({
+      renderPage: async (_element, options: {
+        onclone?: (clonedDocument: Document) => void;
+      }) => {
+        options.onclone?.({
+          querySelector: (selector: string) => {
+            assert.equal(selector, '.resume-preview-document');
+            return clonedPreview;
+          },
+        } as unknown as Document);
+        return { width: 10, height: 10, toDataURL: () => 'image:page' };
+      },
+      createPdf: () => ({
+        addPage: () => undefined,
+        addImage: () => undefined,
+        save: () => undefined,
+      }),
+    }));
+
+    assert.deepEqual(clonedPreview.style, { position: 'static', transform: 'none' });
+  } finally {
+    if (originalDocument) Object.defineProperty(globalThis, 'document', originalDocument);
+    else Reflect.deleteProperty(globalThis, 'document');
+  }
+});
+
 test('refuses an invalid preview before loading PDF dependencies', async () => {
   const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
   Object.defineProperty(globalThis, 'document', {

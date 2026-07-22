@@ -93,6 +93,76 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
+      - name: Run resume optimizer acceptance
+        run: |
+          set -euo pipefail
+          npm --prefix next-src run test:resume
+          node --test next-src/tests/resume-ui-contract.test.mjs next-src/tests/resume-entry.test.mjs
+          npm --prefix next-src run lint
+          export NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:4192
+          export NEXT_PUBLIC_SUPABASE_ANON_KEY=resume-ui-qa-anon-key
+          npm --prefix next-src run build
+          mkdir -p next-src/.next/standalone/.next
+          cp -R next-src/.next/static next-src/.next/standalone/.next/static
+          if [ -d next-src/public ]; then
+            cp -R next-src/public next-src/.next/standalone/public
+          fi
+          resume_log=/tmp/resume-ui-next.log
+          next_pid=''
+          cleanup_resume() {
+            exit_status=$?
+            trap - EXIT INT TERM
+            if [ -n "$next_pid" ]; then
+              kill "$next_pid" 2>/dev/null || true
+              wait "$next_pid" 2>/dev/null || true
+            fi
+            if [ "$exit_status" -ne 0 ]; then
+              cat "$resume_log"
+            fi
+            rm -f "$resume_log"
+            exit "$exit_status"
+          }
+          trap cleanup_resume EXIT INT TERM
+          (
+            cd next-src
+            exec env \
+              HOSTNAME=127.0.0.1 \
+              PORT=4181 \
+              NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:4192 \
+              SUPABASE_SERVICE_ROLE_KEY=resume-ui-qa-service-role \
+              DEEPSEEK_API_KEY=resume-ui-qa-deepseek-key \
+              DEEPSEEK_BASE_URL=http://127.0.0.1:4192 \
+              DEEPSEEK_MODEL=resume-ui-qa-model \
+              DAILY_QUOTA=20 \
+              XDDPAY_APP_ID=resume-ui-disabled \
+              XDDPAY_SECRET=resume-ui-disabled-secret \
+              XDDPAY_GATEWAY=http://127.0.0.1:4192 \
+              XDDPAY_NOTIFY_URL=http://127.0.0.1:4181/api/resume/payment/callback \
+              node .next/standalone/server.js
+          ) > "$resume_log" 2>&1 &
+          next_pid=$!
+          for attempt in $(seq 1 30); do
+            if ! kill -0 "$next_pid" 2>/dev/null; then
+              exit 1
+            fi
+            if curl --fail --silent http://127.0.0.1:4181/resume/ >/dev/null; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              exit 1
+            fi
+            sleep 1
+          done
+          export RESUME_SERVER_LOG="$resume_log"
+          RESUME_UI_URL=http://127.0.0.1:4181 RESUME_QA_DIR=/tmp/resume-ui-qa node scripts/resume-ui-guard.mjs
+          kill "$next_pid" 2>/dev/null || true
+          wait "$next_pid" 2>/dev/null || true
+          next_pid=''
+          rm -f "$resume_log"
+          trap - EXIT INT TERM
+          node scripts/review-regressions.mjs
+          git diff --check
+
       - name: Run Next.js task-first UI guard
         run: |
           set -euo pipefail

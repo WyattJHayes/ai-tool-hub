@@ -243,3 +243,74 @@ test('wires auth-safe AI and quota controls into the canonical workspace', () =>
   assert.match(toolbar, /onQuota/);
   assert.match(toolbar, /onAccount/);
 });
+
+test('ships a deterministic browser acceptance guard with private temporary evidence', () => {
+  const guardUrl = new URL('../../scripts/resume-ui-guard.mjs', import.meta.url);
+  assert.equal(existsSync(guardUrl), true, 'missing scripts/resume-ui-guard.mjs');
+  const guard = readFileSync(guardUrl, 'utf8');
+
+  assert.match(guard, /from ['"]playwright['"]/);
+  assert.match(guard, /RESUME_UI_URL/);
+  assert.match(guard, /RESUME_QA_DIR/);
+  assert.match(guard, /prepareQaDir/);
+  assert.match(guard, /1440[\s\S]{0,80}900/);
+  assert.match(guard, /1024[\s\S]{0,80}768/);
+  assert.match(guard, /390[\s\S]{0,80}844/);
+  assert.match(guard, /320[\s\S]{0,80}844/);
+  assert.match(guard, /['"]light['"]/);
+  assert.match(guard, /['"]dark['"]/);
+  assert.match(guard, /\.pdf/);
+  assert.match(guard, /\.docx/);
+  assert.match(guard, /\.txt/);
+  assert.match(guard, /\.html/);
+  assert.match(guard, /\.md/);
+  assert.match(guard, /waitForEvent\(['"]download['"]/);
+  assert.match(guard, /document\.documentElement\.scrollWidth/);
+  assert.match(guard, /getBoundingClientRect/);
+  assert.match(guard, /prefers-reduced-motion/);
+  assert.match(guard, /weihub-resume-v1/);
+  assert.match(guard, /sentry|analytics/i);
+  assert.match(guard, /支付渠道尚未通过生产校验/);
+  assert.match(guard, /orderRequests/);
+  assert.doesNotMatch(guard, /REQUIRE_XDDPAY_FIXTURE|XDDPAY_SIGNATURE_FIXTURE/);
+
+  const navigationGuard = guard.match(/async function exerciseNavigationAndSearch\(page\) \{[\s\S]*?\n\}/)?.[0] ?? '';
+  assert.match(navigationGuard, /waitUntil:\s*['"]domcontentloaded['"]/);
+  assert.match(navigationGuard, /按任务找到合适的 AI 工具/);
+  assert.match(navigationGuard, /a\[href=\\?['"]\/resume\\?['"]\][^\n]*a\[href=\\?['"]\/resume\/\\?['"]\]/);
+  assert.match(navigationGuard, /waitForFunction[\s\S]*__reactProps\$/);
+  assert.match(navigationGuard, /Promise\.all\(\[\s*page\.waitForURL/);
+  assert.match(navigationGuard, /searchParams\.get\(['"]q['"]\)\s*===\s*['"]简历['"]/);
+  assert.match(navigationGuard, /inputValue\(\)/);
+  assert.match(navigationGuard, /1 款工具/);
+  assert.doesNotMatch(navigationGuard, /networkidle/);
+  assert.match(guard, /addInitScript\(storageSeed,\s*\{\s*theme,\s*document:\s*seedResumeDocument\(\)\s*\}\)/);
+  assert.match(guard, /Number\.parseFloat\(root\.animationDuration\)\s*<=\s*0\.00001/);
+  assert.match(guard, /png\.length\s*>\s*2_000/);
+  assert.doesNotMatch(guard, /png\.length\s*>\s*10_000/);
+});
+
+test('runs the exact resume acceptance sequence before deployment', () => {
+  const workflow = readFileSync(new URL('../../.github/workflows/deploy.yml', import.meta.url), 'utf8');
+  const commands = [
+    'npm --prefix next-src run test:resume',
+    'node --test next-src/tests/resume-ui-contract.test.mjs next-src/tests/resume-entry.test.mjs',
+    'npm --prefix next-src run lint',
+    'npm --prefix next-src run build',
+    'RESUME_UI_URL=http://127.0.0.1:4181 RESUME_QA_DIR=/tmp/resume-ui-qa node scripts/resume-ui-guard.mjs',
+    'node scripts/review-regressions.mjs',
+    'git diff --check',
+  ];
+  let cursor = -1;
+  for (const command of commands) {
+    const next = workflow.indexOf(command, cursor + 1);
+    assert.notEqual(next, -1, `missing ordered CI command: ${command}`);
+    assert.ok(next > cursor, `CI command is out of order: ${command}`);
+    cursor = next;
+  }
+  assert.match(workflow, /node \.next\/standalone\/server\.js/);
+  assert.match(workflow, /next_pid=\$!/);
+  assert.match(workflow, /kill "\$next_pid"/);
+  assert.match(workflow, /wait "\$next_pid"/);
+  assert.doesNotMatch(workflow, /REQUIRE_XDDPAY_FIXTURE:\s*['"]?0|REQUIRE_XDDPAY_FIXTURE=0/);
+});

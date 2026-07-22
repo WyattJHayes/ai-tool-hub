@@ -20,7 +20,12 @@ export interface ResumePdfDocument {
 export interface ResumePdfDependencies {
   renderPage: (
     page: HTMLElement,
-    options: { scale: number; backgroundColor: string; useCORS: boolean },
+    options: {
+      scale: number;
+      backgroundColor: string;
+      useCORS: boolean;
+      onclone: (clonedDocument: Document) => void;
+    },
   ) => Promise<ResumePdfCanvas>;
   createPdf: (options: { orientation: 'portrait'; unit: 'mm'; format: 'a4' }) => ResumePdfDocument;
 }
@@ -54,6 +59,13 @@ function visiblePageText(page: HTMLElement): string {
   return typeof innerText === 'string' ? innerText : page.textContent ?? '';
 }
 
+function preparePdfClone(clonedDocument: Document): void {
+  const previewDocument = clonedDocument.querySelector<HTMLElement>('.resume-preview-document');
+  if (!previewDocument) return;
+  previewDocument.style.position = 'static';
+  previewDocument.style.transform = 'none';
+}
+
 export async function exportResumePdf(
   element: HTMLElement,
   fileName: string,
@@ -73,7 +85,12 @@ export async function exportResumePdf(
 
   for (const [index, page] of pages.entries()) {
     if (index > 0) pdf.addPage('a4', 'portrait');
-    const canvas = await dependencies.renderPage(page, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
+    const canvas = await dependencies.renderPage(page, {
+      scale: 2,
+      backgroundColor: '#ffffff',
+      useCORS: true,
+      onclone: preparePdfClone,
+    });
     if (!canvas.width || !canvas.height) throw new ResumePdfError('简历页面无法渲染');
     pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, 210, 297);
   }
