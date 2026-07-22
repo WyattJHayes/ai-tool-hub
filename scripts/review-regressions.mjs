@@ -19,6 +19,8 @@ const nginxConfig = read(nginxConfigPath);
 const productionComposePath = 'deploy/tencent-cloud/docker-compose.prod.yml';
 const dockerfilePath = 'next-src/Dockerfile';
 const deploymentScript = read('deploy/tencent-cloud/quick-deploy.sh');
+const deploymentReadme = read('deploy/tencent-cloud/README.md');
+const resumeBillingFixture = read('next-src/supabase/tests/resume_billing.sql');
 const workflow = read('.github/workflows/deploy.yml');
 const workflowTestJob = workflow.split('\n  build-and-deploy:')[0];
 
@@ -141,6 +143,27 @@ if (!fs.existsSync(path.join(root, productionComposePath))) {
   if (/^\s*ports:\s*$/m.test(productionCompose)) {
     failures.push(`${productionComposePath} must not publish application ports on the host`);
   }
+  for (const privateName of [
+    'SUPABASE_SERVICE_ROLE_KEY',
+    'DEEPSEEK_API_KEY',
+    'DAILY_QUOTA',
+    'XDDPAY_APP_ID',
+    'XDDPAY_SECRET',
+    'XDDPAY_GATEWAY',
+    'XDDPAY_NOTIFY_URL',
+  ]) {
+    requireMatch(
+      productionCompose,
+      new RegExp(`\\b${privateName}\\b`),
+      `${productionComposePath} must document the ${privateName} runtime boundary without a value`,
+    );
+  }
+  if (/^\s+(?:SUPABASE_SERVICE_ROLE_KEY|DEEPSEEK_API_KEY|DAILY_QUOTA|XDDPAY_[A-Z_]+):\s+[^#\s].*$/m.test(productionCompose)) {
+    failures.push(`${productionComposePath} must not contain literal private runtime values`);
+  }
+  if (/^\s+args:[\s\S]*?(?:SUPABASE_SERVICE_ROLE_KEY|DEEPSEEK_API_KEY|DAILY_QUOTA|XDDPAY_)/m.test(productionCompose)) {
+    failures.push(`${productionComposePath} must never pass private runtime values as build arguments`);
+  }
 }
 
 if (/docker inspect ai-resume-optimizer\b/.test(deploymentScript)) {
@@ -168,6 +191,63 @@ requireMatch(
   deploymentScript,
   /org\.opencontainers\.image\.revision/,
   'deployment must verify the running image revision label'
+);
+
+for (const privateName of [
+  'SUPABASE_SERVICE_ROLE_KEY',
+  'DEEPSEEK_API_KEY',
+  'DAILY_QUOTA',
+  'XDDPAY_APP_ID',
+  'XDDPAY_SECRET',
+  'XDDPAY_GATEWAY',
+  'XDDPAY_NOTIFY_URL',
+]) {
+  requireMatch(
+    deploymentScript,
+    new RegExp(`\\b${privateName}\\b`),
+    `deployment preflight must inspect ${privateName} by name only`,
+  );
+  requireMatch(
+    deploymentReadme,
+    new RegExp(`\\b${privateName}\\b`),
+    `deployment runbook must document ${privateName} without a real value`,
+  );
+}
+
+for (const [pattern, message] of [
+  [/stat\s+-c\s+['"]%a['"]\s+"\$remote_root\/\.env"/, 'deployment preflight must verify the private env file mode'],
+  [/DAILY_QUOTA[^\n]*10/, 'deployment preflight must require DAILY_QUOTA=10 explicitly'],
+  [/resume_billing\.sql/, 'deployment must gate production DDL on the isolated billing fixture'],
+  [/aggregate_transport/, 'zero-source reconciliation must report transport separately from aggregate results'],
+  [/aggregate_query/, 'zero-source reconciliation must report query success separately from aggregate results'],
+  [/aggregate_result/, 'zero-source reconciliation must distinguish zero and nonzero aggregate results'],
+  [/payment_boundary[^\n]*disabled/, 'deployment must keep the unvalidated payment boundary disabled'],
+  [/\/resume\//, 'deployment must verify the canonical resume editor route'],
+  [/resume-optimizer/, 'deployment must verify the permanent legacy resume redirect'],
+  [/Authorization:\s*Bearer/, 'deployment runbook must provide an authenticated API verification command'],
+  [/XDDPAY_NOTIFY_URL[^\n]*\/api\/resume\/payments\/xddpay\/notify/, 'deployment runbook must document the intended payment callback URL'],
+  [/privacy[^\n]*(?:scan|log)/i, 'deployment must run a privacy log scan before release'],
+  [/source_revision[^\n]*running_revision|running_revision[^\n]*source_revision/, 'deployment must compare the running and approved source revisions'],
+  [/candidate_revision[^\n]*expected_revision|expected_revision[^\n]*candidate_revision/, 'deployment must reject a staged candidate that differs from the approved revision'],
+]) {
+  requireMatch(deploymentScript + '\n' + deploymentReadme, pattern, message);
+}
+
+requireMatch(
+  deploymentReadme,
+  /payment[^\n]*(?:disabled|fail-closed)/i,
+  'deployment runbook must state that payment remains fail-closed',
+);
+
+requireMatch(
+  resumeBillingFixture,
+  /basic-compensation-reserved/,
+  'isolated billing fixture must cover Basic reservation compensation',
+);
+requireMatch(
+  resumeBillingFixture,
+  /vip-compensation-reserved/,
+  'isolated billing fixture must cover VIP reservation compensation',
 );
 
 for (const [pattern, message] of [

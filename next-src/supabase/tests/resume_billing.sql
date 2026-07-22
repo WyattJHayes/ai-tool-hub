@@ -448,8 +448,11 @@ do $$
 declare
   v_index integer;
   v_reservation record;
+  v_compensation record;
   v_remaining integer;
   v_consumed integer;
+  v_version_after_first integer;
+  v_version_after_repeat integer;
 begin
   insert into public.resume_quota_accounts (
     user_id,
@@ -464,6 +467,31 @@ begin
     10,
     false
   );
+
+  select * into v_compensation
+  from public.reserve_resume_quota(
+    '10000000-0000-4000-8000-000000000002',
+    'optimize',
+    'basic-compensation-reserved',
+    '20000000-0000-4000-8000-000000000020'
+  );
+  perform public.compensate_resume_quota(v_compensation.ledger_id);
+  select quota_remaining, version into v_remaining, v_version_after_first
+  from public.resume_quota_accounts
+  where user_id = '10000000-0000-4000-8000-000000000002';
+  perform public.compensate_resume_quota(v_compensation.ledger_id);
+  select version into v_version_after_repeat
+  from public.resume_quota_accounts
+  where user_id = '10000000-0000-4000-8000-000000000002';
+
+  if v_remaining <> 10 or v_version_after_first <> v_version_after_repeat or not exists (
+    select 1
+    from public.resume_usage_ledger
+    where id = v_compensation.ledger_id
+      and status = 'refunded'
+  ) then
+    raise exception 'basic compensation was not exactly-once';
+  end if;
 
   for v_index in 1..10 loop
     select * into v_reservation
@@ -509,8 +537,11 @@ $$;
 do $$
 declare
   v_reservation record;
+  v_compensation record;
   v_account record;
   v_ledger record;
+  v_version_after_first integer;
+  v_version_after_repeat integer;
 begin
   insert into public.resume_quota_accounts (
     user_id,
@@ -525,6 +556,32 @@ begin
     0,
     true
   );
+
+  select * into v_compensation
+  from public.reserve_resume_quota(
+    '10000000-0000-4000-8000-000000000003',
+    'analyze-jd',
+    'vip-compensation-reserved',
+    '20000000-0000-4000-8000-000000000030'
+  );
+  perform public.compensate_resume_quota(v_compensation.ledger_id);
+  select version into v_version_after_first
+  from public.resume_quota_accounts
+  where user_id = '10000000-0000-4000-8000-000000000003';
+  perform public.compensate_resume_quota(v_compensation.ledger_id);
+  select version into v_version_after_repeat
+  from public.resume_quota_accounts
+  where user_id = '10000000-0000-4000-8000-000000000003';
+
+  if v_version_after_first <> v_version_after_repeat or not exists (
+    select 1
+    from public.resume_usage_ledger
+    where id = v_compensation.ledger_id
+      and status = 'refunded'
+      and quota_delta = 0
+  ) then
+    raise exception 'vip compensation changed unlimited entitlement';
+  end if;
 
   select * into v_reservation
   from public.reserve_resume_quota(

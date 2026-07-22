@@ -5,7 +5,7 @@ import {
   requireSupabaseUser,
   ResumeApiError,
 } from '../../src/server/supabase-admin';
-import { getServerEnv, type ServerEnvSource } from '../../src/server/env';
+import { getServerEnv, getXddpayEnv, type ServerEnvSource } from '../../src/server/env';
 
 function validEnvironment(): ServerEnvSource {
   return {
@@ -15,6 +15,11 @@ function validEnvironment(): ServerEnvSource {
     DEEPSEEK_BASE_URL: 'https://api.deepseek.com',
     DEEPSEEK_MODEL: 'deepseek-chat',
     DAILY_QUOTA: '10',
+  };
+}
+
+function validPaymentEnvironment(): ServerEnvSource {
+  return {
     XDDPAY_APP_ID: 'xdd-app',
     XDDPAY_SECRET: 'xdd-secret-value',
     XDDPAY_GATEWAY: 'https://pay.example.com/gateway',
@@ -37,6 +42,11 @@ test('parses complete server configuration without defaults', () => {
     deepseekBaseUrl: 'https://api.deepseek.com',
     deepseekModel: 'deepseek-chat',
     dailyQuota: 10,
+  });
+});
+
+test('parses payment configuration only when its disabled boundary is explicitly requested', () => {
+  assert.deepEqual(getXddpayEnv(validPaymentEnvironment()), {
     xddpayAppId: 'xdd-app',
     xddpaySecret: 'xdd-secret-value',
     xddpayGateway: 'https://pay.example.com/gateway',
@@ -52,14 +62,18 @@ test('rejects every missing private server setting', () => {
     'DEEPSEEK_BASE_URL',
     'DEEPSEEK_MODEL',
     'DAILY_QUOTA',
-    'XDDPAY_APP_ID',
-    'XDDPAY_SECRET',
-    'XDDPAY_GATEWAY',
-    'XDDPAY_NOTIFY_URL',
   ]) {
     const source = validEnvironment();
     delete source[name];
     assert.throws(() => getServerEnv(source), /Invalid server configuration/);
+  }
+});
+
+test('rejects every missing payment setting when the payment boundary is requested', () => {
+  for (const name of ['XDDPAY_APP_ID', 'XDDPAY_SECRET', 'XDDPAY_GATEWAY', 'XDDPAY_NOTIFY_URL']) {
+    const source = validPaymentEnvironment();
+    delete source[name];
+    assert.throws(() => getXddpayEnv(source), /Invalid server configuration/);
   }
 });
 
@@ -78,7 +92,7 @@ test('rejects private secret names exposed through NEXT_PUBLIC without leaking v
     'NEXT_PUBLIC_XDDPAY_SECRET',
     'NEXT_PUBLIC_ACCIDENTAL_SECRET',
   ]) {
-    const source = { ...validEnvironment(), [publicName]: 'DO_NOT_EXPOSE_THIS_VALUE' };
+    const source = { ...validEnvironment(), ...validPaymentEnvironment(), [publicName]: 'DO_NOT_EXPOSE_THIS_VALUE' };
     assert.throws(
       () => getServerEnv(source),
       error => {

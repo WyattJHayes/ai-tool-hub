@@ -1,5 +1,17 @@
 name: weihub
 
+# Names only. Values are loaded at runtime from the mode-0600 env_file and are
+# never Docker build arguments. XDDPAY variables remain unused while payment is
+# fail-closed pending a provider-signed fixture.
+x-private-runtime-env-keys:
+  - SUPABASE_SERVICE_ROLE_KEY
+  - DEEPSEEK_API_KEY
+  - DAILY_QUOTA
+  - XDDPAY_APP_ID
+  - XDDPAY_SECRET
+  - XDDPAY_GATEWAY
+  - XDDPAY_NOTIFY_URL
+
 services:
   web:
     image: ai-resume-optimizer:latest

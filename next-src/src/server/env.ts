@@ -7,6 +7,9 @@ export interface ServerEnv {
   deepseekBaseUrl: string;
   deepseekModel: string;
   dailyQuota: number;
+}
+
+export interface XddpayEnv {
   xddpayAppId: string;
   xddpaySecret: string;
   xddpayGateway: string;
@@ -63,8 +66,8 @@ function assertNoPublicSecrets(source: ServerEnvSource, privateValues: string[])
 export function getServerEnv(source: ServerEnvSource = process.env): ServerEnv {
   const supabaseServiceRoleKey = required(source, 'SUPABASE_SERVICE_ROLE_KEY');
   const deepseekApiKey = required(source, 'DEEPSEEK_API_KEY');
-  const xddpaySecret = required(source, 'XDDPAY_SECRET');
-  assertNoPublicSecrets(source, [supabaseServiceRoleKey, deepseekApiKey, xddpaySecret]);
+  const optionalXddpaySecret = source.XDDPAY_SECRET?.trim();
+  assertNoPublicSecrets(source, [supabaseServiceRoleKey, deepseekApiKey, optionalXddpaySecret].filter(Boolean) as string[]);
 
   const quotaValue = required(source, 'DAILY_QUOTA');
   if (!/^[1-9]\d*$/.test(quotaValue)) throw invalidConfiguration();
@@ -78,6 +81,14 @@ export function getServerEnv(source: ServerEnvSource = process.env): ServerEnv {
     deepseekBaseUrl: requiredHttpUrl(source, 'DEEPSEEK_BASE_URL'),
     deepseekModel: required(source, 'DEEPSEEK_MODEL'),
     dailyQuota,
+  };
+}
+
+export function getXddpayEnv(source: ServerEnvSource = process.env): XddpayEnv {
+  const xddpaySecret = required(source, 'XDDPAY_SECRET');
+  assertNoPublicSecrets(source, [xddpaySecret]);
+
+  return {
     xddpayAppId: required(source, 'XDDPAY_APP_ID'),
     xddpaySecret,
     xddpayGateway: requiredHttpUrl(source, 'XDDPAY_GATEWAY'),
