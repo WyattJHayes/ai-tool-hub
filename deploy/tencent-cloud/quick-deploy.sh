@@ -10,6 +10,12 @@ REMOTE_ROOT="${REMOTE_ROOT:-/opt/ai-tool-hub}"
 DGC_ROOT="${DGC_ROOT:-/opt/dramagenai/dramagenai-cloud}"
 COMPOSE_SOURCE="$SCRIPT_DIR/docker-compose.prod.yml"
 NGINX_SOURCE="$SCRIPT_DIR/nginx.conf"
+ENV_VALIDATOR="$SCRIPT_DIR/validate-env.py"
+RELEASE_LIB="$SCRIPT_DIR/release-lib.sh"
+
+# Shared release helpers are uploaded with each candidate and exercised by the
+# repository's deployment behavior tests.
+source "$RELEASE_LIB"
 
 usage() {
     printf 'Usage: %s {build|sql-preflight|preflight|upload|deploy|full|status|logs}\n' "$0"
@@ -97,13 +103,14 @@ require_release_authority() {
 
 preflight_remote() {
     local source_revision="$1"
+    local aggregate_output
+    local aggregate_status
 
     require_command ssh
-    ssh "$SERVER_HOST" bash -s -- "$REMOTE_ROOT" "$source_revision" <<'REMOTE_PREFLIGHT'
+    ssh "$SERVER_HOST" bash -s -- "$REMOTE_ROOT" <<'REMOTE_PREFLIGHT'
 set -euo pipefail
 
 remote_root="$1"
-source_revision="$2"
 env_file="$remote_root/.env"
 
 if [ ! -s "$env_file" ]; then
@@ -115,59 +122,21 @@ if [ "$(stat -c '%a' "$remote_root/.env")" != 600 ]; then
     exit 1
 fi
 
-env_value() {
-    awk -v wanted="$1" '
-        /^[[:space:]]*#/ { next }
-        {
-            line=$0
-            sub(/^[[:space:]]*export[[:space:]]+/, "", line)
-            split(line, parts, "=")
-            key=parts[1]
-            gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
-            if (key == wanted) {
-                sub(/^[^=]*=/, "", line)
-                gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
-                print line
-                exit
-            }
-        }
-    ' "$env_file"
-}
-
-for key in \
-    NEXT_PUBLIC_SUPABASE_URL \
-    NEXT_PUBLIC_SUPABASE_ANON_KEY \
-    SUPABASE_SERVICE_ROLE_KEY \
-    DEEPSEEK_API_KEY; do
-    if [ -z "$(env_value "$key")" ]; then
-        printf 'required_env_%s=missing\n' "$key" >&2
-        exit 1
-    fi
-    printf 'required_env_%s=present\n' "$key"
-done
-if [ "$(env_value DAILY_QUOTA)" != 10 ]; then
-    echo "required_env_DAILY_QUOTA=not_exactly_10" >&2
-    exit 1
-fi
-echo "required_env_DAILY_QUOTA=present_exact_10"
-
-# Inspect payment names without requiring placeholders. The candidate remains
-# disabled until a provider-signed fixture resolves the provider contract.
-for key in XDDPAY_APP_ID XDDPAY_SECRET XDDPAY_GATEWAY XDDPAY_NOTIFY_URL; do
-    if [ -n "$(env_value "$key")" ]; then
-        printf 'optional_env_%s=present\n' "$key"
-    else
-        printf 'optional_env_%s=absent\n' "$key"
-    fi
-done
-echo "payment_boundary=disabled"
-
 if ! docker container inspect weihub-app >/dev/null 2>&1; then
-    echo "aggregate_transport=current_container_missing" >&2
+    echo "current_container=missing" >&2
     exit 1
 fi
+REMOTE_PREFLIGHT
 
-aggregate_output="$(docker exec weihub-app node -e '
+    # Stream the parser itself so production secrets never leave the host and a
+    # stale remote validator cannot silently weaken this release's contract.
+    ssh "$SERVER_HOST" python3 - "$REMOTE_ROOT/.env" < "$ENV_VALIDATOR"
+    echo "payment_boundary=disabled"
+
+    set +e
+    aggregate_output="$(ssh "$SERVER_HOST" bash -s 2>/dev/null <<'REMOTE_AGGREGATE'
+set -uo pipefail
+docker exec -i weihub-app node - <<'NODE'
 const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const results = [];
@@ -192,19 +161,13 @@ for (const result of results) {
   console.log(`aggregate_query_${result.label}=${result.query ? "pass" : "fail"}`);
   if (result.query) console.log(`aggregate_result_${result.label}=${result.total === 0 ? "zero" : "nonzero"} count=${result.total}`);
 }
-')"
-printf '%s\n' "$aggregate_output"
-if grep -Eq 'aggregate_(transport|query)_[^=]+=fail' <<<"$aggregate_output"; then
-    echo "zero_source_reconciliation=failed" >&2
-    exit 1
-fi
-if [ "$(grep -c '^aggregate_result_' <<<"$aggregate_output")" -ne 7 ]; then
-    echo "zero_source_reconciliation=incomplete" >&2
-    exit 1
-fi
-echo "zero_source_reconciliation=passed"
-echo "preflight_source_revision=$source_revision"
-REMOTE_PREFLIGHT
+NODE
+REMOTE_AGGREGATE
+)"
+    aggregate_status=$?
+    set -e
+    classify_aggregate_probe "$aggregate_status" "$aggregate_output"
+    echo "preflight_source_revision=$source_revision"
 }
 
 preflight_release() {
@@ -216,72 +179,156 @@ preflight_release() {
 }
 
 upload_sources() {
+    local archive
+    local candidate_root
+    local source_checksum
     local source_revision
+    local temp_root
 
     preflight_release
-    require_command rsync
+    require_command git
     require_command ssh
     require_command scp
     source_revision="$(get_source_revision)"
+    candidate_root="$REMOTE_ROOT/candidates/$source_revision"
+    temp_root="$(mktemp -d)"
+    trap 'rm -rf "$temp_root"' RETURN
+    archive="$temp_root/source.tar"
 
-    ssh "$SERVER_HOST" "install -d -m 0755 '$REMOTE_ROOT/source'"
-    rsync -az --delete \
-        --exclude '.env' \
-        --exclude '.env.*' \
-        --exclude '.next' \
-        --exclude 'node_modules' \
-        "$PROJECT_ROOT/next-src/" "$SERVER_HOST:$REMOTE_ROOT/source/"
-    scp "$COMPOSE_SOURCE" "$SERVER_HOST:$REMOTE_ROOT/docker-compose.yml.new"
-    scp "$NGINX_SOURCE" "$SERVER_HOST:$REMOTE_ROOT/weihub.cloud.conf.new"
-    printf '%s\n' "$source_revision" \
-        | ssh "$SERVER_HOST" "install -m 0644 /dev/stdin '$REMOTE_ROOT/source-revision.new'"
+    git -C "$PROJECT_ROOT" archive --format=tar --output="$archive" "$source_revision:next-src"
+    source_checksum="$(release_sha256 "$archive")"
+
+    ssh "$SERVER_HOST" install -d -m 0755 "$candidate_root"
+    scp "$archive" "$SERVER_HOST:$candidate_root/source.tar.upload"
+    scp "$COMPOSE_SOURCE" "$SERVER_HOST:$candidate_root/docker-compose.yml.upload"
+    scp "$NGINX_SOURCE" "$SERVER_HOST:$candidate_root/weihub.cloud.conf.upload"
+    scp "$RELEASE_LIB" "$SERVER_HOST:$candidate_root/release-lib.sh.upload"
+    ssh "$SERVER_HOST" bash -s -- "$candidate_root" <<'REMOTE_UPLOAD'
+set -euo pipefail
+candidate_root="$1"
+install -m 0644 "$candidate_root/source.tar.upload" "$candidate_root/source.tar"
+install -m 0644 "$candidate_root/docker-compose.yml.upload" "$candidate_root/docker-compose.yml"
+install -m 0644 "$candidate_root/weihub.cloud.conf.upload" "$candidate_root/weihub.cloud.conf"
+install -m 0644 "$candidate_root/release-lib.sh.upload" "$candidate_root/release-lib.sh"
+rm -f "$candidate_root/source.tar.upload" \
+    "$candidate_root/docker-compose.yml.upload" \
+    "$candidate_root/weihub.cloud.conf.upload" \
+    "$candidate_root/release-lib.sh.upload"
+REMOTE_UPLOAD
+    printf 'candidate_source_revision=%s\ncandidate_source_sha256=%s\n' \
+        "$source_revision" "$source_checksum"
 }
 
 deploy_remote() {
+    local archive
+    local expected_checksum
+    local expected_compose_checksum
+    local expected_nginx_checksum
+    local expected_release_lib_checksum
     local expected_revision
+    local temp_root
 
+    require_command git
     require_command ssh
     expected_revision="$(get_source_revision)"
     preflight_release
+    temp_root="$(mktemp -d)"
+    trap 'rm -rf "$temp_root"' RETURN
+    archive="$temp_root/source.tar"
+    git -C "$PROJECT_ROOT" archive --format=tar --output="$archive" "$expected_revision:next-src"
+    expected_checksum="$(release_sha256 "$archive")"
+    expected_compose_checksum="$(release_sha256 "$COMPOSE_SOURCE")"
+    expected_nginx_checksum="$(release_sha256 "$NGINX_SOURCE")"
+    expected_release_lib_checksum="$(release_sha256 "$RELEASE_LIB")"
 
-    ssh "$SERVER_HOST" bash -s -- "$REMOTE_ROOT" "$DGC_ROOT" "$expected_revision" <<'REMOTE_SCRIPT'
+    ssh "$SERVER_HOST" bash -s -- \
+        "$REMOTE_ROOT" "$DGC_ROOT" "$expected_revision" "$expected_checksum" \
+        "$expected_compose_checksum" "$expected_nginx_checksum" \
+        "$expected_release_lib_checksum" <<'REMOTE_SCRIPT'
 set -euo pipefail
 
 remote_root="$1"
 dgc_root="$2"
 expected_revision="$3"
+expected_checksum="$4"
+expected_compose_checksum="$5"
+expected_nginx_checksum="$6"
+expected_release_lib_checksum="$7"
 compose_file="$remote_root/docker-compose.yml"
-candidate_compose="$remote_root/docker-compose.yml.new"
-candidate_nginx="$remote_root/weihub.cloud.conf.new"
-candidate_revision="$remote_root/source-revision.new"
+candidate_root="$remote_root/candidates/$expected_revision"
+candidate_archive="$candidate_root/source.tar"
+candidate_compose="$candidate_root/docker-compose.yml"
+candidate_nginx="$candidate_root/weihub.cloud.conf"
+candidate_release_lib="$candidate_root/release-lib.sh"
 nginx_target="$dgc_root/nginx/conf.d/legacy-domain-redirect.conf"
 timestamp="$(date +%Y%m%d%H%M%S)"
 backup_root="$remote_root/backups/$timestamp"
+candidate_source="$candidate_root/source-$timestamp-$$"
+candidate_image="ai-resume-optimizer:candidate-$expected_revision"
 rollback_image=""
 rollback_keep=3
 backup_keep=10
+had_compose=false
+candidate_source_active=false
+source_backed_up=false
+
+if [[ ! "$expected_revision" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "Invalid approved source revision." >&2
+    exit 1
+fi
 
 if [ ! -s "$remote_root/.env" ]; then
     echo "Missing required environment file: $remote_root/.env" >&2
     exit 1
 fi
 
-if [ ! -s "$candidate_compose" ] || [ ! -s "$candidate_nginx" ] || [ ! -s "$candidate_revision" ]; then
+if [ ! -s "$candidate_archive" ] || [ ! -s "$candidate_compose" ] \
+    || [ ! -s "$candidate_nginx" ] || [ ! -s "$candidate_release_lib" ]; then
     echo "Run the upload step before deploy." >&2
     exit 1
 fi
 
-candidate_revision_value="$(tr -d '\r\n' < "$candidate_revision")"
-if [[ ! "$candidate_revision_value" =~ ^[0-9a-f]{40}$ ]]; then
-    echo "Invalid candidate source revision." >&2
-    exit 1
-fi
-if [ "$candidate_revision_value" != "$expected_revision" ]; then
-    echo "Staged candidate revision does not match the approved local revision." >&2
-    exit 1
-fi
-source_revision="$candidate_revision_value"
+verify_candidate_checksum() {
+    local artifact="$1"
+    local expected="$2"
+    local label="$3"
+    local actual
+
+    if [[ ! "$expected" =~ ^[0-9a-f]{64}$ ]]; then
+        printf 'candidate_%s_checksum=invalid\n' "$label" >&2
+        return 1
+    fi
+    actual="$(sha256sum "$artifact" | awk '{print $1}')" || {
+        printf 'candidate_%s_checksum=unreadable\n' "$label" >&2
+        return 1
+    }
+    if [ "$actual" != "$expected" ]; then
+        printf 'candidate_%s_checksum=mismatch\n' "$label" >&2
+        return 1
+    fi
+    printf 'candidate_%s_checksum=verified\n' "$label"
+}
+
+verify_candidate_checksum "$candidate_release_lib" "$expected_release_lib_checksum" release_lib
+verify_candidate_checksum "$candidate_compose" "$expected_compose_checksum" compose
+verify_candidate_checksum "$candidate_nginx" "$expected_nginx_checksum" nginx
+source "$candidate_release_lib"
+verify_source_archive "$candidate_archive" "$expected_checksum"
+
+install -d -m 0755 "$candidate_source"
+tar -xf "$candidate_archive" -C "$candidate_source"
+source_revision="$expected_revision"
 export GIT_SHA="$source_revision"
+export AI_TOOL_HUB_IMAGE="$candidate_image"
+
+if validate_and_build_candidate \
+    "$candidate_compose" "$remote_root/.env" "$candidate_source"; then
+    :
+else
+    status=$?
+    rm -rf "$candidate_source"
+    exit "$status"
+fi
 
 install -d -m 0700 "$backup_root"
 chmod 0600 "$remote_root/.env"
@@ -296,35 +343,48 @@ if [ -f /etc/systemd/system/ai-resume-optimizer.service ]; then
 fi
 cp "$nginx_target" "$backup_root/weihub.cloud.conf"
 cp "$candidate_compose" "$backup_root/docker-compose.yml"
-cp "$candidate_revision" "$backup_root/source-revision"
+printf '%s\n' "$source_revision" > "$backup_root/source-revision"
 if [ -s "$compose_file" ]; then
     cp "$compose_file" "$backup_root/previous-docker-compose.yml"
+    had_compose=true
 fi
-
-install -m 0644 "$candidate_compose" "$compose_file"
-install -m 0644 "$candidate_nginx" "$nginx_target"
-
-cd "$remote_root"
-docker compose --env-file "$remote_root/.env" -f "$compose_file" config -q
 if docker image inspect ai-resume-optimizer:latest >/dev/null 2>&1; then
     rollback_image="ai-resume-optimizer:rollback-$timestamp"
     docker tag ai-resume-optimizer:latest "$rollback_image"
 fi
-docker compose --env-file "$remote_root/.env" -f "$compose_file" build
 
 rollback() {
+    set +e
     cp "$backup_root/weihub.cloud.conf" "$nginx_target"
+    if [ "$candidate_source_active" = true ]; then
+        rm -rf "$remote_root/source"
+    fi
+    if [ "$source_backed_up" = true ]; then
+        mv "$backup_root/previous-source" "$remote_root/source"
+    fi
+    if [ "$had_compose" = true ]; then
+        cp "$backup_root/previous-docker-compose.yml" "$compose_file"
+    else
+        rm -f "$compose_file"
+    fi
     if [ -n "$rollback_image" ]; then
         docker tag "$rollback_image" ai-resume-optimizer:latest
-        if [ -s "$backup_root/previous-docker-compose.yml" ]; then
-            cp "$backup_root/previous-docker-compose.yml" "$compose_file"
+        if [ "$had_compose" = true ]; then
+            docker compose --env-file "$remote_root/.env" -f "$compose_file" up -d --force-recreate >/dev/null 2>&1
         fi
-        docker compose --env-file "$remote_root/.env" -f "$compose_file" up -d --force-recreate >/dev/null 2>&1 || true
     else
-        docker compose --env-file "$remote_root/.env" -f "$compose_file" down >/dev/null 2>&1 || true
+        AI_TOOL_HUB_IMAGE="$candidate_image" \
+            docker compose --env-file "$remote_root/.env" -f "$candidate_compose" down >/dev/null 2>&1
     fi
-    docker exec dgc-nginx nginx -t
-    docker exec dgc-nginx nginx -s reload
+    docker exec dgc-nginx nginx -t >/dev/null 2>&1
+    docker exec dgc-nginx nginx -s reload >/dev/null 2>&1
+}
+
+handle_failure() {
+    local status="$1"
+    trap - ERR INT TERM
+    rollback
+    exit "$status"
 }
 
 prune_deployment_history() {
@@ -351,10 +411,23 @@ prune_deployment_history() {
     done
 }
 
-if ! docker compose --env-file "$remote_root/.env" -f "$compose_file" up -d --force-recreate; then
-    rollback
-    exit 1
+trap 'handle_failure $?' ERR
+trap 'handle_failure 130' INT
+trap 'handle_failure 143' TERM
+
+if [ -d "$remote_root/source" ]; then
+    mv "$remote_root/source" "$backup_root/previous-source"
+    source_backed_up=true
 fi
+mv "$candidate_source" "$remote_root/source"
+candidate_source_active=true
+install -m 0644 "$candidate_compose" "$compose_file"
+install -m 0644 "$candidate_nginx" "$nginx_target"
+docker tag "$candidate_image" ai-resume-optimizer:latest
+unset AI_TOOL_HUB_IMAGE
+
+cd "$remote_root"
+docker compose --env-file "$remote_root/.env" -f "$compose_file" up -d --force-recreate
 
 healthy=false
 for _ in $(seq 1 40); do
@@ -371,34 +444,27 @@ done
 
 if [ "$healthy" != true ]; then
     echo "Candidate container did not become healthy; raw application logs are suppressed by the privacy gate." >&2
-    rollback
-    exit 1
+    false
 fi
 
 if [ -n "$(docker port weihub-app)" ]; then
     echo "weihub-app unexpectedly publishes a host port" >&2
-    rollback
-    exit 1
+    false
 fi
 
 running_revision="$(docker inspect weihub-app --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
 if [ "$running_revision" != "$source_revision" ]; then
     echo "Running image revision does not match the approved source revision." >&2
-    rollback
-    exit 1
+    false
 fi
 
 compose_owner="$(docker inspect weihub-app --format '{{ index .Config.Labels "com.docker.compose.project" }}')"
 if [ "$compose_owner" != weihub ]; then
     echo "Candidate container is not owned by the expected Compose project." >&2
-    rollback
-    exit 1
+    false
 fi
 
-if ! docker exec dgc-nginx nginx -t; then
-    rollback
-    exit 1
-fi
+docker exec dgc-nginx nginx -t
 docker exec dgc-nginx nginx -s reload
 
 verify_local_tls() {
@@ -439,17 +505,10 @@ if ! verify_local_tls weihub.cloud https://weihub.cloud/ \
     || ! verify_local_status weihub.cloud https://weihub.cloud/api/resume/payments/xddpay/notify 404 \
     || ! verify_local_status weihub.cloud https://weihub.cloud/api/resume/payment/callback 404 \
     || ! verify_local_tls dramagenai.cloud https://dramagenai.cloud/; then
-    rollback
-    exit 1
+    false
 fi
 
-privacy_matches="$(docker logs weihub-app 2>&1 | grep -Eci 'resumeText|jdText|RESUME-PRIVATE|JOB-DESCRIPTION-PRIVATE' || true)"
-if [ "$privacy_matches" -ne 0 ]; then
-    echo "privacy log scan failed; matching log content is suppressed." >&2
-    rollback
-    exit 1
-fi
-echo "privacy_log_scan=passed"
+scan_privacy_logs weihub-app
 
 if systemctl is-enabled --quiet ai-resume-optimizer.service 2>/dev/null; then
     systemctl disable ai-resume-optimizer.service
@@ -467,7 +526,9 @@ if docker container inspect ai-resume-optimizer >/dev/null 2>&1; then
     docker rm ai-resume-optimizer >/dev/null
 fi
 prune_deployment_history
-install -m 0644 "$candidate_revision" "$remote_root/source-revision"
+printf '%s\n' "$source_revision" | install -m 0644 /dev/stdin "$remote_root/source-revision"
+docker image rm "$candidate_image" >/dev/null 2>&1 || true
+trap - ERR INT TERM
 
 echo "Deployment completed. Revision: $source_revision. Backup: $backup_root"
 REMOTE_SCRIPT

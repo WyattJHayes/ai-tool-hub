@@ -20,7 +20,10 @@ const productionComposePath = 'deploy/tencent-cloud/docker-compose.prod.yml';
 const dockerfilePath = 'next-src/Dockerfile';
 const deploymentScript = read('deploy/tencent-cloud/quick-deploy.sh');
 const deploymentReadme = read('deploy/tencent-cloud/README.md');
+const deploymentReleaseLib = read('deploy/tencent-cloud/release-lib.sh');
+const deploymentEnvValidator = read('deploy/tencent-cloud/validate-env.py');
 const resumeBillingFixture = read('next-src/supabase/tests/resume_billing.sql');
+const deploymentBehaviorTestPath = 'scripts/deploy-behavior.test.mjs';
 const workflow = read('.github/workflows/deploy.yml');
 const workflowTestJob = workflow.split('\n  build-and-deploy:')[0];
 
@@ -139,6 +142,8 @@ if (!fs.existsSync(path.join(root, productionComposePath))) {
   requireMatch(productionCompose, /^\s*container_name:\s*weihub-app\s*$/m, `${productionComposePath} must use the collision-free weihub-app container name`);
   requireMatch(productionCompose, /^\s*-\s+weihub-app\s*$/m, `${productionComposePath} must define the weihub-app alias`);
   requireMatch(productionCompose, /restart:\s*unless-stopped/, `${productionComposePath} must restart unless stopped`);
+  requireMatch(productionCompose, /image:\s*\$\{AI_TOOL_HUB_IMAGE:-ai-resume-optimizer:latest\}/, `${productionComposePath} must support a candidate image tag`);
+  requireMatch(productionCompose, /context:\s*\$\{AI_TOOL_HUB_SOURCE_DIR:-\.\/source\}/, `${productionComposePath} must support an isolated candidate source tree`);
   requireMatch(productionCompose, /^\s+GIT_SHA:\s*\$\{GIT_SHA:-unknown\}\s*$/m, `${productionComposePath} must forward the Git revision`);
   if (/^\s*ports:\s*$/m.test(productionCompose)) {
     failures.push(`${productionComposePath} must not publish application ports on the host`);
@@ -185,7 +190,25 @@ requireMatch(
   /git\s+-C\s+"\$PROJECT_ROOT"\s+ls-files\s+--others\s+--exclude-standard\s+--\s+next-src/,
   'deployment must reject untracked application source files'
 );
-requireMatch(deploymentScript, /source-revision\.new/, 'deployment must upload the revision with the candidate source');
+if (/\brsync\b|source-revision\.new/.test(deploymentScript)) {
+  failures.push('deployment must not trust a mutable rsync tree or staged revision text file');
+}
+requireMatch(
+  deploymentScript,
+  /git\s+-C\s+"\$PROJECT_ROOT"\s+archive\s+--format=tar\s+--output="\$archive"\s+"\$(?:source_revision|expected_revision):next-src"/,
+  'deployment must derive uploaded source bytes from the approved Git tree',
+);
+requireMatch(deploymentScript, /release_sha256\s+"\$archive"/, 'deployment must hash the commit-derived source archive');
+requireMatch(deploymentScript, /verify_source_archive\s+"\$candidate_archive"\s+"\$expected_checksum"/, 'deployment must verify staged source bytes before extraction');
+requireMatch(deploymentScript, /verify_candidate_checksum\s+"\$candidate_release_lib"\s+"\$expected_release_lib_checksum"/, 'deployment must verify the staged helper before sourcing it');
+requireMatch(deploymentScript, /verify_candidate_checksum\s+"\$candidate_compose"\s+"\$expected_compose_checksum"/, 'deployment must verify staged Compose before candidate build');
+requireMatch(deploymentScript, /candidate_root="\$remote_root\/candidates\/\$expected_revision"/, 'deployment candidates must be scoped to the approved revision');
+requireMatch(deploymentScript, /validate_and_build_candidate/, 'deployment must validate and build the staged candidate');
+requireMatch(deploymentScript, /candidate_image="ai-resume-optimizer:candidate-\$expected_revision"/, 'deployment must build a revision-specific candidate image');
+requireMatch(deploymentScript, /docker tag "\$candidate_image" ai-resume-optimizer:latest/, 'deployment must promote the candidate image only during activation');
+requireMatch(deploymentScript, /scan_privacy_logs weihub-app/, 'deployment must use the fail-closed privacy log helper');
+requireMatch(deploymentScript, /classify_aggregate_probe "\$aggregate_status" "\$aggregate_output"/, 'deployment must classify aggregate execution failures explicitly');
+requireMatch(deploymentScript, /python3 - "\$REMOTE_ROOT\/\.env"\s*<\s*"\$ENV_VALIDATOR"/, 'deployment must stream the approved env validator to the server');
 requireMatch(deploymentScript, /export\s+GIT_SHA=/, 'deployment must provide the revision to Docker Compose');
 requireMatch(
   deploymentScript,
@@ -203,7 +226,7 @@ for (const privateName of [
   'XDDPAY_NOTIFY_URL',
 ]) {
   requireMatch(
-    deploymentScript,
+    deploymentScript + '\n' + deploymentEnvValidator,
     new RegExp(`\\b${privateName}\\b`),
     `deployment preflight must inspect ${privateName} by name only`,
   );
@@ -228,15 +251,36 @@ for (const [pattern, message] of [
   [/XDDPAY_NOTIFY_URL[^\n]*\/api\/resume\/payments\/xddpay\/notify/, 'deployment runbook must document the intended payment callback URL'],
   [/privacy[^\n]*(?:scan|log)/i, 'deployment must run a privacy log scan before release'],
   [/source_revision[^\n]*running_revision|running_revision[^\n]*source_revision/, 'deployment must compare the running and approved source revisions'],
-  [/candidate_revision[^\n]*expected_revision|expected_revision[^\n]*candidate_revision/, 'deployment must reject a staged candidate that differs from the approved revision'],
+  [/candidate_root[^\n]*expected_revision|expected_revision[^\n]*candidate_root/, 'deployment must select only the approved revision candidate'],
 ]) {
-  requireMatch(deploymentScript + '\n' + deploymentReadme, pattern, message);
+  requireMatch(deploymentScript + '\n' + deploymentEnvValidator + '\n' + deploymentReleaseLib + '\n' + deploymentReadme, pattern, message);
+}
+
+const stagedBuildIndex = deploymentScript.indexOf('validate_and_build_candidate');
+const activeComposeInstallIndex = deploymentScript.indexOf('install -m 0644 "$candidate_compose" "$compose_file"');
+const activeNginxInstallIndex = deploymentScript.indexOf('install -m 0644 "$candidate_nginx" "$nginx_target"');
+if (stagedBuildIndex === -1 || activeComposeInstallIndex < stagedBuildIndex || activeNginxInstallIndex < stagedBuildIndex) {
+  failures.push('candidate config/build must finish before active Compose or Nginx replacement');
 }
 
 requireMatch(
   deploymentReadme,
   /payment[^\n]*(?:disabled|fail-closed)/i,
   'deployment runbook must state that payment remains fail-closed',
+);
+
+if (!fs.existsSync(path.join(root, deploymentBehaviorTestPath))) {
+  failures.push(`${deploymentBehaviorTestPath} is missing`);
+}
+requireMatch(
+  workflowTestJob,
+  /node --test scripts\/deploy-behavior\.test\.mjs/,
+  'CI must execute deployment behavior regressions',
+);
+requireMatch(
+  workflowTestJob,
+  /bash -n[^\n]*deploy\/tencent-cloud\/release-lib\.sh/,
+  'CI must syntax-check the shared deployment release library',
 );
 
 requireMatch(

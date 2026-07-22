@@ -92,11 +92,22 @@ deploy/tencent-cloud/quick-deploy.sh full
 ```
 
 The script refuses to upload or replace anything until every revision-bound
-approval and the live zero-source preflight pass. It then uploads `next-src`,
-builds the image on the server, replaces the application transactionally,
-validates Nginx, and verifies both domains. It does not publish port 3100 on
-the host. Nginx reaches the application through the `weihub-app` alias on the
-external Docker network.
+approval and the live zero-source preflight pass. It creates a deterministic
+`git archive` directly from the approved commit's `next-src` tree, uploads it
+under a revision-specific candidate directory, and verifies its SHA-256 before
+extracting it into a fresh source directory. Stale, extra, or modified uploaded
+source bytes therefore cannot enter the build. The uploaded Compose, Nginx, and
+release-helper files are checksum-verified before the helper is sourced, so a
+partial or stale candidate upload also fails closed.
+
+The candidate Compose file is validated and the fresh source is built into a
+revision-specific candidate image before active Compose, source, or Nginx files
+are replaced. A config or build failure preserves its original status and
+leaves those active files unchanged. Only after staging succeeds does the
+script arm rollback, install the candidate configuration, promote the candidate
+image to `latest`, replace the application transactionally, validate Nginx, and
+verify both domains. It does not publish port 3100 on the host. Nginx reaches
+the application through the `weihub-app` alias on the external Docker network.
 
 Post-deploy verification requires `/resume/` HTTP 200, a permanent legacy
 `/resume-optimizer/` redirect, payment/order API 404s, zero privacy log scan
@@ -122,9 +133,12 @@ ssh root@101.43.35.235 \
 ```
 
 Deployments reject uncommitted or untracked files under `next-src` so this
-revision always identifies the source used to build the image. Release-path
-changes under `deploy/tencent-cloud`, `.github/workflows/deploy.yml`, and
-`scripts/review-regressions.mjs` are rejected too.
+revision and the verified archive checksum identify the exact source used to
+build the image. Release-path changes under `deploy/tencent-cloud`,
+`.github/workflows/deploy.yml`, and `scripts/review-regressions.mjs` are rejected
+too. CI executes the deterministic deployment behavior suite covering env
+parsing, source tampering, staged failures, aggregate failures, and privacy-log
+read failures.
 
 Override the default target when needed:
 

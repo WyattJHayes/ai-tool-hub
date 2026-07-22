@@ -14,9 +14,9 @@ x-private-runtime-env-keys:
 
 services:
   web:
-    image: ai-resume-optimizer:latest
+    image: ${AI_TOOL_HUB_IMAGE:-ai-resume-optimizer:latest}
     build:
-      context: ./source
+      context: ${AI_TOOL_HUB_SOURCE_DIR:-./source}
       dockerfile: Dockerfile
       args:
         GIT_SHA: ${GIT_SHA:-unknown}

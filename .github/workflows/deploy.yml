@@ -85,7 +85,8 @@ jobs:
       - name: Run repository guards
         run: |
           git diff --check
-          bash -n deploy/tencent-cloud/quick-deploy.sh deploy/tencent-cloud/deploy.sh
+          bash -n deploy/tencent-cloud/quick-deploy.sh deploy/tencent-cloud/release-lib.sh deploy/tencent-cloud/deploy.sh
+          node --test scripts/deploy-behavior.test.mjs
           node scripts/dev-cache-guard.mjs
           node scripts/review-guard.mjs
           node scripts/review-regressions.mjs
