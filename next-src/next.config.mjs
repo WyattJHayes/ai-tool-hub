@@ -6,6 +6,20 @@ const nextConfig = {
   turbopack: {
     root: process.cwd(),
   },
+  async redirects() {
+    return [
+      {
+        source: '/tools/resume-optimizer',
+        destination: '/resume/',
+        permanent: true,
+      },
+      {
+        source: '/tools/resume-optimizer/',
+        destination: '/resume/',
+        permanent: true,
+      },
+    ];
+  },
   async headers() {
     return [
       {

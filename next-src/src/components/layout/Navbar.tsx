@@ -10,6 +10,7 @@ const navItems = [
   { href: '/tools', label: '工具' },
   { href: '/scenes', label: '场景' },
   { href: '/leaderboard', label: '排行' },
+  { href: '/resume', label: '简历优化' },
 ];
 
 export default function Navbar() {

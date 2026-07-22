@@ -28,6 +28,27 @@ function loadTools(): SearchTool[] {
   }
 }
 
+function scoreTool(tool: SearchTool, query: string) {
+  let matchScore = 0;
+  const nameLower = tool.name.toLowerCase();
+  const descLower = tool.desc.toLowerCase();
+
+  if (nameLower === query) matchScore += 100;
+  else if (nameLower.startsWith(query)) matchScore += 50;
+  else if (nameLower.includes(query)) matchScore += 30;
+  if (descLower.includes(query)) matchScore += 10;
+  if (tool.category.toLowerCase().includes(query)) matchScore += 5;
+  if (tool.categories?.some(category => category.toLowerCase().includes(query))) matchScore += 5;
+  if (tool.tags?.some(tag => tag.toLowerCase().includes(query))) matchScore += 5;
+  if (tool.toolTags?.some(tag => tag.toLowerCase().includes(query))) matchScore += 5;
+  if (tool.valueTag?.toLowerCase().includes(query)) matchScore += 5;
+
+  return {
+    matchScore,
+    rankScore: tool.status === 'hot' ? 3 : 0,
+  };
+}
+
 function searchTools(query: string, category?: string, price?: string, origin?: string) {
   const tools = loadTools();
   const q = query.toLowerCase().trim();
@@ -49,26 +70,17 @@ function searchTools(query: string, category?: string, price?: string, origin?: 
   }
 
   if (q) {
-    const scored = results.map(t => {
-      let score = 0;
-      const nameLower = t.name.toLowerCase();
-      const descLower = t.desc.toLowerCase();
+    const scored = results.map(t => ({ ...t, ...scoreTool(t, q) }))
+      .filter(t => t.matchScore > 0);
 
-      if (nameLower === q) score += 100;
-      else if (nameLower.startsWith(q)) score += 50;
-      else if (nameLower.includes(q)) score += 30;
-      if (descLower.includes(q)) score += 10;
-      if (t.tags?.some(tag => tag.includes(q))) score += 5;
-      if (t.status === 'hot') score += 3;
-
-      return { ...t, _score: score };
-    }).filter(t => t._score > 0);
-
-    scored.sort((a, b) => b._score - a._score);
+    scored.sort((a, b) => {
+      const scoreDifference = (b.matchScore + b.rankScore) - (a.matchScore + a.rankScore);
+      return scoreDifference || a.id - b.id;
+    });
     return scored;
   }
 
-  return results.map(t => ({ ...t, _score: 0 }));
+  return results.map(t => ({ ...t, matchScore: 0, rankScore: 0 }));
 }
 
 export async function GET(req: NextRequest) {
@@ -100,8 +112,9 @@ export async function GET(req: NextRequest) {
     total,
     page,
     limit,
-    results: paged.map(({ _score, ...rest }) => {
-      void _score;
+    results: paged.map(({ matchScore, rankScore, ...rest }) => {
+      void matchScore;
+      void rankScore;
       return rest;
     }),
     facets: { categories: categoryFacets, price: priceFacets },

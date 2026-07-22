@@ -3630,6 +3630,65 @@
         "高效便捷",
         "持续更新"
       ]
+    },
+    {
+      "id": 95,
+      "name": "简历优化",
+      "category": "office",
+      "icon": "fa-file-lines",
+      "desc": "浏览器本地编辑、导入、实时预览与 PDF 导出的 AI 简历优化工具",
+      "tags": [
+        "free",
+        "online"
+      ],
+      "toolTags": [
+        "内置工具",
+        "无需登录",
+        "网页版",
+        "简历"
+      ],
+      "url": "/resume/",
+      "requires_login": false,
+      "updateTime": "2026-07",
+      "status": "hot",
+      "difficulty": "beginner",
+      "platform": [
+        "web"
+      ],
+      "categories": [
+        "office",
+        "writing"
+      ],
+      "pricing": [
+        {
+          "plan": "Free",
+          "price": 0,
+          "unit": "",
+          "quota": "本地编辑、导入、预览与 PDF 导出",
+          "highlight": true
+        },
+        {
+          "plan": "Basic",
+          "price": 9.9,
+          "unit": "CNY",
+          "quota": "AI 优化 10 次",
+          "highlight": false
+        },
+        {
+          "plan": "VIP",
+          "price": 99,
+          "unit": "CNY",
+          "quota": "AI 优化不限次",
+          "highlight": false
+        }
+      ],
+      "valueTag": "免费本地编辑",
+      "highlights": [
+        "本地编辑与自动保存",
+        "PDF、DOCX、TXT 导入",
+        "实时 A4 预览与 PDF 导出",
+        "AI 优化需登录并消耗额度"
+      ]
     }
   ]
 }
