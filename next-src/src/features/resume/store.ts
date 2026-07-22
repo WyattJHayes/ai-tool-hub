@@ -34,8 +34,8 @@ interface ResumeStore {
   duplicateItem: (section: RepeatableSectionKey, itemId: string) => void;
   deleteItem: (section: RepeatableSectionKey, itemId: string) => void;
   setChanges: (changes: ResumeChange[]) => void;
-  acceptChange: (changeId: string) => void;
-  acceptAllChanges: () => void;
+  acceptChange: (changeId: string) => ResumeChangeAcceptanceResult;
+  acceptAllChanges: () => ResumeChangeAcceptanceResult;
   rejectChange: (changeId: string) => void;
   resetDocument: () => void;
   exportBackup: () => string | null;
@@ -125,43 +125,53 @@ function createUniqueItemId(document: ResumeDocumentV1): string {
 
 interface ChangeApplication {
   document: ResumeDocumentV1;
-  applied: boolean;
+  status: 'applied' | 'conflict' | 'invalid';
 }
+
+export type ResumeChangeAcceptanceResult = 'accepted' | 'conflict' | 'missing';
 
 function applyChange(document: ResumeDocumentV1, change: ResumeChange): ChangeApplication {
   if (change.section === 'summary' && change.field === 'summary') {
-    return { document: { ...document, summary: change.after }, applied: true };
+    if (document.summary !== change.before) return { document, status: 'conflict' };
+    return { document: { ...document, summary: change.after }, status: 'applied' };
   }
   if (change.section === 'target' && change.field === 'target') {
-    return { document: { ...document, target: change.after }, applied: true };
+    if (document.target !== change.before) return { document, status: 'conflict' };
+    return { document: { ...document, target: change.after }, status: 'applied' };
   }
   if (change.section === 'profile' && isProfileField(change.field)) {
+    if (document.profile[change.field] !== change.before) return { document, status: 'conflict' };
     return {
       document: { ...document, profile: { ...document.profile, [change.field]: change.after } },
-      applied: true,
+      status: 'applied',
     };
   }
   if (change.field === 'items' && isCollectionSection(change.section)) {
+    if (JSON.stringify(document[change.section]) !== change.before) return { document, status: 'conflict' };
     try {
       const items: unknown = JSON.parse(change.after);
-      if (!Array.isArray(items)) return { document, applied: false };
+      if (!Array.isArray(items)) return { document, status: 'invalid' };
       return {
         document: normalizeResumeDocument({ ...document, [change.section]: items }),
-        applied: true,
+        status: 'applied',
       };
     } catch {
-      return { document, applied: false };
+      return { document, status: 'invalid' };
     }
   }
   if (isRepeatableSection(change.section) && change.itemId && isItemField(change.section, change.field)) {
     const currentItems = itemsFor(document, change.section);
-    if (!currentItems.some(item => item.id === change.itemId)) return { document, applied: false };
+    const currentItem = currentItems.find(item => item.id === change.itemId);
+    if (!currentItem) return { document, status: 'conflict' };
+    if ((currentItem as unknown as Record<string, string>)[change.field] !== change.before) {
+      return { document, status: 'conflict' };
+    }
     const items = currentItems.map(item => (
       item.id === change.itemId ? { ...item, [change.field]: change.after } : item
     ));
-    return { document: replaceItems(document, change.section, items), applied: true };
+    return { document: replaceItems(document, change.section, items), status: 'applied' };
   }
-  return { document, applied: false };
+  return { document, status: 'invalid' };
 }
 
 function isCollectionSection(section: ResumeSectionKey): section is CollectionSectionKey {
@@ -267,40 +277,51 @@ export const useResumeStore = create<ResumeStore>()(persist(
 
     setChanges: (changes) => set({ changes: changes.map(change => ({ ...change, accepted: Boolean(change.accepted) })) }),
 
-    acceptChange: (changeId) => set(state => {
-      const change = state.changes.find(candidate => candidate.id === changeId && !candidate.accepted);
-      if (!change) return {};
-      const result = applyChange(state.document, change);
-      if (!result.applied) return {};
-      return {
-        document: withTimestamp(normalizeResumeDocument(result.document)),
-        undoStack: pushUndo(state.undoStack, state.document),
-        changeUndoStack: pushChangeUndo(state.changeUndoStack, state.changes),
-        changes: state.changes.map(candidate => candidate.id === changeId ? { ...candidate, accepted: true } : candidate),
-      };
-    }),
+    acceptChange: (changeId) => {
+      let outcome: ResumeChangeAcceptanceResult = 'missing';
+      set(state => {
+        const change = state.changes.find(candidate => candidate.id === changeId && !candidate.accepted);
+        if (!change) return {};
+        const result = applyChange(state.document, change);
+        if (result.status !== 'applied') {
+          outcome = 'conflict';
+          return { changes: [] };
+        }
+        outcome = 'accepted';
+        return {
+          document: withTimestamp(normalizeResumeDocument(result.document)),
+          undoStack: pushUndo(state.undoStack, state.document),
+          changeUndoStack: pushChangeUndo(state.changeUndoStack, state.changes),
+          changes: state.changes.map(candidate => candidate.id === changeId ? { ...candidate, accepted: true } : candidate),
+        };
+      });
+      return outcome;
+    },
 
-    acceptAllChanges: () => set(state => {
-      const pending = state.changes.filter(change => !change.accepted);
-      if (!pending.length) return {};
-      let document = state.document;
-      const acceptedChangeIds = new Set<string>();
-      for (const change of pending) {
-        const result = applyChange(document, change);
-        if (!result.applied) continue;
-        document = result.document;
-        acceptedChangeIds.add(change.id);
-      }
-      if (!acceptedChangeIds.size) return {};
-      return {
-        document: withTimestamp(normalizeResumeDocument(document)),
-        undoStack: pushUndo(state.undoStack, state.document),
-        changeUndoStack: pushChangeUndo(state.changeUndoStack, state.changes),
-        changes: state.changes.map(change => (
-          acceptedChangeIds.has(change.id) ? { ...change, accepted: true } : change
-        )),
-      };
-    }),
+    acceptAllChanges: () => {
+      let outcome: ResumeChangeAcceptanceResult = 'missing';
+      set(state => {
+        const pending = state.changes.filter(change => !change.accepted);
+        if (!pending.length) return {};
+        let document = state.document;
+        for (const change of pending) {
+          const result = applyChange(document, change);
+          if (result.status !== 'applied') {
+            outcome = 'conflict';
+            return { changes: [] };
+          }
+          document = result.document;
+        }
+        outcome = 'accepted';
+        return {
+          document: withTimestamp(normalizeResumeDocument(document)),
+          undoStack: pushUndo(state.undoStack, state.document),
+          changeUndoStack: pushChangeUndo(state.changeUndoStack, state.changes),
+          changes: state.changes.map(change => ({ ...change, accepted: true })),
+        };
+      });
+      return outcome;
+    },
 
     rejectChange: (changeId) => set(state => ({
       changes: state.changes.filter(change => change.id !== changeId),

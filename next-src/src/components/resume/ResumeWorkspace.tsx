@@ -11,13 +11,16 @@ import {
 import { FileDown, Undo2, Upload } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { AuthModal } from '@/components/auth/AuthModal';
-import { resumeApi } from '@/features/resume/api';
+import { resumeApi, type ResumePlansAvailability } from '@/features/resume/api';
 import { exportResumePdf } from '@/features/resume/pdf';
 import { useResumeStore } from '@/features/resume/store';
 import {
-  createPendingResumeActionController,
+  createProtectedResumeActionCoordinator,
   createSaveStatusController,
+  refreshResumeAccountState,
   type PendingResumeAction,
+  type ProtectedResumeActionCoordinator,
+  type ProtectedResumeActionContext,
 } from '@/features/resume/ui';
 import type { ResumeDocumentV1, ResumeQuotaSummary } from '@/features/resume/types';
 import { useUserStore } from '@/stores/useUserStore';
@@ -61,29 +64,49 @@ export function ResumeWorkspace() {
   const [authContext, setAuthContext] = useState<string | undefined>();
   const [quotaOpen, setQuotaOpen] = useState(false);
   const [quota, setQuota] = useState<ResumeQuotaSummary | null>(null);
+  const [availability, setAvailability] = useState<ResumePlansAvailability | null>(null);
+  const [accountRefreshing, setAccountRefreshing] = useState(false);
+  const [accountRefreshVersion, setAccountRefreshVersion] = useState(0);
+  const [jobDescription, setJobDescription] = useState('');
   const [resumedAction, setResumedAction] = useState<{
     id: number;
     action: Exclude<PendingResumeAction, { kind: 'open-quota' }>;
+    context: ProtectedResumeActionContext;
   } | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const actionIdRef = useRef(0);
-  const pendingActionController = useMemo(() => createPendingResumeActionController(), []);
+  const jobDescriptionRef = useRef('');
+  const accountRefreshVersionRef = useRef(0);
+  const accountRefreshSequenceRef = useRef(0);
+  const actionCoordinatorRef = useRef<ProtectedResumeActionCoordinator | null>(null);
   const saveController = useMemo(() => createSaveStatusController(setSaveStatus, {
     setTimeout: (callback, delay) => globalThis.setTimeout(callback, delay),
     clearTimeout: timer => globalThis.clearTimeout(timer as ReturnType<typeof setTimeout>),
   }), []);
 
   useEffect(() => () => saveController.dispose(), [saveController]);
-  useEffect(() => () => pendingActionController.clear(), [pendingActionController]);
-
-  const refreshQuota = useCallback(() => {
+  const refreshAccount = useCallback(async () => {
     if (!useUserStore.getState().isLoggedIn) return;
-    void resumeApi.getQuota().then(setQuota).catch(() => undefined);
+    const sequence = ++accountRefreshSequenceRef.current;
+    setAccountRefreshing(true);
+    setAvailability(null);
+    const result = await refreshResumeAccountState(resumeApi, accountRefreshVersionRef.current);
+    if (sequence !== accountRefreshSequenceRef.current) return;
+    accountRefreshVersionRef.current = result.version;
+    setQuota(result.quota);
+    setAvailability(result.availability);
+    setAccountRefreshVersion(result.version);
+    setAccountRefreshing(false);
   }, []);
 
   useEffect(() => {
-    if (isLoggedIn) refreshQuota();
-  }, [isLoggedIn, refreshQuota]);
+    if (!isLoggedIn) return;
+    let active = true;
+    queueMicrotask(() => {
+      if (active) void refreshAccount();
+    });
+    return () => { active = false; };
+  }, [isLoggedIn, refreshAccount]);
 
   const runMutation = useCallback((mutation: () => void) => {
     setImportUndoAvailable(false);
@@ -117,44 +140,64 @@ export function ResumeWorkspace() {
     }
   }, [document.name, exporting]);
 
-  const dispatchProtectedAction = useCallback((action: PendingResumeAction) => {
+  const dispatchProtectedAction = useCallback((
+    action: PendingResumeAction,
+    context: ProtectedResumeActionContext,
+  ) => {
     if (action.kind === 'open-quota') {
       setQuotaOpen(true);
       return;
     }
     actionIdRef.current += 1;
-    setResumedAction({ id: actionIdRef.current, action });
+    setResumedAction({ id: actionIdRef.current, action, context });
   }, []);
 
+  useEffect(() => {
+    const coordinator = createProtectedResumeActionCoordinator({
+      isAuthenticated: () => useUserStore.getState().isLoggedIn,
+      getDocument: () => useResumeStore.getState().document,
+      getJobDescription: () => jobDescriptionRef.current,
+      onAuthenticationRequired: action => {
+        setAuthContext(action.kind === 'open-quota' ? '登录后查看配额与订单' : '登录后继续本次 AI 操作');
+        setAuthOpen(true);
+      },
+      onExecute: dispatchProtectedAction,
+    });
+    actionCoordinatorRef.current = coordinator;
+    return () => {
+      coordinator.cancelPending();
+      actionCoordinatorRef.current = null;
+    };
+  }, [dispatchProtectedAction]);
+
   const requestProtectedAction = useCallback((action: PendingResumeAction) => {
-    if (!useUserStore.getState().isLoggedIn) {
-      pendingActionController.defer(action);
-      setAuthContext(action.kind === 'open-quota' ? '登录后查看配额与订单' : '登录后继续本次 AI 操作');
-      setAuthOpen(true);
-      return;
-    }
-    dispatchProtectedAction(action);
-  }, [dispatchProtectedAction, pendingActionController]);
+    actionCoordinatorRef.current?.request(action);
+  }, []);
 
   const handleAuthenticated = useCallback(() => {
-    pendingActionController.resume(dispatchProtectedAction);
-  }, [dispatchProtectedAction, pendingActionController]);
+    actionCoordinatorRef.current?.onAuthenticated();
+  }, []);
 
   const handleAuthClose = useCallback(() => {
-    pendingActionController.clear();
+    actionCoordinatorRef.current?.cancelPending();
     setAuthOpen(false);
     setAuthContext(undefined);
-  }, [pendingActionController]);
+  }, []);
 
   const handleAccount = useCallback(() => {
     if (useUserStore.getState().isLoggedIn) {
       router.push('/user');
       return;
     }
-    pendingActionController.clear();
+    actionCoordinatorRef.current?.cancelPending();
     setAuthContext('登录或注册账户');
     setAuthOpen(true);
-  }, [pendingActionController, router]);
+  }, [router]);
+
+  const handleJobDescriptionChange = useCallback((value: string) => {
+    jobDescriptionRef.current = value;
+    setJobDescription(value);
+  }, []);
 
   const effectiveQuota = isLoggedIn ? quota : null;
   const quotaLabel = effectiveQuota?.remaining === null && effectiveQuota ? '不限' : String(effectiveQuota?.remaining ?? '--');
@@ -196,9 +239,11 @@ export function ResumeWorkspace() {
             authenticated={isLoggedIn}
             quota={effectiveQuota}
             resumedAction={resumedAction}
+            jobDescription={jobDescription}
+            onJobDescriptionChange={handleJobDescriptionChange}
             onRequireAuthentication={requestProtectedAction}
             onResumedActionConsumed={id => setResumedAction(current => current?.id === id ? null : current)}
-            onSettled={refreshQuota}
+            onSettled={refreshAccount}
             onOpenQuota={() => requestProtectedAction({ kind: 'open-quota' })}
           />
           <ResumeEditor document={document} onMutation={runMutation} />
@@ -226,7 +271,10 @@ export function ResumeWorkspace() {
         open={quotaOpen}
         onClose={() => setQuotaOpen(false)}
         quota={effectiveQuota}
-        onQuotaChange={setQuota}
+        availability={availability}
+        refreshVersion={accountRefreshVersion}
+        refreshing={accountRefreshing}
+        onRefresh={refreshAccount}
       />
       <AuthModal
         isOpen={authOpen}

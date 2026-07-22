@@ -534,6 +534,102 @@ test('resumes a pending protected action once without retaining resume or JD con
   assert.equal(controller.peek(), null);
 });
 
+test('protected action consumes once after auth using latest JD and document suppliers', () => {
+  const createProtectedResumeActionCoordinator = requireExport('createProtectedResumeActionCoordinator');
+  let authenticated = false;
+  let currentDocument = resume({ summary: 'Before login' });
+  let currentJobDescription = 'Before login JD';
+  const authenticationRequests: unknown[] = [];
+  const executions: unknown[] = [];
+  const coordinator = createProtectedResumeActionCoordinator({
+    isAuthenticated: () => authenticated,
+    getDocument: () => currentDocument,
+    getJobDescription: () => currentJobDescription,
+    onAuthenticationRequired: action => authenticationRequests.push(action),
+    onExecute: (action, context) => executions.push({ action, context }),
+  });
+
+  coordinator.request({ kind: 'optimize', level: 'deep' });
+  currentDocument = resume({ summary: 'Edited while logging in' });
+  currentJobDescription = 'Edited while logging in JD';
+  authenticated = true;
+  coordinator.onAuthenticated();
+  coordinator.onAuthenticated();
+
+  assert.deepEqual(authenticationRequests, [{ kind: 'optimize', level: 'deep' }]);
+  assert.equal(executions.length, 1);
+  assert.deepEqual(executions[0], {
+    action: { kind: 'optimize', level: 'deep' },
+    context: { document: currentDocument, jobDescription: currentJobDescription },
+  });
+});
+
+test('closing authentication cancels an old action before a later reopen', () => {
+  const createProtectedResumeActionCoordinator = requireExport('createProtectedResumeActionCoordinator');
+  let authenticated = false;
+  const executions: unknown[] = [];
+  const coordinator = createProtectedResumeActionCoordinator({
+    isAuthenticated: () => authenticated,
+    getDocument: () => resume(),
+    getJobDescription: () => 'JD',
+    onAuthenticationRequired: () => undefined,
+    onExecute: action => executions.push(action),
+  });
+
+  coordinator.request({ kind: 'parse' });
+  coordinator.cancelPending();
+  coordinator.request({ kind: 'analyze-jd' });
+  authenticated = true;
+  coordinator.onAuthenticated();
+
+  assert.deepEqual(executions, [{ kind: 'analyze-jd' }]);
+});
+
+test('AI Undo works only while the accepted document remains current', () => {
+  const createAIUndoController = requireExport('createAIUndoController');
+  const original = resume({ summary: 'Original' });
+  const accepted = resume({ summary: 'AI accepted' });
+  let current = accepted;
+  let undoCalls = 0;
+  const controller = createAIUndoController({
+    getDocument: () => current,
+    undo: () => { undoCalls += 1; current = original; },
+  });
+
+  controller.markAccepted();
+  assert.equal(controller.canUndo(), true);
+  assert.equal(controller.undo(), true);
+  assert.equal(current, original);
+  assert.equal(undoCalls, 1);
+
+  current = accepted;
+  controller.markAccepted();
+  current = { ...accepted, summary: 'Manual edit' };
+  assert.equal(controller.canUndo(), false);
+  assert.equal(controller.undo(), false);
+  assert.equal(undoCalls, 1);
+});
+
+test('settled account refresh calls quota and plans once and advances its version', async () => {
+  const refreshResumeAccountState = requireExport('refreshResumeAccountState');
+  const calls: string[] = [];
+  const result = await refreshResumeAccountState({
+    getQuota: async () => {
+      calls.push('quota');
+      return { plan: 'free', remaining: 2, total: 3, resetAt: null };
+    },
+    getPlansAvailability: async () => {
+      calls.push('plans');
+      return { available: false, dailyQuota: 3, xddpay: { enabled: false } };
+    },
+  }, 4);
+
+  assert.deepEqual(calls.sort(), ['plans', 'quota']);
+  assert.equal(result.version, 5);
+  assert.equal(result.quota?.remaining, 2);
+  assert.equal(result.availability?.dailyQuota, 3);
+});
+
 test('creates one payment order only after confirmation and polls the same order until fulfillment', async () => {
   const createResumePaymentController = requireExport('createResumePaymentController');
   const calls: string[] = [];

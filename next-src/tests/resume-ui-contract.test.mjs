@@ -160,6 +160,8 @@ test('extends Supabase login with one-shot continuation and non-enumerating pass
   assert.match(auth, /设置或找回密码/);
   assert.match(auth, /如果账号存在，重置邮件已发送/);
   assert.match(auth, /onAuthenticated\?\.\(\)[\s\S]{0,200}(?:onClose\(\)|onCloseRef\.current\(\))/);
+  assert.match(auth, /\/auth\/recovery/);
+  assert.equal(existsSync(new URL('../src/app/auth/recovery/page.tsx', import.meta.url)), true);
 });
 
 test('contains focus in Task 9 dialogs and restores the invoking control', () => {
@@ -219,7 +221,9 @@ test('keeps payment fail-closed while exposing injected same-order lifecycle sta
   }
   assert.match(drawer, /手动查询/);
   assert.match(drawer, /createResumePaymentController/);
-  assert.match(drawer, /setAvailability\(DISABLED_AVAILABILITY\)/);
+  assert.match(drawer, /availability\s*\?\?\s*DISABLED_AVAILABILITY/);
+  assert.match(drawer, /data-refresh-version=\{refreshVersion\}/);
+  assert.match(drawer, /onRefresh/);
   assert.match(drawer, /setSelectedPlan\(null\)/);
   assert.match(api, /getPlansAvailability/);
   assert.match(api, /enabled:\s*xddpay\?\.enabled\s*===\s*true/);
@@ -229,12 +233,12 @@ test('wires auth-safe AI and quota controls into the canonical workspace', () =>
   const workspace = read('src/components/resume/ResumeWorkspace.tsx');
   const toolbar = read('src/components/resume/ResumeToolbar.tsx');
 
-  assert.match(workspace, /createPendingResumeActionController/);
+  assert.match(workspace, /createProtectedResumeActionCoordinator/);
   assert.match(workspace, /<AIPanel/);
   assert.match(workspace, /<QuotaDrawer/);
   assert.match(workspace, /<AuthModal/);
   assert.match(workspace, /onAuthenticated=/);
-  assert.match(workspace, /pendingActionController\.resume/);
+  assert.match(workspace, /actionCoordinatorRef\.current\?\.onAuthenticated/);
   assert.doesNotMatch(workspace, /localStorage[\s\S]{0,200}pending/i);
   assert.match(toolbar, /onQuota/);
   assert.match(toolbar, /onAccount/);

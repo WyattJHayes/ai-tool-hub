@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CircleDollarSign, RefreshCw, X } from 'lucide-react';
 import {
-  resumeApi,
   type ResumePaymentClient,
   type ResumePaymentOrder,
   type ResumePlansAvailability,
@@ -16,7 +15,10 @@ interface QuotaDrawerProps {
   open: boolean;
   onClose: () => void;
   quota: ResumeQuotaSummary | null;
-  onQuotaChange: (quota: ResumeQuotaSummary) => void;
+  availability: ResumePlansAvailability | null;
+  refreshVersion: number;
+  refreshing: boolean;
+  onRefresh: () => void | Promise<void>;
   paymentClient?: ResumePaymentClient | null;
 }
 
@@ -51,19 +53,21 @@ export function QuotaDrawer({
   open,
   onClose,
   quota,
-  onQuotaChange,
+  availability,
+  refreshVersion,
+  refreshing,
+  onRefresh,
   paymentClient = null,
 }: QuotaDrawerProps) {
-  const [availability, setAvailability] = useState(DISABLED_AVAILABILITY);
   const [paymentState, setPaymentState] = useState(EMPTY_PAYMENT_STATE);
   const [selectedPlan, setSelectedPlan] = useState<ResumePurchasablePlan | null>(null);
   const drawerRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
   const onCloseRef = useRef(onClose);
-  const channelEnabled = availability.xddpay.enabled === true && paymentClient !== null;
+  const effectiveAvailability = availability ?? DISABLED_AVAILABILITY;
+  const channelEnabled = !refreshing && effectiveAvailability.xddpay.enabled === true && paymentClient !== null;
   const closeDrawer = useCallback(() => {
-    setAvailability(DISABLED_AVAILABILITY);
     setSelectedPlan(null);
     onCloseRef.current();
   }, []);
@@ -73,9 +77,9 @@ export function QuotaDrawer({
     {
       onState: setPaymentState,
       openPayment: url => window.open(url, '_blank', 'noopener,noreferrer'),
-      onFulfilled: () => { void resumeApi.getQuota().then(onQuotaChange).catch(() => undefined); },
+      onFulfilled: () => { void onRefresh(); },
     },
-  ) : null, [onQuotaChange, paymentClient]);
+  ) : null, [onRefresh, paymentClient]);
 
   useEffect(() => () => controller?.dispose(), [controller]);
 
@@ -85,15 +89,9 @@ export function QuotaDrawer({
 
   useEffect(() => {
     if (!open) return;
-    const abortController = new AbortController();
-    void resumeApi.getPlansAvailability(abortController.signal).then(plans => {
-      if (abortController.signal.aborted) return;
-      setAvailability(plans);
-    });
-    void resumeApi.getQuota(abortController.signal).then(onQuotaChange).catch(() => undefined);
+    void onRefresh();
     void controller?.loadHistory();
-    return () => abortController.abort();
-  }, [controller, onQuotaChange, open]);
+  }, [controller, onRefresh, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -125,7 +123,7 @@ export function QuotaDrawer({
 
   return (
     <div className="resume-drawer-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) closeDrawer(); }}>
-      <aside ref={drawerRef} className="resume-quota-drawer" role="dialog" aria-modal="true" aria-labelledby="resume-quota-title" tabIndex={-1}>
+      <aside ref={drawerRef} className="resume-quota-drawer" role="dialog" aria-modal="true" aria-labelledby="resume-quota-title" tabIndex={-1} data-refresh-version={refreshVersion}>
         <header>
           <div><p>ACCOUNT / QUOTA</p><h2 id="resume-quota-title"><CircleDollarSign aria-hidden="true" />配额与会员</h2></div>
           <button ref={closeRef} type="button" className="resume-icon-control" onClick={closeDrawer} aria-label="关闭配额抽屉"><X aria-hidden="true" /></button>
@@ -135,7 +133,7 @@ export function QuotaDrawer({
           <section className="resume-quota-summary" aria-live="polite">
             <span>当前方案</span><strong>{quota?.plan === 'vip' ? '永久 VIP' : quota?.plan === 'basic' ? '基础会员' : '免费用户'}</strong>
             <span>剩余额度</span><strong>{quota?.remaining === null && quota ? '不限次' : quota?.remaining ?? '--'}</strong>
-            <span>免费每日额度</span><strong>{availability.dailyQuota ?? '--'}</strong>
+            <span>免费每日额度</span><strong>{effectiveAvailability.dailyQuota ?? '--'}</strong>
           </section>
 
           <section className="resume-plan-list" aria-labelledby="resume-plan-title">

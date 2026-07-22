@@ -9,8 +9,10 @@ import type {
 import type {
   ResumePaymentClient,
   ResumePaymentOrder,
+  ResumePlansAvailability,
   ResumePurchasablePlan,
 } from './api';
+import type { ResumeQuotaSummary } from './types';
 
 export type ResumeImportMode = 'merge' | 'replace';
 export type ResumeSaveState = 'unsaved' | 'saving' | 'saved' | 'error';
@@ -334,6 +336,110 @@ export function createPendingResumeActionController(): PendingResumeActionContro
     clear() {
       pending = null;
     },
+  };
+}
+
+export interface ProtectedResumeActionContext {
+  document: ResumeDocumentV1;
+  jobDescription: string;
+}
+
+interface ProtectedResumeActionCoordinatorOptions {
+  isAuthenticated: () => boolean;
+  getDocument: () => ResumeDocumentV1;
+  getJobDescription: () => string;
+  onAuthenticationRequired: (action: PendingResumeAction) => void;
+  onExecute: (action: PendingResumeAction, context: ProtectedResumeActionContext) => void;
+}
+
+export interface ProtectedResumeActionCoordinator {
+  request: (action: PendingResumeAction) => void;
+  onAuthenticated: () => void;
+  cancelPending: () => void;
+}
+
+export function createProtectedResumeActionCoordinator(
+  options: ProtectedResumeActionCoordinatorOptions,
+): ProtectedResumeActionCoordinator {
+  let pending: PendingResumeAction | null = null;
+  const execute = (action: PendingResumeAction) => options.onExecute({ ...action }, {
+    document: options.getDocument(),
+    jobDescription: options.getJobDescription(),
+  });
+
+  return {
+    request(action) {
+      if (options.isAuthenticated()) {
+        execute(action);
+        return;
+      }
+      pending = { ...action };
+      options.onAuthenticationRequired({ ...action });
+    },
+    onAuthenticated() {
+      if (!pending || !options.isAuthenticated()) return;
+      const action = pending;
+      pending = null;
+      execute(action);
+    },
+    cancelPending() {
+      pending = null;
+    },
+  };
+}
+
+interface AIUndoControllerOptions {
+  getDocument: () => ResumeDocumentV1;
+  undo: () => void;
+}
+
+export function createAIUndoController(options: AIUndoControllerOptions) {
+  let acceptedDocument: ResumeDocumentV1 | null = null;
+  return {
+    markAccepted() {
+      acceptedDocument = options.getDocument();
+    },
+    canUndo() {
+      return acceptedDocument !== null && options.getDocument() === acceptedDocument;
+    },
+    undo() {
+      if (acceptedDocument === null || options.getDocument() !== acceptedDocument) {
+        acceptedDocument = null;
+        return false;
+      }
+      acceptedDocument = null;
+      options.undo();
+      return true;
+    },
+    clear() {
+      acceptedDocument = null;
+    },
+  };
+}
+
+interface ResumeAccountRefreshClient {
+  getQuota: () => Promise<ResumeQuotaSummary>;
+  getPlansAvailability: () => Promise<ResumePlansAvailability>;
+}
+
+export interface ResumeAccountRefreshResult {
+  quota: ResumeQuotaSummary | null;
+  availability: ResumePlansAvailability | null;
+  version: number;
+}
+
+export async function refreshResumeAccountState(
+  client: ResumeAccountRefreshClient,
+  currentVersion: number,
+): Promise<ResumeAccountRefreshResult> {
+  const [quota, availability] = await Promise.allSettled([
+    client.getQuota(),
+    client.getPlansAvailability(),
+  ]);
+  return {
+    quota: quota.status === 'fulfilled' ? quota.value : null,
+    availability: availability.status === 'fulfilled' ? availability.value : null,
+    version: currentVersion + 1,
   };
 }
 

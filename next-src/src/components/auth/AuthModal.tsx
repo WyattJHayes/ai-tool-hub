@@ -109,7 +109,7 @@ export function AuthModal({ isOpen, onClose, onAuthenticated, contextLabel }: Au
     }
     setLoading(true);
     try {
-      const redirectTo = `${window.location.origin}/user`;
+      const redirectTo = `${window.location.origin}/auth/recovery`;
       const { error: authError } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo });
       if (authError) {
         setError('暂时无法发送重置邮件，请稍后重试。');

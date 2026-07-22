@@ -204,17 +204,34 @@ test('rejects a pending change without mutating the document', () => {
   assert.deepEqual(useResumeStore.getState().changes, []);
 });
 
-test('keeps stale item changes pending when their target no longer exists', () => {
+test('stale single accept preserves a newer edit and clears staged changes', () => {
   resetStore();
   useResumeStore.getState().setChanges([
-    { id: 'stale', section: 'experience', itemId: 'missing', field: 'company', before: '', after: 'No target', accepted: false },
+    { id: 'stale', section: 'summary', field: 'summary', before: '', after: 'AI summary', accepted: false },
   ]);
+  useResumeStore.getState().saveState({ ...useResumeStore.getState().document, summary: 'Newer manual summary' });
 
-  useResumeStore.getState().acceptChange('stale');
-  useResumeStore.getState().acceptAllChanges();
+  const result = useResumeStore.getState().acceptChange('stale');
 
-  assert.equal(useResumeStore.getState().changes[0].accepted, false);
-  assert.equal(useResumeStore.getState().document.experience.length, 0);
+  assert.equal(result, 'conflict');
+  assert.equal(useResumeStore.getState().document.summary, 'Newer manual summary');
+  assert.deepEqual(useResumeStore.getState().changes, []);
+});
+
+test('stale accept-all is atomic, preserves newer edits, and clears staged changes', () => {
+  resetStore();
+  useResumeStore.getState().setChanges([
+    { id: 'target', section: 'target', field: 'target', before: '', after: 'AI target', accepted: false },
+    { id: 'summary', section: 'summary', field: 'summary', before: '', after: 'AI summary', accepted: false },
+  ]);
+  useResumeStore.getState().saveState({ ...useResumeStore.getState().document, summary: 'Newer manual summary' });
+
+  const result = useResumeStore.getState().acceptAllChanges();
+
+  assert.equal(result, 'conflict');
+  assert.equal(useResumeStore.getState().document.target, '');
+  assert.equal(useResumeStore.getState().document.summary, 'Newer manual summary');
+  assert.deepEqual(useResumeStore.getState().changes, []);
 });
 
 test('resets the document while preserving an exportable backup', () => {

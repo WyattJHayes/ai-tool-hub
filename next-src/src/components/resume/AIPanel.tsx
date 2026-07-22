@@ -1,11 +1,16 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, Sparkles, Square, X } from 'lucide-react';
+import { Check, Sparkles, Square, Undo2, X } from 'lucide-react';
 import { ClientResumeApiError, resumeApi } from '@/features/resume/api';
 import { normalizeResumeDocument } from '@/features/resume/schema';
 import { useResumeStore } from '@/features/resume/store';
-import { computeResumeChanges, type PendingResumeAction } from '@/features/resume/ui';
+import {
+  computeResumeChanges,
+  createAIUndoController,
+  type PendingResumeAction,
+  type ProtectedResumeActionContext,
+} from '@/features/resume/ui';
 import type { JDAnalysis, OptimizationLevel, ResumeChange, ResumeDocumentV1, ResumeQuotaSummary } from '@/features/resume/types';
 
 type AIState = 'idle' | 'validating' | 'reserving' | 'streaming' | 'review' | 'error';
@@ -13,6 +18,7 @@ type AIState = 'idle' | 'validating' | 'reserving' | 'streaming' | 'review' | 'e
 interface ResumedAIAction {
   id: number;
   action: Exclude<PendingResumeAction, { kind: 'open-quota' }>;
+  context: ProtectedResumeActionContext;
 }
 
 interface AIPanelProps {
@@ -20,6 +26,8 @@ interface AIPanelProps {
   authenticated: boolean;
   quota: ResumeQuotaSummary | null;
   resumedAction: ResumedAIAction | null;
+  jobDescription: string;
+  onJobDescriptionChange: (value: string) => void;
   onRequireAuthentication: (action: Exclude<PendingResumeAction, { kind: 'open-quota' }>) => void;
   onResumedActionConsumed: (id: number) => void;
   onSettled: () => void;
@@ -60,6 +68,17 @@ function displayChangeValue(change: ResumeChange, value: string): string {
   }
 }
 
+export function ResumeDiffValue({
+  change,
+  kind,
+}: {
+  change: ResumeChange;
+  kind: 'before' | 'after';
+}) {
+  const label = kind === 'before' ? '原文' : '建议';
+  return <span><span className="sr-only">{label}：</span>{displayChangeValue(change, change[kind])}</span>;
+}
+
 function aiErrorMessage(reason: unknown): string {
   if (reason instanceof ClientResumeApiError) {
     if (reason.code === 'QUOTA_EXHAUSTED') return '当前额度不足，请查看配额。';
@@ -74,6 +93,8 @@ export function AIPanel({
   authenticated,
   quota,
   resumedAction,
+  jobDescription,
+  onJobDescriptionChange,
   onRequireAuthentication,
   onResumedActionConsumed,
   onSettled,
@@ -84,13 +105,13 @@ export function AIPanel({
   const acceptChange = useResumeStore(state => state.acceptChange);
   const acceptAllChanges = useResumeStore(state => state.acceptAllChanges);
   const rejectChange = useResumeStore(state => state.rejectChange);
-  const [state, setState] = useState<AIState>('idle');
-  const [jobDescription, setJobDescription] = useState('');
+  const [state, setState] = useState<AIState>(() => useResumeStore.getState().changes.length ? 'review' : 'idle');
   const [progress, setProgress] = useState('');
   const [tokens, setTokens] = useState('');
   const [error, setError] = useState('');
   const [analysis, setAnalysis] = useState<JDAnalysis | null>(null);
   const [resultScore, setResultScore] = useState<number | null>(null);
+  const [aiUndoDocument, setAIUndoDocument] = useState<ResumeDocumentV1 | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const resumedIdRef = useRef<number | null>(null);
   const documentRef = useRef(document);
@@ -98,6 +119,10 @@ export function AIPanel({
   const busy = ['validating', 'reserving', 'streaming'].includes(state);
   const actionsDisabled = busy || state === 'review';
   const quotaLabel = quota?.remaining === null && quota ? '不限' : quota?.remaining ?? '--';
+  const [aiUndoController] = useState(() => createAIUndoController({
+    getDocument: () => useResumeStore.getState().document,
+    undo: () => useResumeStore.getState().undo(),
+  }));
 
   useEffect(() => {
     documentRef.current = document;
@@ -116,7 +141,10 @@ export function AIPanel({
     setState('review');
   }, [setChanges]);
 
-  const execute = useCallback(async (action: Exclude<PendingResumeAction, { kind: 'open-quota' }>) => {
+  const execute = useCallback(async (
+    action: Exclude<PendingResumeAction, { kind: 'open-quota' }>,
+    context?: ProtectedResumeActionContext,
+  ) => {
     if (!authenticated) {
       onRequireAuthentication(action);
       return;
@@ -128,23 +156,25 @@ export function AIPanel({
     setError('');
     setProgress('正在校验本地输入');
     setTokens('');
+    const sourceDocument = context?.document ?? documentRef.current;
+    const sourceJobDescription = context?.jobDescription ?? jobDescription;
     try {
-      if ((action.kind === 'analyze-jd' || (action.kind === 'optimize' && action.level !== 'light')) && !jobDescription.trim()) {
+      if ((action.kind === 'analyze-jd' || (action.kind === 'optimize' && action.level !== 'light')) && !sourceJobDescription.trim()) {
         throw new Error('JD_REQUIRED');
       }
       setState('reserving');
       setProgress('正在预留 1 次额度');
       if (action.kind === 'parse') {
-        stageCandidate(await resumeApi.parseResume(JSON.stringify(documentRef.current), controller.signal));
+        stageCandidate(await resumeApi.parseResume(JSON.stringify(sourceDocument), controller.signal));
       } else if (action.kind === 'analyze-jd') {
-        setAnalysis(await resumeApi.analyzeJobDescription(jobDescription, controller.signal));
+        setAnalysis(await resumeApi.analyzeJobDescription(sourceJobDescription, controller.signal));
         setState('idle');
         setProgress('JD 分析完成');
       } else {
         const result = await resumeApi.streamOptimize(
           action.level,
-          JSON.stringify(documentRef.current),
-          jobDescription,
+          JSON.stringify(sourceDocument),
+          sourceJobDescription,
           {
             onProgress: value => {
               setState('streaming');
@@ -180,7 +210,7 @@ export function AIPanel({
     if (!resumedAction || resumedIdRef.current === resumedAction.id) return;
     resumedIdRef.current = resumedAction.id;
     onResumedActionConsumed(resumedAction.id);
-    void execute(resumedAction.action);
+    void execute(resumedAction.action, resumedAction.context);
   }, [execute, onResumedActionConsumed, resumedAction]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
@@ -193,6 +223,31 @@ export function AIPanel({
     setResultScore(null);
   };
 
+  const handleAcceptance = (changeId?: string) => {
+    const result = changeId ? acceptChange(changeId) : acceptAllChanges();
+    if (result === 'conflict') {
+      aiUndoController.clear();
+      setAIUndoDocument(null);
+      setState('error');
+      setError('简历在建议生成后已被编辑。过期建议已清除，请重新运行 AI 优化。');
+      return;
+    }
+    if (result !== 'accepted') return;
+    aiUndoController.markAccepted();
+    setAIUndoDocument(useResumeStore.getState().document);
+    if (!changeId) setState('idle');
+  };
+
+  const handleAIUndo = () => {
+    if (!aiUndoController.undo()) {
+      setAIUndoDocument(null);
+      return;
+    }
+    setAIUndoDocument(null);
+    setError('');
+    setState('review');
+  };
+
   return (
     <section className="resume-ai-panel" aria-labelledby="resume-ai-title">
       <header className="resume-ai-panel__header">
@@ -202,12 +257,12 @@ export function AIPanel({
 
       <label className="resume-ai-jd">
         职位描述（JD）
-        <textarea value={jobDescription} onChange={event => setJobDescription(event.target.value)} rows={4} maxLength={10_000} placeholder="粘贴目标岗位要求" />
+        <textarea value={jobDescription} onChange={event => onJobDescriptionChange(event.target.value)} rows={4} maxLength={10_000} placeholder="粘贴目标岗位要求" />
       </label>
 
       <div className="resume-ai-utility-actions">
-        <button type="button" onClick={() => void execute({ kind: 'parse' })} disabled={actionsDisabled}>AI 解析当前简历</button>
-        <button type="button" onClick={() => void execute({ kind: 'analyze-jd' })} disabled={actionsDisabled || !hasJobDescription}>分析 JD</button>
+        <button type="button" onClick={() => void execute({ kind: 'parse' })} disabled={actionsDisabled}><strong>AI 解析当前简历</strong><span>每次 1 次额度</span></button>
+        <button type="button" onClick={() => void execute({ kind: 'analyze-jd' })} disabled={actionsDisabled || !hasJobDescription}><strong>分析 JD</strong><span>每次 1 次额度</span></button>
       </div>
 
       <div className="resume-ai-levels" role="group" aria-label="优化级别">
@@ -230,17 +285,23 @@ export function AIPanel({
       {tokens && state === 'streaming' ? <p className="resume-ai-stream" aria-label="AI 流式进度">{tokens}</p> : null}
       {analysis ? <p className="resume-ai-analysis">已识别岗位：{analysis.jobTitle || '未命名岗位'} · {analysis.keywords.length} 个关键词</p> : null}
       {error ? <p className="resume-inline-error" role="alert">{error}</p> : null}
+      {aiUndoDocument !== null && aiUndoDocument === document ? (
+        <div className="resume-import-undo" role="status">
+          <span>AI 修改已应用</span>
+          <button type="button" onClick={handleAIUndo}><Undo2 aria-hidden="true" />撤销 AI 修改</button>
+        </div>
+      ) : null}
 
       {state === 'review' ? (
         <section className="resume-diff-review" aria-labelledby="resume-diff-title">
           <header><div><p>{resultScore === null ? 'AI DIFF' : `AI SCORE ${resultScore}`}</p><h3 id="resume-diff-title">修改审阅</h3></div><button type="button" onClick={closeReview} aria-label="关闭修改审阅"><X aria-hidden="true" /></button></header>
-          <div className="resume-diff-actions"><button type="button" onClick={acceptAllChanges}><Check aria-hidden="true" />全部接受</button><button type="button" onClick={closeReview}>拒绝未应用修改</button></div>
+          <div className="resume-diff-actions"><button type="button" onClick={() => handleAcceptance()}><Check aria-hidden="true" />全部接受</button><button type="button" onClick={closeReview}>拒绝未应用修改</button></div>
           <ul>
             {changes.map(change => (
               <li key={change.id} data-accepted={change.accepted ? 'true' : 'false'}>
-                <div><strong>{change.field === 'items' ? COLLECTION_LABELS[change.section] : FIELD_LABELS[change.field] ?? change.field}</strong><span>{displayChangeValue(change, change.before)}</span><span>{displayChangeValue(change, change.after)}</span></div>
+                <div><strong>{change.field === 'items' ? COLLECTION_LABELS[change.section] : FIELD_LABELS[change.field] ?? change.field}</strong><ResumeDiffValue change={change} kind="before" /><ResumeDiffValue change={change} kind="after" /></div>
                 <div className="resume-diff-row-actions">
-                  <button type="button" onClick={() => acceptChange(change.id)} disabled={change.accepted}>接受</button>
+                  <button type="button" onClick={() => handleAcceptance(change.id)} disabled={change.accepted}>接受</button>
                   <button type="button" onClick={() => rejectChange(change.id)} disabled={change.accepted}>拒绝</button>
                 </div>
               </li>
