@@ -174,6 +174,24 @@ test('accepts all pending changes in one action', () => {
   assert.ok(useResumeStore.getState().changes.every(change => change.accepted));
 });
 
+test('accepts normalized whole-section changes for AI-generated rows, skills, and certificates', () => {
+  resetStore();
+  const nextExperience = [experience('ai-experience', 'AI candidate')];
+  useResumeStore.getState().setChanges([
+    { id: 'experience-items', section: 'experience', field: 'items', before: '[]', after: JSON.stringify(nextExperience), accepted: false },
+    { id: 'skill-items', section: 'skills', field: 'items', before: '[]', after: JSON.stringify(['TypeScript', 'React']), accepted: false },
+    { id: 'certificate-items', section: 'certificates', field: 'items', before: '[]', after: JSON.stringify(['AWS Associate']), accepted: false },
+  ]);
+
+  useResumeStore.getState().acceptAllChanges();
+
+  const state = useResumeStore.getState();
+  assert.deepEqual(state.document.experience, nextExperience);
+  assert.deepEqual(state.document.skills, ['TypeScript', 'React']);
+  assert.deepEqual(state.document.certificates, ['AWS Associate']);
+  assert.ok(state.changes.every(change => change.accepted));
+});
+
 test('rejects a pending change without mutating the document', () => {
   resetStore();
   useResumeStore.getState().setChanges([

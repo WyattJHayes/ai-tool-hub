@@ -111,6 +111,49 @@ test('requires a current Supabase session before a protected request', async () 
   assert.equal(fetchCalls, 0);
 });
 
+test('loads public plan availability without reading or persisting an auth session', async () => {
+  const sessions: string[] = [];
+  const calls: Array<[RequestInfo | URL, RequestInit | undefined]> = [];
+  const client = createResumeApiClient(dependencies(async (input, init) => {
+    calls.push([input, init]);
+    return Response.json({ dailyQuota: 3, xddpay: { enabled: true } });
+  }, sessions));
+
+  assert.deepEqual(await client.getPlansAvailability(), {
+    available: true,
+    dailyQuota: 3,
+    xddpay: { enabled: true },
+  });
+  assert.deepEqual(sessions, []);
+  assert.equal(calls[0][0], '/api/resume/plans');
+  assert.equal(new Headers(calls[0][1]?.headers).has('authorization'), false);
+});
+
+test('keeps the channel disabled while retaining effective quota from a valid plans response', async () => {
+  for (const xddpay of [{ enabled: false }, {}]) {
+    const client = createResumeApiClient(dependencies(async () => Response.json({ dailyQuota: 3, xddpay }), []));
+    assert.deepEqual(await client.getPlansAvailability(), {
+      available: true,
+      dailyQuota: 3,
+      xddpay: { enabled: false },
+    });
+  }
+});
+
+test('fails closed when the blocked plans endpoint is missing or its effective quota is malformed', async () => {
+  for (const response of [
+    new Response(null, { status: 404 }),
+    Response.json({ dailyQuota: '3', xddpay: { enabled: true } }),
+  ]) {
+    const client = createResumeApiClient(dependencies(async () => response, []));
+    assert.deepEqual(await client.getPlansAvailability(), {
+      available: false,
+      dailyQuota: null,
+      xddpay: { enabled: false },
+    });
+  }
+});
+
 test('maps stable JSON error envelopes to ClientResumeApiError without response details', async () => {
   const client = createResumeApiClient(dependencies(async () => Response.json({
     error: { code: 'QUOTA_EXHAUSTED', message: 'No quota remains.', requestId: 'request-1' },

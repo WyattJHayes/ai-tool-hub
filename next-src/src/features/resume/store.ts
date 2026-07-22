@@ -15,6 +15,7 @@ import type {
 export const RESUME_STORAGE_KEY = 'weihub-resume-v1';
 
 type RepeatableSectionKey = 'experience' | 'projects' | 'education';
+type CollectionSectionKey = RepeatableSectionKey | 'skills' | 'certificates';
 type RepeatableItem = ResumeExperience | ResumeProject | ResumeEducation;
 
 interface ResumeStore {
@@ -140,6 +141,18 @@ function applyChange(document: ResumeDocumentV1, change: ResumeChange): ChangeAp
       applied: true,
     };
   }
+  if (change.field === 'items' && isCollectionSection(change.section)) {
+    try {
+      const items: unknown = JSON.parse(change.after);
+      if (!Array.isArray(items)) return { document, applied: false };
+      return {
+        document: normalizeResumeDocument({ ...document, [change.section]: items }),
+        applied: true,
+      };
+    } catch {
+      return { document, applied: false };
+    }
+  }
   if (isRepeatableSection(change.section) && change.itemId && isItemField(change.section, change.field)) {
     const currentItems = itemsFor(document, change.section);
     if (!currentItems.some(item => item.id === change.itemId)) return { document, applied: false };
@@ -149,6 +162,10 @@ function applyChange(document: ResumeDocumentV1, change: ResumeChange): ChangeAp
     return { document: replaceItems(document, change.section, items), applied: true };
   }
   return { document, applied: false };
+}
+
+function isCollectionSection(section: ResumeSectionKey): section is CollectionSectionKey {
+  return isRepeatableSection(section) || section === 'skills' || section === 'certificates';
 }
 
 function isRepeatableSection(section: ResumeSectionKey): section is RepeatableSectionKey {

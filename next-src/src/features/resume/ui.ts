@@ -6,6 +6,11 @@ import type {
   ResumeExperience,
   ResumeProject,
 } from './types';
+import type {
+  ResumePaymentClient,
+  ResumePaymentOrder,
+  ResumePurchasablePlan,
+} from './api';
 
 export type ResumeImportMode = 'merge' | 'replace';
 export type ResumeSaveState = 'unsaved' | 'saving' | 'saved' | 'error';
@@ -297,5 +302,292 @@ export function createSaveStatusController(
       }, 0);
     },
     dispose: clearTimers,
+  };
+}
+
+export type PendingResumeAction =
+  | { kind: 'parse' }
+  | { kind: 'analyze-jd' }
+  | { kind: 'optimize'; level: 'light' | 'medium' | 'deep' }
+  | { kind: 'open-quota' };
+
+export interface PendingResumeActionController {
+  defer(action: PendingResumeAction): void;
+  peek(): PendingResumeAction | null;
+  resume(handler: (action: PendingResumeAction) => void): void;
+  clear(): void;
+}
+
+export function createPendingResumeActionController(): PendingResumeActionController {
+  let pending: PendingResumeAction | null = null;
+  return {
+    defer(action) {
+      pending = { ...action };
+    },
+    peek: () => pending ? { ...pending } : null,
+    resume(handler) {
+      if (!pending) return;
+      const action = pending;
+      pending = null;
+      handler(action);
+    },
+    clear() {
+      pending = null;
+    },
+  };
+}
+
+type ScalarSection = 'profile' | 'target' | 'summary';
+type RepeatableSection = 'experience' | 'projects' | 'education';
+type CollectionSection = RepeatableSection | 'skills' | 'certificates';
+
+function appendChange(
+  changes: ResumeChange[],
+  makeId: () => string,
+  section: ScalarSection | RepeatableSection,
+  field: string,
+  before: string,
+  after: string,
+  itemId?: string,
+) {
+  if (before === after) return;
+  changes.push({ id: makeId(), section, itemId, field, before, after, accepted: false });
+}
+
+function appendCollectionChange(
+  changes: ResumeChange[],
+  makeId: () => string,
+  section: CollectionSection,
+  before: unknown[],
+  after: unknown[],
+) {
+  const beforeJson = JSON.stringify(before);
+  const afterJson = JSON.stringify(after);
+  if (beforeJson === afterJson) return;
+  changes.push({
+    id: makeId(),
+    section,
+    field: 'items',
+    before: beforeJson,
+    after: afterJson,
+    accepted: false,
+  });
+}
+
+export function computeResumeChanges(
+  current: ResumeDocumentV1,
+  candidate: ResumeDocumentV1,
+  makeId: () => string = () => globalThis.crypto.randomUUID(),
+): ResumeChange[] {
+  const changes: ResumeChange[] = [];
+  for (const field of ['fullName', 'phone', 'email', 'location', 'title'] as const) {
+    appendChange(changes, makeId, 'profile', field, current.profile[field], candidate.profile[field]);
+  }
+  appendChange(changes, makeId, 'target', 'target', current.target, candidate.target);
+  appendChange(changes, makeId, 'summary', 'summary', current.summary, candidate.summary);
+
+  const fields: Record<RepeatableSection, readonly string[]> = {
+    experience: ['company', 'role', 'startDate', 'endDate', 'description'],
+    projects: ['name', 'role', 'startDate', 'endDate', 'description'],
+    education: ['school', 'major', 'degree', 'startDate', 'endDate'],
+  };
+  for (const section of ['experience', 'projects', 'education'] as const) {
+    const hasStableStructure = current[section].length === candidate[section].length
+      && current[section].every((item, index) => candidate[section][index]?.id === item.id);
+    if (!hasStableStructure) {
+      appendCollectionChange(changes, makeId, section, current[section], candidate[section]);
+      continue;
+    }
+    const candidates = new Map(candidate[section].map(item => [item.id, item]));
+    for (const item of current[section]) {
+      const next = candidates.get(item.id) as Record<string, string> | undefined;
+      if (!next) continue;
+      for (const field of fields[section]) {
+        appendChange(
+          changes,
+          makeId,
+          section,
+          field,
+          (item as unknown as Record<string, string>)[field],
+          next[field],
+          item.id,
+        );
+      }
+    }
+  }
+  appendCollectionChange(changes, makeId, 'skills', current.skills, candidate.skills);
+  appendCollectionChange(changes, makeId, 'certificates', current.certificates, candidate.certificates);
+  return changes;
+}
+
+export interface PaymentScheduler {
+  setTimeout(callback: () => void, delay: number): unknown;
+  clearTimeout(timer: unknown): void;
+  now(): number;
+}
+
+export interface ResumePaymentControllerState {
+  order: ResumePaymentOrder | null;
+  history: ResumePaymentOrder[];
+  busy: boolean;
+  timedOut: boolean;
+  error: string;
+}
+
+export interface ResumePaymentControllerCallbacks {
+  onState?(state: ResumePaymentControllerState): void;
+  onOrder?(order: ResumePaymentOrder): void;
+  openPayment?(url: string): void;
+  onFulfilled?(): void;
+}
+
+export interface ResumePaymentController {
+  loadHistory(): Promise<ResumePaymentOrder[]>;
+  confirmPurchase(plan: ResumePurchasablePlan): Promise<void>;
+  manualQuery(): Promise<void>;
+  getState(): ResumePaymentControllerState;
+  dispose(): void;
+}
+
+const PAYMENT_POLL_INTERVAL_MS = 3_000;
+const PAYMENT_POLL_TIMEOUT_MS = 5 * 60_000;
+
+export function createResumePaymentController(
+  client: ResumePaymentClient,
+  scheduler: PaymentScheduler,
+  callbacks: ResumePaymentControllerCallbacks,
+): ResumePaymentController {
+  let state: ResumePaymentControllerState = {
+    order: null,
+    history: [],
+    busy: false,
+    timedOut: false,
+    error: '',
+  };
+  let pollTimer: unknown = null;
+  let deadlineTimer: unknown = null;
+  let startedAt = 0;
+  let disposed = false;
+  let fulfilledOrderId: string | null = null;
+  const activeRequests = new Set<AbortController>();
+
+  const publish = (patch: Partial<ResumePaymentControllerState>) => {
+    state = { ...state, ...patch };
+    callbacks.onState?.({ ...state, history: [...state.history] });
+  };
+  const clearPollTimer = () => {
+    if (pollTimer !== null) scheduler.clearTimeout(pollTimer);
+    pollTimer = null;
+  };
+  const clearDeadlineTimer = () => {
+    if (deadlineTimer !== null) scheduler.clearTimeout(deadlineTimer);
+    deadlineTimer = null;
+  };
+  const clearPollingTimers = () => {
+    clearPollTimer();
+    clearDeadlineTimer();
+  };
+  const abortRequests = () => {
+    for (const request of activeRequests) request.abort();
+    activeRequests.clear();
+  };
+  const startRequest = () => {
+    const request = new AbortController();
+    activeRequests.add(request);
+    return request;
+  };
+  const observe = (order: ResumePaymentOrder) => {
+    publish({ order, busy: false, error: '' });
+    callbacks.onOrder?.(order);
+    if (order.status === 'fulfilled' && fulfilledOrderId !== order.id) {
+      fulfilledOrderId = order.id;
+      callbacks.onFulfilled?.();
+    }
+  };
+  const markTimedOut = () => {
+    if (disposed || state.order?.status !== 'pending') return;
+    clearPollingTimers();
+    abortRequests();
+    publish({ busy: false, timedOut: true });
+  };
+
+  const query = async (manual: boolean) => {
+    const orderId = state.order?.id;
+    if (!orderId || disposed) return;
+    const request = startRequest();
+    try {
+      const order = await client.getOrder(orderId, request.signal);
+      if (
+        disposed
+        || order.id !== orderId
+        || state.order?.id !== orderId
+        || state.order.status !== 'pending'
+      ) return;
+      observe(order);
+      if (order.status !== 'pending') {
+        clearPollingTimers();
+        abortRequests();
+        return;
+      }
+      if (!manual && scheduler.now() - startedAt >= PAYMENT_POLL_TIMEOUT_MS) {
+        markTimedOut();
+        return;
+      }
+      if (!manual) {
+        clearPollTimer();
+        pollTimer = scheduler.setTimeout(() => { void query(false); }, PAYMENT_POLL_INTERVAL_MS);
+      }
+    } catch {
+      if (disposed || request.signal.aborted) return;
+      publish({ busy: false, error: '订单状态暂时不可用，请手动查询。' });
+      clearPollingTimers();
+    } finally {
+      activeRequests.delete(request);
+    }
+  };
+
+  return {
+    async loadHistory() {
+      if (disposed) return [];
+      const request = startRequest();
+      try {
+        const history = await client.listOrders(request.signal);
+        if (!disposed) publish({ history, error: '' });
+        return history;
+      } catch {
+        if (!disposed && !request.signal.aborted) publish({ error: '订单记录暂时不可用。' });
+        return [];
+      } finally {
+        activeRequests.delete(request);
+      }
+    },
+    async confirmPurchase(plan) {
+      if (disposed || state.busy || state.order?.status === 'pending') return;
+      publish({ busy: true, timedOut: false, error: '' });
+      const request = startRequest();
+      try {
+        const order = await client.createOrder(plan, request.signal);
+        if (disposed) return;
+        startedAt = scheduler.now();
+        observe(order);
+        if (order.paymentUrl) callbacks.openPayment?.(order.paymentUrl);
+        if (order.status === 'pending') {
+          clearPollingTimers();
+          pollTimer = scheduler.setTimeout(() => { void query(false); }, PAYMENT_POLL_INTERVAL_MS);
+          deadlineTimer = scheduler.setTimeout(markTimedOut, PAYMENT_POLL_TIMEOUT_MS);
+        }
+      } catch {
+        if (!disposed && !request.signal.aborted) publish({ busy: false, error: '订单创建失败，请稍后重试。' });
+      } finally {
+        activeRequests.delete(request);
+      }
+    },
+    manualQuery: () => query(true),
+    getState: () => ({ ...state, history: [...state.history] }),
+    dispose() {
+      disposed = true;
+      clearPollingTimers();
+      abortRequests();
+    },
   };
 }

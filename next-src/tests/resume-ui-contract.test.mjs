@@ -11,6 +11,8 @@ const resumeFiles = [
   'src/components/resume/ResumeEditor.tsx',
   'src/components/resume/ResumePreview.tsx',
   'src/components/resume/ImportDialog.tsx',
+  'src/components/resume/AIPanel.tsx',
+  'src/components/resume/QuotaDrawer.tsx',
 ];
 
 test('ships the native resume page as focused components', () => {
@@ -147,4 +149,93 @@ test('keeps the precision-console palette semantic and restrained', () => {
   assert.doesNotMatch(source, /(?:bg|text|border)-(?:green|emerald|lime|purple|violet|fuchsia)-/);
   assert.doesNotMatch(source, /(?:linear|radial|conic)-gradient|gradient-|drop-shadow|glow/i);
   assert.doesNotMatch(source, /#[0-9a-f]{3,8}/i);
+});
+
+test('extends Supabase login with one-shot continuation and non-enumerating password recovery', () => {
+  const auth = read('src/components/auth/AuthModal.tsx');
+
+  assert.match(auth, /onAuthenticated\?:\s*\(\)\s*=>\s*void/);
+  assert.match(auth, /contextLabel\?:\s*string/);
+  assert.match(auth, /resetPasswordForEmail\(email\.trim\(\),\s*\{\s*redirectTo\s*\}\)/);
+  assert.match(auth, /设置或找回密码/);
+  assert.match(auth, /如果账号存在，重置邮件已发送/);
+  assert.match(auth, /onAuthenticated\?\.\(\)[\s\S]{0,200}(?:onClose\(\)|onCloseRef\.current\(\))/);
+});
+
+test('contains focus in Task 9 dialogs and restores the invoking control', () => {
+  for (const path of [
+    'src/components/auth/AuthModal.tsx',
+    'src/components/resume/QuotaDrawer.tsx',
+  ]) {
+    const dialog = read(path);
+    assert.match(dialog, /trapDialogTabKey/);
+    assert.match(dialog, /event\.key === 'Tab'/);
+    assert.match(dialog, /openerRef/);
+    assert.match(dialog, /\.focus\(\)/);
+    assert.match(dialog, /tabIndex=\{-1\}/);
+  }
+});
+
+test('ships the complete AI validation, stream, and canonical diff review workflow', () => {
+  const panel = read('src/components/resume/AIPanel.tsx');
+
+  for (const state of ['idle', 'validating', 'reserving', 'streaming', 'review', 'error']) {
+    assert.match(panel, new RegExp(`'${state}'`));
+  }
+  for (const label of ['轻度优化', '中度优化', '深度优化']) assert.match(panel, new RegExp(label));
+  assert.match(panel, /每次 1 次额度/);
+  assert.match(panel, /disabled=\{[^}]*!hasJobDescription/);
+  assert.match(panel, /aria-live=['"]polite['"]/);
+  assert.match(panel, /computeResumeChanges/);
+  assert.match(panel, /setChanges/);
+  assert.match(panel, /acceptChange/);
+  assert.match(panel, /acceptAllChanges/);
+  assert.match(panel, /rejectChange/);
+  assert.match(panel, /接受/);
+  assert.match(panel, /拒绝/);
+  assert.match(panel, /AbortController/);
+  assert.match(panel, /documentRef\.current/);
+  assert.match(panel, /actionsDisabled\s*=\s*busy\s*\|\|\s*state\s*===\s*'review'/);
+  assert.match(panel, /disabled=\{actionsDisabled/);
+});
+
+test('keeps payment fail-closed while exposing injected same-order lifecycle states', () => {
+  const drawer = read('src/components/resume/QuotaDrawer.tsx');
+  const api = read('src/features/resume/api.ts');
+
+  assert.match(drawer, /ResumePaymentClient/);
+  assert.match(drawer, /paymentClient\?:/);
+  assert.match(drawer, /paymentClient\s*=\s*null/);
+  assert.match(drawer, /xddpay\.enabled\s*===\s*true/);
+  assert.match(drawer, /确认购买/);
+  assert.match(drawer, /基础会员/);
+  assert.match(drawer, /10 次/);
+  assert.match(drawer, /CNY 9\.90/);
+  assert.match(drawer, /永久 VIP/);
+  assert.match(drawer, /不限次/);
+  assert.match(drawer, /CNY 99\.00/);
+  for (const status of ['pending', 'fulfilled', 'expired', 'review']) {
+    assert.match(drawer, new RegExp(status));
+  }
+  assert.match(drawer, /手动查询/);
+  assert.match(drawer, /createResumePaymentController/);
+  assert.match(drawer, /setAvailability\(DISABLED_AVAILABILITY\)/);
+  assert.match(drawer, /setSelectedPlan\(null\)/);
+  assert.match(api, /getPlansAvailability/);
+  assert.match(api, /enabled:\s*xddpay\?\.enabled\s*===\s*true/);
+});
+
+test('wires auth-safe AI and quota controls into the canonical workspace', () => {
+  const workspace = read('src/components/resume/ResumeWorkspace.tsx');
+  const toolbar = read('src/components/resume/ResumeToolbar.tsx');
+
+  assert.match(workspace, /createPendingResumeActionController/);
+  assert.match(workspace, /<AIPanel/);
+  assert.match(workspace, /<QuotaDrawer/);
+  assert.match(workspace, /<AuthModal/);
+  assert.match(workspace, /onAuthenticated=/);
+  assert.match(workspace, /pendingActionController\.resume/);
+  assert.doesNotMatch(workspace, /localStorage[\s\S]{0,200}pending/i);
+  assert.match(toolbar, /onQuota/);
+  assert.match(toolbar, /onAccount/);
 });

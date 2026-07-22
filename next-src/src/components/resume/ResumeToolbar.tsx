@@ -26,6 +26,9 @@ interface ResumeToolbarProps {
   onDocumentChange: (document: ResumeDocumentV1) => void;
   onImport: () => void;
   onExport: () => void;
+  onQuota: () => void;
+  onAccount: () => void;
+  quotaLabel: string;
 }
 
 export function ResumeToolbar({
@@ -35,6 +38,9 @@ export function ResumeToolbar({
   onDocumentChange,
   onImport,
   onExport,
+  onQuota,
+  onAccount,
+  quotaLabel,
 }: ResumeToolbarProps) {
   const updateTemplate = (templateId: ResumeDocumentV1['templateId']) => {
     if (templateId !== document.templateId) onDocumentChange({ ...document, templateId });
@@ -101,18 +107,18 @@ export function ResumeToolbar({
         <button
           type="button"
           className="resume-shell-control"
-          aria-label="配额将在登录功能接入后可用"
-          aria-disabled="true"
+          aria-label={`查看配额，当前 ${quotaLabel}`}
+          onClick={onQuota}
           title="配额"
         >
           <Gauge aria-hidden="true" />
-          <span>--</span>
+          <span>{quotaLabel}</span>
         </button>
         <button
           type="button"
           className="resume-icon-control"
-          aria-label="账户将在登录功能接入后可用"
-          aria-disabled="true"
+          aria-label="账户"
+          onClick={onAccount}
           title="账户"
         >
           <UserRound aria-hidden="true" />

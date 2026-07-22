@@ -9,11 +9,21 @@ import {
   useState,
 } from 'react';
 import { FileDown, Undo2, Upload } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { AuthModal } from '@/components/auth/AuthModal';
+import { resumeApi } from '@/features/resume/api';
 import { exportResumePdf } from '@/features/resume/pdf';
 import { useResumeStore } from '@/features/resume/store';
-import { createSaveStatusController } from '@/features/resume/ui';
-import type { ResumeDocumentV1 } from '@/features/resume/types';
+import {
+  createPendingResumeActionController,
+  createSaveStatusController,
+  type PendingResumeAction,
+} from '@/features/resume/ui';
+import type { ResumeDocumentV1, ResumeQuotaSummary } from '@/features/resume/types';
+import { useUserStore } from '@/stores/useUserStore';
+import { AIPanel } from './AIPanel';
 import { ImportDialog } from './ImportDialog';
+import { QuotaDrawer } from './QuotaDrawer';
 import { ResumeEditor } from './ResumeEditor';
 import { ResumePreview } from './ResumePreview';
 import { ResumeToolbar, type ResumeSaveStatus } from './ResumeToolbar';
@@ -35,9 +45,11 @@ function pdfErrorMessage(reason: unknown): string {
 }
 
 export function ResumeWorkspace() {
+  const router = useRouter();
   const document = useResumeStore(state => state.document);
   const saveState = useResumeStore(state => state.saveState);
   const undo = useResumeStore(state => state.undo);
+  const isLoggedIn = useUserStore(state => state.isLoggedIn);
   const deferredDocument = useDeferredValue(document);
   const [view, setView] = useState<ResumeView>('edit');
   const [importOpen, setImportOpen] = useState(false);
@@ -45,13 +57,33 @@ export function ResumeWorkspace() {
   const [importUndoAvailable, setImportUndoAvailable] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
+  const [authOpen, setAuthOpen] = useState(false);
+  const [authContext, setAuthContext] = useState<string | undefined>();
+  const [quotaOpen, setQuotaOpen] = useState(false);
+  const [quota, setQuota] = useState<ResumeQuotaSummary | null>(null);
+  const [resumedAction, setResumedAction] = useState<{
+    id: number;
+    action: Exclude<PendingResumeAction, { kind: 'open-quota' }>;
+  } | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
+  const actionIdRef = useRef(0);
+  const pendingActionController = useMemo(() => createPendingResumeActionController(), []);
   const saveController = useMemo(() => createSaveStatusController(setSaveStatus, {
     setTimeout: (callback, delay) => globalThis.setTimeout(callback, delay),
     clearTimeout: timer => globalThis.clearTimeout(timer as ReturnType<typeof setTimeout>),
   }), []);
 
   useEffect(() => () => saveController.dispose(), [saveController]);
+  useEffect(() => () => pendingActionController.clear(), [pendingActionController]);
+
+  const refreshQuota = useCallback(() => {
+    if (!useUserStore.getState().isLoggedIn) return;
+    void resumeApi.getQuota().then(setQuota).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (isLoggedIn) refreshQuota();
+  }, [isLoggedIn, refreshQuota]);
 
   const runMutation = useCallback((mutation: () => void) => {
     setImportUndoAvailable(false);
@@ -85,6 +117,48 @@ export function ResumeWorkspace() {
     }
   }, [document.name, exporting]);
 
+  const dispatchProtectedAction = useCallback((action: PendingResumeAction) => {
+    if (action.kind === 'open-quota') {
+      setQuotaOpen(true);
+      return;
+    }
+    actionIdRef.current += 1;
+    setResumedAction({ id: actionIdRef.current, action });
+  }, []);
+
+  const requestProtectedAction = useCallback((action: PendingResumeAction) => {
+    if (!useUserStore.getState().isLoggedIn) {
+      pendingActionController.defer(action);
+      setAuthContext(action.kind === 'open-quota' ? '登录后查看配额与订单' : '登录后继续本次 AI 操作');
+      setAuthOpen(true);
+      return;
+    }
+    dispatchProtectedAction(action);
+  }, [dispatchProtectedAction, pendingActionController]);
+
+  const handleAuthenticated = useCallback(() => {
+    pendingActionController.resume(dispatchProtectedAction);
+  }, [dispatchProtectedAction, pendingActionController]);
+
+  const handleAuthClose = useCallback(() => {
+    pendingActionController.clear();
+    setAuthOpen(false);
+    setAuthContext(undefined);
+  }, [pendingActionController]);
+
+  const handleAccount = useCallback(() => {
+    if (useUserStore.getState().isLoggedIn) {
+      router.push('/user');
+      return;
+    }
+    pendingActionController.clear();
+    setAuthContext('登录或注册账户');
+    setAuthOpen(true);
+  }, [pendingActionController, router]);
+
+  const effectiveQuota = isLoggedIn ? quota : null;
+  const quotaLabel = effectiveQuota?.remaining === null && effectiveQuota ? '不限' : String(effectiveQuota?.remaining ?? '--');
+
   return (
     <main className="resume-page carbon-tool-surface">
       <ResumeToolbar
@@ -94,6 +168,9 @@ export function ResumeWorkspace() {
         onDocumentChange={commitDocument}
         onImport={() => setImportOpen(true)}
         onExport={handleExport}
+        onQuota={() => requestProtectedAction({ kind: 'open-quota' })}
+        onAccount={handleAccount}
+        quotaLabel={quotaLabel}
       />
 
       <div className="resume-mobile-segments" role="group" aria-label="工作区视图">
@@ -114,6 +191,16 @@ export function ResumeWorkspace() {
 
       <div className="resume-workspace">
         <section className="resume-pane resume-pane--editor" data-active={view === 'edit' ? 'true' : 'false'} aria-label="编辑面板">
+          <AIPanel
+            document={document}
+            authenticated={isLoggedIn}
+            quota={effectiveQuota}
+            resumedAction={resumedAction}
+            onRequireAuthentication={requestProtectedAction}
+            onResumedActionConsumed={id => setResumedAction(current => current?.id === id ? null : current)}
+            onSettled={refreshQuota}
+            onOpenQuota={() => requestProtectedAction({ kind: 'open-quota' })}
+          />
           <ResumeEditor document={document} onMutation={runMutation} />
         </section>
         <section className="resume-pane resume-pane--preview" data-active={view === 'preview' ? 'true' : 'false'} aria-label="预览面板">
@@ -134,6 +221,18 @@ export function ResumeWorkspace() {
         currentDocument={document}
         onClose={() => setImportOpen(false)}
         onImported={handleImportSuccess}
+      />
+      <QuotaDrawer
+        open={quotaOpen}
+        onClose={() => setQuotaOpen(false)}
+        quota={effectiveQuota}
+        onQuotaChange={setQuota}
+      />
+      <AuthModal
+        isOpen={authOpen}
+        onClose={handleAuthClose}
+        onAuthenticated={handleAuthenticated}
+        contextLabel={authContext}
       />
     </main>
   );

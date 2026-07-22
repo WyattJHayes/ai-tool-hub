@@ -4,6 +4,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ResumePreview } from '../../src/components/resume/ResumePreview';
 import type { ResumeChange, ResumeDocumentV1 } from '../../src/features/resume/types';
+import type { ResumePaymentClient, ResumePaymentOrder } from '../../src/features/resume/api';
 
 type UiModule = typeof import('../../src/features/resume/ui');
 
@@ -461,4 +462,258 @@ test('counts populated nested fields consistently instead of counting each row a
     certificates: ['Certificate'],
   });
   assert.equal(countPopulatedResumeFields(document), 7);
+});
+
+test('computes only changed canonical fields from a valid final AI candidate', () => {
+  const computeResumeChanges = requireExport('computeResumeChanges');
+  const current = resume({
+    profile: { id: 'profile-1', fullName: 'Li Lei', phone: '', email: '', location: '', title: 'Engineer' },
+    summary: 'Built systems',
+    experience: [{ id: 'experience-1', company: 'Acme', role: 'Engineer', startDate: '', endDate: '', description: 'Maintained APIs' }],
+  });
+  const candidate = structuredClone(current);
+  candidate.profile.title = 'Senior Engineer';
+  candidate.summary = 'Built reliable systems';
+  candidate.experience[0].description = 'Improved API reliability by 30%';
+
+  const changes = computeResumeChanges(current, candidate, () => 'change-id');
+  assert.deepEqual(changes.map(change => ({
+    section: change.section,
+    itemId: change.itemId,
+    field: change.field,
+    before: change.before,
+    after: change.after,
+    accepted: change.accepted,
+  })), [
+    { section: 'profile', itemId: undefined, field: 'title', before: 'Engineer', after: 'Senior Engineer', accepted: false },
+    { section: 'summary', itemId: undefined, field: 'summary', before: 'Built systems', after: 'Built reliable systems', accepted: false },
+    { section: 'experience', itemId: 'experience-1', field: 'description', before: 'Maintained APIs', after: 'Improved API reliability by 30%', accepted: false },
+  ]);
+});
+
+test('stages structural rows and string-list changes when AI candidate identifiers are not preserved', () => {
+  const computeResumeChanges = requireExport('computeResumeChanges');
+  const current = resume({
+    experience: [{ id: 'experience-current', company: 'Acme', role: 'Engineer', startDate: '', endDate: '', description: 'Maintained APIs' }],
+    skills: ['TypeScript'],
+    certificates: ['AWS Associate'],
+  });
+  const candidate = resume({
+    experience: [{ id: 'experience-ai', company: 'Acme', role: 'Engineer', startDate: '', endDate: '', description: 'Improved API reliability by 30%' }],
+    skills: ['TypeScript', 'React'],
+    certificates: [],
+  });
+
+  const changes = computeResumeChanges(current, candidate, (() => {
+    let id = 0;
+    return () => `structural-${++id}`;
+  })());
+
+  assert.deepEqual(changes.map(change => [change.section, change.field]), [
+    ['experience', 'items'],
+    ['skills', 'items'],
+    ['certificates', 'items'],
+  ]);
+  assert.deepEqual(JSON.parse(changes[0].after), candidate.experience);
+  assert.deepEqual(JSON.parse(changes[1].after), candidate.skills);
+  assert.deepEqual(JSON.parse(changes[2].after), candidate.certificates);
+});
+
+test('resumes a pending protected action once without retaining resume or JD content', () => {
+  const createPendingResumeActionController = requireExport('createPendingResumeActionController');
+  const controller = createPendingResumeActionController();
+  const resumed: unknown[] = [];
+
+  controller.defer({ kind: 'optimize', level: 'deep' });
+  assert.deepEqual(controller.peek(), { kind: 'optimize', level: 'deep' });
+  assert.doesNotMatch(JSON.stringify(controller.peek()), /resume|job description|PRIVATE/i);
+  controller.resume(action => resumed.push(action));
+  controller.resume(action => resumed.push(action));
+
+  assert.deepEqual(resumed, [{ kind: 'optimize', level: 'deep' }]);
+  assert.equal(controller.peek(), null);
+});
+
+test('creates one payment order only after confirmation and polls the same order until fulfillment', async () => {
+  const createResumePaymentController = requireExport('createResumePaymentController');
+  const calls: string[] = [];
+  const statuses: ResumePaymentOrder[] = [];
+  let queried = 0;
+  const pending: Array<{ callback: () => void; delay: number }> = [];
+  const order: ResumePaymentOrder = { id: 'order-1', plan: 'basic', status: 'pending', paymentUrl: 'https://pay.example/order-1' };
+  const client: ResumePaymentClient = {
+    listOrders: async () => { calls.push('list'); return []; },
+    createOrder: async plan => { calls.push(`create:${plan}`); return order; },
+    getOrder: async id => {
+      calls.push(`get:${id}`);
+      queried += 1;
+      return { ...order, status: queried > 1 ? 'fulfilled' : 'pending' };
+    },
+  };
+  const controller = createResumePaymentController(client, {
+    setTimeout: (callback, delay) => { pending.push({ callback, delay }); return callback; },
+    clearTimeout: timer => {
+      const index = pending.findIndex(candidate => candidate.callback === timer);
+      if (index >= 0) pending.splice(index, 1);
+    },
+    now: () => 0,
+  }, {
+    onOrder: value => statuses.push(value),
+    openPayment: url => calls.push(`open:${url}`),
+    onFulfilled: () => calls.push('refresh-quota'),
+  });
+
+  await controller.loadHistory();
+  assert.deepEqual(calls, ['list']);
+  await controller.confirmPurchase('basic');
+  await controller.confirmPurchase('basic');
+  assert.deepEqual(calls.slice(0, 3), ['list', 'create:basic', 'open:https://pay.example/order-1']);
+  assert.equal(pending.filter(timer => timer.delay === 3_000).length, 1);
+  assert.equal(pending.filter(timer => timer.delay === 300_000).length, 1);
+
+  pending.find(timer => timer.delay === 3_000)!.callback();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(pending.filter(timer => timer.delay === 3_000).length, 1);
+  pending.find(timer => timer.delay === 3_000)!.callback();
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  assert.deepEqual(calls.filter(call => call.startsWith('get:')), ['get:order-1', 'get:order-1']);
+  assert.equal(calls.filter(call => call.startsWith('create:')).length, 1);
+  assert.equal(calls.at(-1), 'refresh-quota');
+  assert.equal(statuses.at(-1)?.status, 'fulfilled');
+  assert.equal(pending.length, 0);
+});
+
+test('stops payment polling on dispose and leaves timed-out pending orders for manual query', async () => {
+  const createResumePaymentController = requireExport('createResumePaymentController');
+  let now = 0;
+  const pending = new Set<() => void>();
+  const queried: string[] = [];
+  const order: ResumePaymentOrder = { id: 'order-timeout', plan: 'vip', status: 'pending', paymentUrl: null };
+  const client: ResumePaymentClient = {
+    listOrders: async () => [],
+    createOrder: async () => order,
+    getOrder: async id => { queried.push(id); return order; },
+  };
+  const controller = createResumePaymentController(client, {
+    setTimeout: callback => { pending.add(callback); return callback; },
+    clearTimeout: timer => pending.delete(timer as () => void),
+    now: () => now,
+  }, {});
+
+  await controller.confirmPurchase('vip');
+  now = 300_000;
+  const timeoutPoll = [...pending][0];
+  pending.delete(timeoutPoll);
+  timeoutPoll();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(controller.getState().timedOut, true);
+  assert.equal(controller.getState().order?.status, 'pending');
+  assert.equal(pending.size, 0);
+
+  await controller.manualQuery();
+  assert.deepEqual(queried, ['order-timeout', 'order-timeout']);
+  controller.dispose();
+  assert.equal(pending.size, 0);
+});
+
+test('does not let a stale pending query overwrite a fulfilled payment result', async () => {
+  const createResumePaymentController = requireExport('createResumePaymentController');
+  const timers = new Set<() => void>();
+  const order: ResumePaymentOrder = { id: 'order-race', plan: 'basic', status: 'pending', paymentUrl: null };
+  const resolvers: Array<(order: ResumePaymentOrder) => void> = [];
+  let fulfilled = 0;
+  const client: ResumePaymentClient = {
+    listOrders: async () => [],
+    createOrder: async () => order,
+    getOrder: async () => new Promise(resolve => resolvers.push(resolve)),
+  };
+  const controller = createResumePaymentController(client, {
+    setTimeout: callback => { timers.add(callback); return callback; },
+    clearTimeout: timer => timers.delete(timer as () => void),
+    now: () => 0,
+  }, { onFulfilled: () => { fulfilled += 1; } });
+
+  await controller.confirmPurchase('basic');
+  const automaticPoll = [...timers][0];
+  timers.delete(automaticPoll);
+  automaticPoll();
+  const manualQuery = controller.manualQuery();
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  resolvers[1]({ ...order, status: 'fulfilled' });
+  await manualQuery;
+  resolvers[0](order);
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  assert.equal(controller.getState().order?.status, 'fulfilled');
+  assert.equal(fulfilled, 1);
+  assert.equal(timers.size, 0);
+});
+
+test('aborts a hanging payment query at the five-minute polling deadline', async () => {
+  const createResumePaymentController = requireExport('createResumePaymentController');
+  const timers: Array<{ callback: () => void; delay: number }> = [];
+  let querySignal: AbortSignal | undefined;
+  const order: ResumePaymentOrder = { id: 'order-deadline', plan: 'basic', status: 'pending', paymentUrl: null };
+  const client: ResumePaymentClient = {
+    listOrders: async () => [],
+    createOrder: async () => order,
+    getOrder: async (_id, signal) => {
+      querySignal = signal;
+      return new Promise((_resolve, reject) => {
+        signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+      });
+    },
+  };
+  const controller = createResumePaymentController(client, {
+    setTimeout: (callback, delay) => { timers.push({ callback, delay }); return callback; },
+    clearTimeout: timer => {
+      const index = timers.findIndex(candidate => candidate.callback === timer);
+      if (index >= 0) timers.splice(index, 1);
+    },
+    now: () => 0,
+  }, {});
+
+  await controller.confirmPurchase('basic');
+  timers.find(timer => timer.delay === 3_000)?.callback();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  timers.find(timer => timer.delay === 300_000)?.callback();
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  assert.equal(querySignal?.aborted, true);
+  assert.equal(controller.getState().timedOut, true);
+  assert.equal(controller.getState().order?.status, 'pending');
+});
+
+test('aborts an in-flight payment query when the controller is disposed', async () => {
+  const createResumePaymentController = requireExport('createResumePaymentController');
+  const timers = new Set<() => void>();
+  let querySignal: AbortSignal | undefined;
+  const order: ResumePaymentOrder = { id: 'order-dispose', plan: 'vip', status: 'pending', paymentUrl: null };
+  const client: ResumePaymentClient = {
+    listOrders: async () => [],
+    createOrder: async () => order,
+    getOrder: async (_id, signal) => {
+      querySignal = signal;
+      return new Promise((_resolve, reject) => {
+        signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+      });
+    },
+  };
+  const controller = createResumePaymentController(client, {
+    setTimeout: callback => { timers.add(callback); return callback; },
+    clearTimeout: timer => timers.delete(timer as () => void),
+    now: () => 0,
+  }, {});
+
+  await controller.confirmPurchase('vip');
+  const poll = [...timers][0];
+  timers.delete(poll);
+  poll();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  controller.dispose();
+
+  assert.equal(querySignal?.aborted, true);
+  assert.equal(timers.size, 0);
 });

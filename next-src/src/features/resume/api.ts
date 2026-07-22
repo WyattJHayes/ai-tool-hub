@@ -36,6 +36,30 @@ export interface StreamOptimizeCallbacks {
   onDone?(result: AIOptimizationResult): void;
 }
 
+export interface ResumePlansAvailability {
+  available: boolean;
+  dailyQuota: number | null;
+  xddpay: { enabled: boolean };
+}
+
+export type ResumePurchasablePlan = 'basic' | 'vip';
+export type ResumePaymentOrderStatus = 'pending' | 'fulfilled' | 'expired' | 'review';
+
+/** UI-facing boundary for the blocked Task 6 adapter. No production wire parser is implied. */
+export interface ResumePaymentOrder {
+  id: string;
+  plan: ResumePurchasablePlan;
+  status: ResumePaymentOrderStatus;
+  paymentUrl: string | null;
+  createdAt?: string;
+}
+
+export interface ResumePaymentClient {
+  listOrders(signal?: AbortSignal): Promise<ResumePaymentOrder[]>;
+  createOrder(plan: ResumePurchasablePlan, signal?: AbortSignal): Promise<ResumePaymentOrder>;
+  getOrder(orderId: string, signal?: AbortSignal): Promise<ResumePaymentOrder>;
+}
+
 export interface ResumeApiClient {
   parseResume(text: string, signal?: AbortSignal): Promise<ResumeDocumentV1>;
   analyzeJobDescription(jdText: string, signal?: AbortSignal): Promise<JDAnalysis>;
@@ -47,6 +71,7 @@ export interface ResumeApiClient {
     signal?: AbortSignal,
   ): Promise<AIOptimizationResult>;
   getQuota(signal?: AbortSignal): Promise<ResumeQuotaSummary>;
+  getPlansAvailability(signal?: AbortSignal): Promise<ResumePlansAvailability>;
 }
 
 async function currentSession(): Promise<{ accessToken: string | null }> {
@@ -107,6 +132,30 @@ function progressValue(value: unknown): AIProgress | null {
     && ['light', 'medium', 'deep'].includes(record.level ?? '')
     ? { status: record.status!, level: record.level! }
     : null;
+}
+
+const DISABLED_PLANS: ResumePlansAvailability = {
+  available: false,
+  dailyQuota: null,
+  xddpay: { enabled: false },
+};
+
+function plansAvailability(value: unknown): ResumePlansAvailability {
+  if (!value || typeof value !== 'object') return DISABLED_PLANS;
+  const record = value as { dailyQuota?: unknown; xddpay?: unknown };
+  const xddpay = record.xddpay && typeof record.xddpay === 'object'
+    ? record.xddpay as { enabled?: unknown }
+    : null;
+  if (
+    typeof record.dailyQuota !== 'number'
+    || !Number.isInteger(record.dailyQuota)
+    || record.dailyQuota < 0
+  ) return DISABLED_PLANS;
+  return {
+    available: true,
+    dailyQuota: record.dailyQuota,
+    xddpay: { enabled: xddpay?.enabled === true },
+  };
 }
 
 export function createResumeApiClient(dependencies: ResumeApiClientDependencies = productionDependencies): ResumeApiClient {
@@ -257,6 +306,19 @@ export function createResumeApiClient(dependencies: ResumeApiClientDependencies 
         return quotaSummary(await response.json());
       } catch {
         throw new ClientResumeApiError('RESPONSE_INVALID', 502, 'The server returned an invalid response.');
+      }
+    },
+
+    async getPlansAvailability(signal) {
+      try {
+        const response = await dependencies.fetch('/api/resume/plans', {
+          headers: { 'x-request-id': dependencies.randomUUID() },
+          signal,
+        });
+        if (!response.ok) return DISABLED_PLANS;
+        return plansAvailability(await response.json());
+      } catch {
+        return DISABLED_PLANS;
       }
     },
   };
