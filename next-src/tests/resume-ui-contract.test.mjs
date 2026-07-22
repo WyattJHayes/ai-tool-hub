@@ -78,6 +78,35 @@ test('requires a local import preview before merge or replacement', () => {
   assert.match(dialog, /人工核对/);
   assert.match(dialog, /role=['"]dialog['"]/);
   assert.match(dialog, /role=['"]alert['"]/);
+  assert.match(dialog, /commitResumeImport/);
+  assert.match(dialog, /resetAndClose/);
+  assert.match(dialog, /event\.key === 'Escape'[\s\S]{0,160}resetAndClose/);
+  assert.match(dialog, /event\.key === 'Tab'/);
+  assert.match(dialog, /dialogRef/);
+  assert.match(dialog, /openerRef/);
+  assert.match(dialog, /\.focus\(\)/);
+});
+
+test('exposes a post-import undo action wired to the canonical store', () => {
+  const workspace = read('src/components/resume/ResumeWorkspace.tsx');
+
+  assert.match(workspace, /useResumeStore\(state => state\.undo\)/);
+  assert.match(workspace, /handleUndo/);
+  assert.match(workspace, /handleUndo[\s\S]{0,260}\bundo\(\)/);
+  assert.match(workspace, /onClick=\{handleUndo\}/);
+  assert.match(workspace, /撤销导入/);
+});
+
+test('uses a viewport flex shell and suppresses the global footer on desktop resume routes', () => {
+  const css = read('src/app/globals.css');
+
+  assert.match(css, /body:has\(\.resume-page\)\s*>\s*footer[\s\S]{0,100}display:\s*none/);
+  assert.match(css, /\.resume-page\s*\{[\s\S]{0,220}height:\s*calc\(100dvh - var\(--nav-height\)\)/);
+  assert.match(css, /\.resume-page\s*\{[\s\S]{0,220}display:\s*flex/);
+  assert.match(css, /\.resume-toolbar\s*\{[\s\S]{0,100}top:\s*0/);
+  assert.match(css, /\.resume-workspace\s*\{[\s\S]{0,220}flex:\s*1 1 0/);
+  assert.match(css, /\.resume-workspace\s*\{[\s\S]{0,220}min-height:\s*0/);
+  assert.doesNotMatch(css.match(/\.resume-workspace\s*\{[\s\S]*?\}/)?.[0] ?? '', /min-height:\s*620px/);
 });
 
 test('exposes guarded PDF export, toolbar save states, and accessible icon controls', () => {

@@ -249,16 +249,23 @@ body:has(.resume-page) {
   min-width: 0;
 }
 
+body:has(.resume-page) > footer {
+  display: none;
+}
+
 .resume-page {
-  min-height: calc(100dvh - var(--nav-height));
-  overflow: clip;
+  display: flex;
+  height: calc(100dvh - var(--nav-height));
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
   color: var(--ink);
   background: var(--surface);
 }
 
 .resume-toolbar {
   position: sticky;
-  top: var(--nav-height);
+  top: 0;
   z-index: 90;
   display: grid;
   grid-template-columns: minmax(280px, 1fr) auto;
@@ -468,11 +475,52 @@ body:has(.resume-page) {
   font-size: 13px;
 }
 
+.resume-import-undo {
+  display: flex;
+  min-height: 52px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line-strong);
+  padding: 4px 16px;
+  color: var(--ink);
+  background: var(--accent-soft);
+  font-size: 13px;
+}
+
+.resume-import-undo button {
+  display: inline-flex;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 0 12px;
+  color: var(--accent-ink);
+  background: var(--surface);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.resume-import-undo button:hover {
+  background: var(--surface-hover);
+}
+
+.resume-import-undo svg {
+  width: 18px;
+  height: 18px;
+}
+
 .resume-workspace {
   display: grid;
   grid-template-columns: minmax(320px, 0.9fr) minmax(540px, 1.1fr);
-  height: calc(100dvh - var(--nav-height) - 68px);
-  min-height: 620px;
+  height: auto;
+  min-height: 0;
+  flex: 1 1 0;
 }
 
 .resume-pane {
@@ -1023,10 +1071,6 @@ body:has(.resume-page) {
     padding-top: 8px;
   }
 
-  .resume-workspace {
-    height: calc(100dvh - var(--nav-height) - 128px);
-  }
-
   .resume-preview-frame {
     width: 121.8mm;
     height: 172.26mm;
@@ -1039,6 +1083,8 @@ body:has(.resume-page) {
 
 @media (max-width: 767px) {
   .resume-page {
+    display: block;
+    height: auto;
     min-height: calc(100dvh - var(--nav-height));
     padding-bottom: calc(var(--mobile-nav-block-size) + 72px);
     overflow: visible;

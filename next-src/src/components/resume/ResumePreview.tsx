@@ -1,6 +1,11 @@
 'use client';
 
 import { forwardRef } from 'react';
+import {
+  isResumeEducationPopulated,
+  isResumeExperiencePopulated,
+  isResumeProjectPopulated,
+} from '@/features/resume/ui';
 import type { ResumeDocumentV1 } from '@/features/resume/types';
 
 interface ResumePreviewProps {
@@ -23,6 +28,9 @@ export const ResumePreview = forwardRef<HTMLDivElement, ResumePreviewProps>(
     );
     const hasTarget = hasText(document.target);
     const hasSummary = hasText(document.summary);
+    const experience = document.experience.filter(isResumeExperiencePopulated);
+    const projects = document.projects.filter(isResumeProjectPopulated);
+    const education = document.education.filter(isResumeEducationPopulated);
     const skills = document.skills.filter(hasText);
     const certificates = document.certificates.filter(hasText);
 
@@ -62,11 +70,11 @@ export const ResumePreview = forwardRef<HTMLDivElement, ResumePreviewProps>(
                 </section>
               ) : null}
 
-              {document.experience.length ? (
+              {experience.length ? (
                 <section className="resume-paper__section">
                   <h2>工作经历</h2>
                   <div className="resume-paper__entries">
-                    {document.experience.map(item => (
+                    {experience.map(item => (
                       <article className="resume-paper__entry" key={item.id}>
                         <div className="resume-paper__entry-heading">
                           <div>
@@ -82,11 +90,11 @@ export const ResumePreview = forwardRef<HTMLDivElement, ResumePreviewProps>(
                 </section>
               ) : null}
 
-              {document.projects.length ? (
+              {projects.length ? (
                 <section className="resume-paper__section">
                   <h2>项目经历</h2>
                   <div className="resume-paper__entries">
-                    {document.projects.map(item => (
+                    {projects.map(item => (
                       <article className="resume-paper__entry" key={item.id}>
                         <div className="resume-paper__entry-heading">
                           <div>
@@ -102,11 +110,11 @@ export const ResumePreview = forwardRef<HTMLDivElement, ResumePreviewProps>(
                 </section>
               ) : null}
 
-              {document.education.length ? (
+              {education.length ? (
                 <section className="resume-paper__section">
                   <h2>教育经历</h2>
                   <div className="resume-paper__entries">
-                    {document.education.map(item => (
+                    {education.map(item => (
                       <article className="resume-paper__entry" key={item.id}>
                         <div className="resume-paper__entry-heading">
                           <div>

@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint src --ext .ts,.tsx",
-    "test:resume": "tsx --test tests/resume/domain.test.ts tests/resume/importer.test.ts tests/resume/pdf.test.ts tests/resume/api-client.test.ts && NODE_OPTIONS=--conditions=react-server tsx --test tests/resume/quota.test.ts tests/resume/server-auth.test.ts tests/resume/ai.test.ts && node --test tests/resume-schema.test.mjs"
+    "test:resume": "tsx --test tests/resume/domain.test.ts tests/resume/importer.test.ts tests/resume/pdf.test.ts tests/resume/api-client.test.ts tests/resume/ui-behavior.test.ts && NODE_OPTIONS=--conditions=react-server tsx --test tests/resume/quota.test.ts tests/resume/server-auth.test.ts tests/resume/ai.test.ts && node --test tests/resume-schema.test.mjs"
   },
   "dependencies": {
     "@sentry/nextjs": "^10.66.0",

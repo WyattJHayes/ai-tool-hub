@@ -16,11 +16,10 @@ import type {
   ResumeExperience,
   ResumeProject,
 } from '@/features/resume/types';
-import type { ResumeSaveStatus } from './ResumeToolbar';
 
 interface ResumeEditorProps {
   document: ResumeDocumentV1;
-  onSaveStatusChange: (status: ResumeSaveStatus) => void;
+  onMutation: (mutation: () => void) => void;
 }
 
 interface EditorSectionProps {
@@ -91,31 +90,19 @@ function createItemId(): string {
   return globalThis.crypto.randomUUID();
 }
 
-export function ResumeEditor({ document, onSaveStatusChange }: ResumeEditorProps) {
+export function ResumeEditor({ document, onMutation }: ResumeEditorProps) {
   const saveState = useResumeStore(state => state.saveState);
   const reorderItems = useResumeStore(state => state.reorderItems);
   const duplicateItem = useResumeStore(state => state.duplicateItem);
   const deleteItem = useResumeStore(state => state.deleteItem);
 
   const commit = useCallback((nextDocument: ResumeDocumentV1) => {
-    onSaveStatusChange('saving');
-    try {
-      saveState(nextDocument);
-      onSaveStatusChange('saved');
-    } catch {
-      onSaveStatusChange('error');
-    }
-  }, [onSaveStatusChange, saveState]);
+    onMutation(() => saveState(nextDocument));
+  }, [onMutation, saveState]);
 
   const runStoreAction = useCallback((action: () => void) => {
-    onSaveStatusChange('saving');
-    try {
-      action();
-      onSaveStatusChange('saved');
-    } catch {
-      onSaveStatusChange('error');
-    }
-  }, [onSaveStatusChange]);
+    onMutation(action);
+  }, [onMutation]);
 
   const updateExperience = (id: string, patch: Partial<ResumeExperience>) => {
     commit({

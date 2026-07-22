@@ -1,13 +1,19 @@
 'use client';
 
-import { useEffect, useRef, useState, type ChangeEvent, type MouseEvent } from 'react';
+import { useCallback, useEffect, useReducer, useRef, type ChangeEvent, type MouseEvent } from 'react';
 import { FileText, LoaderCircle, Upload, X } from 'lucide-react';
 import {
   extractResumeFile,
   parseResumeTextLocally,
-  type ExtractedResumeText,
 } from '@/features/resume/importer';
 import { useResumeStore } from '@/features/resume/store';
+import {
+  commitResumeImport,
+  countPopulatedResumeFields,
+  initialImportDialogState,
+  reduceImportDialogState,
+  type ResumeImportMode,
+} from '@/features/resume/ui';
 import type { ResumeDocumentV1 } from '@/features/resume/types';
 
 interface ImportDialogProps {
@@ -17,109 +23,109 @@ interface ImportDialogProps {
   onImported: () => void;
 }
 
-interface ImportPreview {
-  extracted: ExtractedResumeText;
-  document: ResumeDocumentV1;
-}
-
-function uniqueText(values: string[]): string[] {
-  return [...new Set(values.map(value => value.trim()).filter(Boolean))];
-}
-
-function mergeResumeDocuments(current: ResumeDocumentV1, imported: ResumeDocumentV1): ResumeDocumentV1 {
-  return {
-    ...current,
-    name: current.name === 'Untitled resume' ? imported.name : current.name,
-    profile: {
-      ...current.profile,
-      fullName: current.profile.fullName || imported.profile.fullName,
-      phone: current.profile.phone || imported.profile.phone,
-      email: current.profile.email || imported.profile.email,
-      location: current.profile.location || imported.profile.location,
-      title: current.profile.title || imported.profile.title,
-    },
-    target: current.target || imported.target,
-    summary: current.summary || imported.summary,
-    experience: [...current.experience, ...imported.experience],
-    projects: [...current.projects, ...imported.projects],
-    education: [...current.education, ...imported.education],
-    skills: uniqueText([...current.skills, ...imported.skills]),
-    certificates: uniqueText([...current.certificates, ...imported.certificates]),
-  };
-}
-
-function importFieldCount(document: ResumeDocumentV1): number {
-  return [
-    document.profile.fullName,
-    document.profile.phone,
-    document.profile.email,
-    document.profile.location,
-    document.profile.title,
-    document.target,
-    document.summary,
-    ...document.experience,
-    ...document.projects,
-    ...document.education,
-    ...document.skills.filter(Boolean),
-    ...document.certificates.filter(Boolean),
-  ].filter(Boolean).length;
-}
+const FOCUSABLE_SELECTOR = [
+  'button:not([disabled])',
+  'input:not([disabled]):not([type="hidden"])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[href]',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',');
 
 export function ImportDialog({ open, currentDocument, onClose, onImported }: ImportDialogProps) {
   const stageImport = useResumeStore(state => state.stageImport);
   const acceptStagedImport = useResumeStore(state => state.acceptStagedImport);
-  const [preview, setPreview] = useState<ImportPreview | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [state, dispatch] = useReducer(reduceImportDialogState, initialImportDialogState);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
+  const busyRef = useRef(state.busy);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    busyRef.current = state.busy;
+    onCloseRef.current = onClose;
+  }, [onClose, state.busy]);
+
+  const resetAndClose = useCallback(() => {
+    dispatch({ type: 'reset' });
+    onCloseRef.current();
+  }, []);
 
   useEffect(() => {
     if (!open) return;
+    openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusFrame = window.requestAnimationFrame(() => closeButtonRef.current?.focus());
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !busy) onClose();
+      if (event.key === 'Escape' && !busyRef.current) {
+        event.preventDefault();
+        resetAndClose();
+        return;
+      }
+      if (event.key === 'Tab') {
+        const focusable = [...(dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ?? [])];
+        if (!focusable.length) {
+          event.preventDefault();
+          return;
+        }
+        const first = focusable[0];
+        const last = focusable.at(-1)!;
+        if (event.shiftKey && (document.activeElement === first || !dialogRef.current?.contains(document.activeElement))) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [busy, onClose, open]);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener('keydown', handleKeyDown);
+      openerRef.current?.focus();
+      openerRef.current = null;
+    };
+  }, [open, resetAndClose]);
 
   if (!open) return null;
 
-  const resetAndClose = () => {
-    setPreview(null);
-    setError('');
-    setBusy(false);
-    onClose();
-  };
-
   const handleBackdrop = (event: MouseEvent<HTMLDivElement>) => {
-    if (event.target === event.currentTarget && !busy) resetAndClose();
+    if (event.target === event.currentTarget && !state.busy) resetAndClose();
   };
 
   const handleFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    setBusy(true);
-    setError('');
-    setPreview(null);
+    dispatch({ type: 'start' });
     try {
       const extracted = await extractResumeFile(file);
       const document = parseResumeTextLocally(extracted.text);
-      setPreview({ extracted, document });
+      dispatch({ type: 'ready', preview: { extracted, document } });
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '文件解析失败，请检查文件后重试');
+      dispatch({
+        type: 'failure',
+        error: reason instanceof Error ? reason.message : '文件解析失败，请检查文件后重试',
+      });
     } finally {
-      setBusy(false);
       event.target.value = '';
     }
   };
 
-  const confirmImport = (mode: 'merge' | 'replace') => {
-    if (!preview) return;
-    const candidate = mode === 'merge'
-      ? mergeResumeDocuments(currentDocument, preview.document)
-      : preview.document;
-    stageImport(candidate);
-    acceptStagedImport();
+  const confirmImport = (mode: ResumeImportMode) => {
+    if (!state.preview || state.busy) return;
+    dispatch({ type: 'set-busy', busy: true });
+    const result = commitResumeImport(mode, currentDocument, state.preview.document, {
+      getState: () => useResumeStore.getState(),
+      stageImport,
+      acceptStagedImport,
+      restoreState: snapshot => useResumeStore.setState(snapshot),
+    });
+    if (!result.ok) {
+      dispatch({ type: 'failure', error: '导入保存失败，原简历已恢复。请检查浏览器存储空间后重试。' });
+      return;
+    }
     onImported();
     resetAndClose();
   };
@@ -127,6 +133,7 @@ export function ImportDialog({ open, currentDocument, onClose, onImported }: Imp
   return (
     <div className="resume-dialog-backdrop" onMouseDown={handleBackdrop}>
       <section
+        ref={dialogRef}
         className="resume-import-dialog"
         role="dialog"
         aria-modal="true"
@@ -137,7 +144,7 @@ export function ImportDialog({ open, currentDocument, onClose, onImported }: Imp
             <p>LOCAL / IMPORT</p>
             <h2 id="resume-import-title">导入简历</h2>
           </div>
-          <button type="button" onClick={resetAndClose} className="resume-icon-control" aria-label="关闭导入窗口" title="关闭" disabled={busy}>
+          <button ref={closeButtonRef} type="button" onClick={resetAndClose} className="resume-icon-control" aria-label="关闭导入窗口" title="关闭" disabled={state.busy}>
             <X aria-hidden="true" />
           </button>
         </header>
@@ -151,46 +158,46 @@ export function ImportDialog({ open, currentDocument, onClose, onImported }: Imp
             onChange={handleFile}
           />
 
-          {!preview ? (
+          {!state.preview ? (
             <button
               type="button"
               className="resume-file-picker"
               onClick={() => fileInputRef.current?.click()}
-              disabled={busy}
+              disabled={state.busy}
             >
-              {busy ? <LoaderCircle className="resume-spinner" aria-hidden="true" /> : <Upload aria-hidden="true" />}
-              <span>{busy ? '正在读取文件' : '选择文件'}</span>
+              {state.busy ? <LoaderCircle className="resume-spinner" aria-hidden="true" /> : <Upload aria-hidden="true" />}
+              <span>{state.busy ? '正在读取文件' : '选择文件'}</span>
               <small>PDF / DOCX / TXT / HTML / MD · 10 MB</small>
             </button>
           ) : (
             <div className="resume-import-summary">
               <FileText aria-hidden="true" />
               <div>
-                <strong>{preview.extracted.fileName}</strong>
-                <span>{preview.extracted.kind.toUpperCase()} · {importFieldCount(preview.document)} 个已识别字段</span>
+                <strong>{state.preview.extracted.fileName}</strong>
+                <span>{state.preview.extracted.kind.toUpperCase()} · {countPopulatedResumeFields(state.preview.document)} 个已识别内容字段</span>
                 <span>本地规则解析 · 需要人工核对</span>
               </div>
               <button type="button" onClick={() => fileInputRef.current?.click()}>重选</button>
             </div>
           )}
 
-          {error ? <p className="resume-inline-error" role="alert">{error}</p> : null}
+          {state.error ? <p className="resume-inline-error" role="alert">{state.error}</p> : null}
 
-          {preview ? (
+          {state.preview ? (
             <dl className="resume-import-fields">
-              <div><dt>姓名</dt><dd>{preview.document.profile.fullName || '未识别'}</dd></div>
-              <div><dt>邮箱</dt><dd>{preview.document.profile.email || '未识别'}</dd></div>
-              <div><dt>工作经历</dt><dd>{preview.document.experience.length} 项</dd></div>
-              <div><dt>教育经历</dt><dd>{preview.document.education.length} 项</dd></div>
-              <div><dt>技能</dt><dd>{preview.document.skills.filter(Boolean).length} 项</dd></div>
+              <div><dt>姓名</dt><dd>{state.preview.document.profile.fullName || '未识别'}</dd></div>
+              <div><dt>邮箱</dt><dd>{state.preview.document.profile.email || '未识别'}</dd></div>
+              <div><dt>工作经历</dt><dd>{state.preview.document.experience.length} 项</dd></div>
+              <div><dt>教育经历</dt><dd>{state.preview.document.education.length} 项</dd></div>
+              <div><dt>技能</dt><dd>{state.preview.document.skills.filter(Boolean).length} 项</dd></div>
             </dl>
           ) : null}
         </div>
 
         <footer className="resume-import-dialog__actions">
-          <button type="button" onClick={resetAndClose} disabled={busy}>取消</button>
-          <button type="button" onClick={() => confirmImport('merge')} disabled={!preview || busy}>合并</button>
-          <button type="button" className="resume-command--accent" onClick={() => confirmImport('replace')} disabled={!preview || busy}>替换</button>
+          <button type="button" onClick={resetAndClose} disabled={state.busy}>取消</button>
+          <button type="button" onClick={() => confirmImport('merge')} disabled={!state.preview || state.busy}>合并</button>
+          <button type="button" className="resume-command--accent" onClick={() => confirmImport('replace')} disabled={!state.preview || state.busy}>替换</button>
         </footer>
       </section>
     </div>
