@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -93,6 +93,54 @@ exit 0
   return binary;
 }
 
+function fakeActivationDocker(directory) {
+  const binary = path.join(directory, 'docker');
+  writeFileSync(binary, `#!/usr/bin/env bash
+set -u
+if [ "\${1:-}" = container ] && [ "\${2:-}" = inspect ]; then
+  printf 'sha256:%064d\n' 0
+  exit 0
+fi
+if [ "\${1:-}" = image ] && [ "\${2:-}" = inspect ]; then
+  exit 0
+fi
+if [ "\${1:-}" = tag ]; then
+  printf 'tag:%s:%s\n' "\${2:-}" "\${3:-}" >> "$DOCKER_LOG"
+  if [ "\${3:-}" = ai-resume-optimizer:latest ]; then
+    if [ "\${2:-}" = "$CANDIDATE_IMAGE" ]; then
+      printf candidate > "$LATEST_TARGET"
+    else
+      printf rollback > "$LATEST_TARGET"
+    fi
+  fi
+  exit 0
+fi
+if [ "\${1:-}" = rm ] && [ "\${2:-}" = -f ]; then
+  rm -f "$RUNNING_IMAGE"
+  printf 'container-removed\n' >> "$DOCKER_LOG"
+  exit 0
+fi
+if [ "\${1:-}" = exec ]; then
+  exit 0
+fi
+if [ "\${1:-}" = compose ]; then
+  printf 'compose-env:%s:%s:%s:%s:%s:%s:%s\n' \
+    "\${AI_TOOL_HUB_ENV_FILE:-}" "\${AI_TOOL_HUB_IMAGE:-}" \
+    "\${AI_TOOL_HUB_SOURCE_DIR:-}" "\${AI_TOOL_HUB_BUILD_CONTEXT:-}" \
+    "\${DGC_NETWORK_NAME:-}" \
+    "\${GIT_SHA:-}" "\${COMPOSE_PROJECT_NAME:-}" >> "$DOCKER_LOG"
+  printf 'compose-args:%s\n' "$*" >> "$DOCKER_LOG"
+  if [ "\${*: -1}" = up ] || [[ " $* " == *" up "* ]]; then
+    cp "$LATEST_TARGET" "$RUNNING_IMAGE"
+  fi
+  exit 0
+fi
+exit 0
+`);
+  chmodSync(binary, 0o755);
+  return binary;
+}
+
 test('env validator accepts Compose-style quoted and unquoted values without printing values', () => {
   const result = validateEnv(validEnv());
   assert.equal(result.status, 0, result.stderr);
@@ -171,6 +219,65 @@ test('env validator preserves single-quoted dollar literals according to Compose
   }
 });
 
+test('env validator rejects quoted, unquoted, and duplicate deployment-control keys', () => {
+  for (const key of [
+    'AI_TOOL_HUB_ENV_FILE',
+    'AI_TOOL_HUB_IMAGE',
+    'AI_TOOL_HUB_SOURCE_DIR',
+    'AI_TOOL_HUB_BUILD_CONTEXT',
+    'DGC_NETWORK_NAME',
+    'GIT_SHA',
+    'COMPOSE_PROJECT_NAME',
+    'COMPOSE_FILE',
+    'COMPOSE_PROFILES',
+    'COMPOSE_ENV_FILES',
+  ]) {
+    for (const assignments of [
+      `${key}=malicious-control-value`,
+      `${key}="malicious-control-value"`,
+      `${key}='malicious-control-value'`,
+      `${key}=first-control-value\n${key}=second-control-value`,
+    ]) {
+      const result = validateEnv(validEnv(assignments));
+      assert.notEqual(result.status, 0, key);
+      assert.match(result.stderr, new RegExp(`env_${key}=(forbidden|duplicate)`));
+      assert.doesNotMatch(result.stdout + result.stderr, /malicious-control|first-control|second-control|test-key/);
+    }
+  }
+});
+
+test('Compose runner fixes env path, image, build context, network, revision, and project under hostile ambient values', () => {
+  const directory = temporaryDirectory();
+  const log = path.join(directory, 'docker.log');
+  const marker = path.join(directory, 'unused');
+  fakeActivationDocker(directory);
+  const result = run('/bin/bash', ['-c', `
+    source "$RELEASE_LIB"
+    run_release_compose /intended/runtime.env /intended/compose.yml \
+      intended:image /intended/source intended-revision config -q
+  `], { env: {
+    RELEASE_LIB: releaseLib,
+    DOCKER_LOG: log,
+    LATEST_TARGET: marker,
+    RUNNING_IMAGE: marker,
+    CANDIDATE_IMAGE: 'intended:image',
+    AI_TOOL_HUB_ENV_FILE: '/malicious/runtime.env',
+    AI_TOOL_HUB_IMAGE: 'malicious:image',
+    AI_TOOL_HUB_SOURCE_DIR: '/malicious/source',
+    AI_TOOL_HUB_BUILD_CONTEXT: '/malicious/build-context',
+    DGC_NETWORK_NAME: 'malicious-network',
+    GIT_SHA: 'malicious-revision',
+    COMPOSE_PROJECT_NAME: 'malicious-project',
+    COMPOSE_FILE: '/malicious/compose.yml',
+    PATH: `${directory}:${process.env.PATH}`,
+  } });
+  assert.equal(result.status, 0, result.stderr);
+  const output = readFileSync(log, 'utf8');
+  assert.match(output, /compose-env:\/intended\/runtime\.env:intended:image:\/intended\/source:\/intended\/source:dramagenai-cloud_dgc-net:intended-revision:weihub/);
+  assert.match(output, /compose-args:compose --project-name weihub --env-file \/intended\/runtime\.env -f \/intended\/compose\.yml config -q/);
+  assert.doesNotMatch(output, /malicious/);
+});
+
 test('tampered source archive blocks before candidate build', () => {
   const directory = temporaryDirectory();
   const archive = path.join(directory, 'source.tar');
@@ -183,7 +290,7 @@ test('tampered source archive blocks before candidate build', () => {
     set -e
     source "$RELEASE_LIB"
     verify_source_archive "$ARCHIVE" "$EXPECTED"
-    validate_and_build_candidate candidate.yml candidate.env candidate-source
+    validate_and_build_candidate candidate.yml candidate.env candidate-source candidate:image candidate-revision
   `], { env: {
     RELEASE_LIB: releaseLib,
     ARCHIVE: archive,
@@ -209,7 +316,8 @@ for (const [mode, expectedStatus] of [['config-fail', 42], ['build-fail', 43]]) 
     const result = run('/bin/bash', ['-c', `
       source "$RELEASE_LIB"
       validate_and_build_candidate_preserving_active \
-        candidate.yml candidate.env candidate-source "$ACTIVE_COMPOSE" "$ACTIVE_NGINX"
+        candidate.yml candidate.env candidate-source candidate:image candidate-revision \
+        "$ACTIVE_COMPOSE" "$ACTIVE_NGINX"
     `], { env: {
       ACTIVE_COMPOSE: activeCompose,
       ACTIVE_NGINX: activeNginx,
@@ -261,6 +369,119 @@ test('rollback preparation fails before activation when no current image is rest
   assert.match(result.stderr, /rollback_image=unavailable/);
   assert.equal(existsSync(activationMarker), false);
   assert.equal(existsSync(tagMarker), false);
+});
+
+test('full activation failure restores source, config, image tag, service, and original status', () => {
+  const directory = temporaryDirectory();
+  const activeSource = path.join(directory, 'active-source');
+  const candidateSource = path.join(directory, 'candidate-source');
+  const activeCompose = path.join(directory, 'active-compose.yml');
+  const candidateCompose = path.join(directory, 'candidate-compose.yml');
+  const activeNginx = path.join(directory, 'active-nginx.conf');
+  const candidateNginx = path.join(directory, 'candidate-nginx.conf');
+  const backupRoot = path.join(directory, 'backup');
+  const dockerLog = path.join(directory, 'docker.log');
+  const latestTarget = path.join(directory, 'latest-target');
+  const runningImage = path.join(directory, 'running-image');
+  const candidateImage = 'candidate:test-revision';
+  mkdirSync(activeSource);
+  mkdirSync(candidateSource);
+  writeFileSync(path.join(activeSource, 'version'), 'prior source');
+  writeFileSync(path.join(candidateSource, 'version'), 'candidate source');
+  writeFileSync(activeCompose, 'prior compose');
+  writeFileSync(candidateCompose, 'candidate compose');
+  writeFileSync(activeNginx, 'prior nginx');
+  writeFileSync(candidateNginx, 'candidate nginx');
+  fakeActivationDocker(directory);
+  const result = run('/bin/bash', ['-c', `
+    source "$RELEASE_LIB"
+    fail_verification() { return 73; }
+    run_candidate_activation \
+      "$CANDIDATE_SOURCE" "$ACTIVE_SOURCE" \
+      "$CANDIDATE_COMPOSE" "$ACTIVE_COMPOSE" \
+      "$CANDIDATE_NGINX" "$ACTIVE_NGINX" \
+      "$BACKUP_ROOT" /intended/runtime.env "$CANDIDATE_IMAGE" \
+      rollback:test intended-revision fail_verification
+  `], { env: {
+    RELEASE_LIB: releaseLib,
+    ACTIVE_SOURCE: activeSource,
+    CANDIDATE_SOURCE: candidateSource,
+    ACTIVE_COMPOSE: activeCompose,
+    CANDIDATE_COMPOSE: candidateCompose,
+    ACTIVE_NGINX: activeNginx,
+    CANDIDATE_NGINX: candidateNginx,
+    BACKUP_ROOT: backupRoot,
+    CANDIDATE_IMAGE: candidateImage,
+    DOCKER_LOG: dockerLog,
+    LATEST_TARGET: latestTarget,
+    RUNNING_IMAGE: runningImage,
+    AI_TOOL_HUB_ENV_FILE: '/malicious/runtime.env',
+    AI_TOOL_HUB_IMAGE: 'malicious:image',
+    AI_TOOL_HUB_SOURCE_DIR: '/malicious/source',
+    DGC_NETWORK_NAME: 'malicious-network',
+    GIT_SHA: 'malicious-revision',
+    COMPOSE_PROJECT_NAME: 'malicious-project',
+    PATH: `${directory}:${process.env.PATH}`,
+  } });
+  assert.equal(result.status, 73, result.stderr);
+  assert.equal(readFileSync(path.join(activeSource, 'version'), 'utf8'), 'prior source');
+  assert.equal(readFileSync(activeCompose, 'utf8'), 'prior compose');
+  assert.equal(readFileSync(activeNginx, 'utf8'), 'prior nginx');
+  assert.equal(readFileSync(latestTarget, 'utf8'), 'rollback');
+  assert.equal(readFileSync(runningImage, 'utf8'), 'rollback');
+  const output = readFileSync(dockerLog, 'utf8');
+  assert.match(output, /container-removed/);
+  assert.match(output, /compose-env:\/intended\/runtime\.env:ai-resume-optimizer:latest:/);
+  assert.doesNotMatch(output, /malicious/);
+});
+
+test('missing active Compose rejects activation before source, config, tag, or service writes', () => {
+  const directory = temporaryDirectory();
+  const activeSource = path.join(directory, 'active-source');
+  const candidateSource = path.join(directory, 'candidate-source');
+  const activeCompose = path.join(directory, 'missing-compose.yml');
+  const candidateCompose = path.join(directory, 'candidate-compose.yml');
+  const activeNginx = path.join(directory, 'active-nginx.conf');
+  const candidateNginx = path.join(directory, 'candidate-nginx.conf');
+  const backupRoot = path.join(directory, 'backup');
+  const dockerLog = path.join(directory, 'docker.log');
+  mkdirSync(activeSource);
+  mkdirSync(candidateSource);
+  writeFileSync(path.join(activeSource, 'version'), 'prior source');
+  writeFileSync(path.join(candidateSource, 'version'), 'candidate source');
+  writeFileSync(candidateCompose, 'candidate compose');
+  writeFileSync(activeNginx, 'prior nginx');
+  writeFileSync(candidateNginx, 'candidate nginx');
+  fakeActivationDocker(directory);
+  const result = run('/bin/bash', ['-c', `
+    source "$RELEASE_LIB"
+    pass_verification() { return 0; }
+    run_candidate_activation \
+      "$CANDIDATE_SOURCE" "$ACTIVE_SOURCE" \
+      "$CANDIDATE_COMPOSE" "$ACTIVE_COMPOSE" \
+      "$CANDIDATE_NGINX" "$ACTIVE_NGINX" \
+      "$BACKUP_ROOT" /intended/runtime.env candidate:test \
+      rollback:test intended-revision pass_verification
+  `], { env: {
+    RELEASE_LIB: releaseLib,
+    ACTIVE_SOURCE: activeSource,
+    CANDIDATE_SOURCE: candidateSource,
+    ACTIVE_COMPOSE: activeCompose,
+    CANDIDATE_COMPOSE: candidateCompose,
+    ACTIVE_NGINX: activeNginx,
+    CANDIDATE_NGINX: candidateNginx,
+    BACKUP_ROOT: backupRoot,
+    DOCKER_LOG: dockerLog,
+    LATEST_TARGET: path.join(directory, 'latest-target'),
+    RUNNING_IMAGE: path.join(directory, 'running-image'),
+    CANDIDATE_IMAGE: 'candidate:test',
+    PATH: `${directory}:${process.env.PATH}`,
+  } });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /rollback_state=active_compose_missing/);
+  assert.equal(readFileSync(path.join(activeSource, 'version'), 'utf8'), 'prior source');
+  assert.equal(readFileSync(activeNginx, 'utf8'), 'prior nginx');
+  assert.equal(existsSync(dockerLog), false);
 });
 
 test('privacy scan distinguishes log-read failure from zero matches without leaking logs', () => {

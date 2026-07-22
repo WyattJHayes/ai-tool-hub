@@ -16,7 +16,7 @@ services:
   web:
     image: ${AI_TOOL_HUB_IMAGE:-ai-resume-optimizer:latest}
     build:
-      context: ${AI_TOOL_HUB_SOURCE_DIR:-./source}
+      context: ${AI_TOOL_HUB_BUILD_CONTEXT:-./source}
       dockerfile: Dockerfile
       args:
         GIT_SHA: ${GIT_SHA:-unknown}

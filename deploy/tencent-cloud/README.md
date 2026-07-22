@@ -25,6 +25,14 @@ are rejected because validating their effective Compose expansion without
 exposing values is unsafe. Use literal values; single-quoted values retain
 Compose's non-interpolating semantics.
 
+Production `.env` must not contain deployment-control names such as
+`AI_TOOL_HUB_ENV_FILE`, `AI_TOOL_HUB_IMAGE`, `AI_TOOL_HUB_SOURCE_DIR`,
+`AI_TOOL_HUB_BUILD_CONTEXT`, `DGC_NETWORK_NAME`, `GIT_SHA`,
+`COMPOSE_PROJECT_NAME`, `COMPOSE_FILE`, `COMPOSE_PROFILES`, or
+`COMPOSE_ENV_FILES`. The deploy script fixes the runtime env path, image, build
+context, network, revision, and Compose project on every Compose invocation;
+ambient shell values cannot override them.
+
 `XDDPAY_APP_ID`, `XDDPAY_SECRET`, and `XDDPAY_GATEWAY` are documented runtime
 names, not current requirements. `XDDPAY_NOTIFY_URL` uses `/api/resume/payments/xddpay/notify` when enabled.
 Do not add placeholder values. Payment
@@ -114,7 +122,11 @@ verify both domains. It does not publish port 3100 on the host. Nginx reaches
 the application through the `weihub-app` alias on the external Docker network.
 Rollback is prepared from the running `weihub-app` container's actual image ID,
 not from a possibly missing or stale `latest` tag. If that image cannot be
-inspected and tagged, deployment stops before activation.
+inspected and tagged, deployment stops before activation. The current active
+Compose file, source directory, and Nginx file must also be present before any
+active write. A failed activation removes the candidate container, restores all
+three prior artifacts and the captured image tag, recreates the prior service,
+reloads Nginx, and returns the original failure status.
 
 Post-deploy verification requires `/resume/` HTTP 200, a permanent legacy
 `/resume-optimizer/` redirect, payment/order API 404s, zero privacy log scan

@@ -268,9 +268,6 @@ candidate_image="ai-resume-optimizer:candidate-$expected_revision"
 rollback_image=""
 rollback_keep=3
 backup_keep=10
-had_compose=false
-candidate_source_active=false
-source_backed_up=false
 
 if [[ ! "$expected_revision" =~ ^[0-9a-f]{40}$ ]]; then
     echo "Invalid approved source revision." >&2
@@ -318,11 +315,10 @@ verify_source_archive "$candidate_archive" "$expected_checksum"
 install -d -m 0755 "$candidate_source"
 tar -xf "$candidate_archive" -C "$candidate_source"
 source_revision="$expected_revision"
-export GIT_SHA="$source_revision"
-export AI_TOOL_HUB_IMAGE="$candidate_image"
 
 if validate_and_build_candidate_preserving_active \
     "$candidate_compose" "$remote_root/.env" "$candidate_source" \
+    "$candidate_image" "$source_revision" \
     "$compose_file" "$nginx_target"; then
     :
 else
@@ -342,44 +338,8 @@ fi
 if [ -f /etc/systemd/system/ai-resume-optimizer.service ]; then
     cp /etc/systemd/system/ai-resume-optimizer.service "$backup_root/ai-resume-optimizer.service"
 fi
-cp "$nginx_target" "$backup_root/weihub.cloud.conf"
 cp "$candidate_compose" "$backup_root/docker-compose.yml"
 printf '%s\n' "$source_revision" > "$backup_root/source-revision"
-if [ -s "$compose_file" ]; then
-    cp "$compose_file" "$backup_root/previous-docker-compose.yml"
-    had_compose=true
-fi
-rollback_image="ai-resume-optimizer:rollback-$timestamp"
-prepare_rollback_image weihub-app "$rollback_image"
-
-rollback() {
-    set +e
-    cp "$backup_root/weihub.cloud.conf" "$nginx_target"
-    if [ "$candidate_source_active" = true ]; then
-        rm -rf "$remote_root/source"
-    fi
-    if [ "$source_backed_up" = true ]; then
-        mv "$backup_root/previous-source" "$remote_root/source"
-    fi
-    if [ "$had_compose" = true ]; then
-        cp "$backup_root/previous-docker-compose.yml" "$compose_file"
-    else
-        rm -f "$compose_file"
-    fi
-    docker tag "$rollback_image" ai-resume-optimizer:latest
-    if [ "$had_compose" = true ]; then
-        docker compose --env-file "$remote_root/.env" -f "$compose_file" up -d --force-recreate >/dev/null 2>&1
-    fi
-    docker exec dgc-nginx nginx -t >/dev/null 2>&1
-    docker exec dgc-nginx nginx -s reload >/dev/null 2>&1
-}
-
-handle_failure() {
-    local status="$1"
-    trap - ERR INT TERM
-    rollback
-    exit "$status"
-}
 
 prune_deployment_history() {
     local index
@@ -404,62 +364,6 @@ prune_deployment_history() {
         find "${backup_paths[$index]}" -depth -delete
     done
 }
-
-trap 'handle_failure $?' ERR
-trap 'handle_failure 130' INT
-trap 'handle_failure 143' TERM
-
-if [ -d "$remote_root/source" ]; then
-    mv "$remote_root/source" "$backup_root/previous-source"
-    source_backed_up=true
-fi
-mv "$candidate_source" "$remote_root/source"
-candidate_source_active=true
-install -m 0644 "$candidate_compose" "$compose_file"
-install -m 0644 "$candidate_nginx" "$nginx_target"
-docker tag "$candidate_image" ai-resume-optimizer:latest
-unset AI_TOOL_HUB_IMAGE
-
-cd "$remote_root"
-docker compose --env-file "$remote_root/.env" -f "$compose_file" up -d --force-recreate
-
-healthy=false
-for _ in $(seq 1 40); do
-    state="$(docker inspect weihub-app --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' 2>/dev/null || true)"
-    if [ "$state" = healthy ]; then
-        healthy=true
-        break
-    fi
-    if [ "$state" = exited ] || [ "$state" = dead ]; then
-        break
-    fi
-    sleep 3
-done
-
-if [ "$healthy" != true ]; then
-    echo "Candidate container did not become healthy; raw application logs are suppressed by the privacy gate." >&2
-    false
-fi
-
-if [ -n "$(docker port weihub-app)" ]; then
-    echo "weihub-app unexpectedly publishes a host port" >&2
-    false
-fi
-
-running_revision="$(docker inspect weihub-app --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
-if [ "$running_revision" != "$source_revision" ]; then
-    echo "Running image revision does not match the approved source revision." >&2
-    false
-fi
-
-compose_owner="$(docker inspect weihub-app --format '{{ index .Config.Labels "com.docker.compose.project" }}')"
-if [ "$compose_owner" != weihub ]; then
-    echo "Candidate container is not owned by the expected Compose project." >&2
-    false
-fi
-
-docker exec dgc-nginx nginx -t
-docker exec dgc-nginx nginx -s reload
 
 verify_local_tls() {
     local host="$1"
@@ -490,19 +394,71 @@ verify_local_status() {
     [ "$status" = "$expected" ]
 }
 
-if ! verify_local_tls weihub.cloud https://weihub.cloud/ \
-    || ! verify_local_tls weihub.cloud https://weihub.cloud/resume/ \
-    || ! verify_local_tls weihub.cloud https://weihub.cloud/love/ \
-    || ! verify_local_permanent_redirect weihub.cloud https://weihub.cloud/resume-optimizer/ \
-    || ! verify_local_status weihub.cloud https://weihub.cloud/api/resume/orders 404 \
-    || ! verify_local_status weihub.cloud https://weihub.cloud/api/resume/orders/pending 404 \
-    || ! verify_local_status weihub.cloud https://weihub.cloud/api/resume/payments/xddpay/notify 404 \
-    || ! verify_local_status weihub.cloud https://weihub.cloud/api/resume/payment/callback 404 \
-    || ! verify_local_tls dramagenai.cloud https://dramagenai.cloud/; then
-    false
-fi
+verify_candidate_release() {
+    local compose_owner
+    local healthy=false
+    local running_revision
+    local state
 
-scan_privacy_logs weihub-app
+    for _ in $(seq 1 40); do
+        state="$(docker inspect weihub-app --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' 2>/dev/null || true)"
+        if [ "$state" = healthy ]; then
+            healthy=true
+            break
+        fi
+        if [ "$state" = exited ] || [ "$state" = dead ]; then
+            break
+        fi
+        sleep 3
+    done
+    if [ "$healthy" != true ]; then
+        echo "Candidate container did not become healthy; raw application logs are suppressed by the privacy gate." >&2
+        return 1
+    fi
+    if [ -n "$(docker port weihub-app)" ]; then
+        echo "weihub-app unexpectedly publishes a host port" >&2
+        return 1
+    fi
+
+    running_revision="$(docker inspect weihub-app --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')" || return $?
+    if [ "$running_revision" != "$source_revision" ]; then
+        echo "Running image revision does not match the approved source revision." >&2
+        return 1
+    fi
+    compose_owner="$(docker inspect weihub-app --format '{{ index .Config.Labels "com.docker.compose.project" }}')" || return $?
+    if [ "$compose_owner" != weihub ]; then
+        echo "Candidate container is not owned by the expected Compose project." >&2
+        return 1
+    fi
+
+    docker exec dgc-nginx nginx -t || return $?
+    docker exec dgc-nginx nginx -s reload || return $?
+    if ! verify_local_tls weihub.cloud https://weihub.cloud/ \
+        || ! verify_local_tls weihub.cloud https://weihub.cloud/resume/ \
+        || ! verify_local_tls weihub.cloud https://weihub.cloud/love/ \
+        || ! verify_local_permanent_redirect weihub.cloud https://weihub.cloud/resume-optimizer/ \
+        || ! verify_local_status weihub.cloud https://weihub.cloud/api/resume/orders 404 \
+        || ! verify_local_status weihub.cloud https://weihub.cloud/api/resume/orders/pending 404 \
+        || ! verify_local_status weihub.cloud https://weihub.cloud/api/resume/payments/xddpay/notify 404 \
+        || ! verify_local_status weihub.cloud https://weihub.cloud/api/resume/payment/callback 404 \
+        || ! verify_local_tls dramagenai.cloud https://dramagenai.cloud/; then
+        return 1
+    fi
+    scan_privacy_logs weihub-app
+}
+
+rollback_image="ai-resume-optimizer:rollback-$timestamp"
+if run_candidate_activation \
+    "$candidate_source" "$remote_root/source" \
+    "$candidate_compose" "$compose_file" \
+    "$candidate_nginx" "$nginx_target" \
+    "$backup_root" "$remote_root/.env" "$candidate_image" \
+    "$rollback_image" "$source_revision" verify_candidate_release; then
+    :
+else
+    status=$?
+    exit "$status"
+fi
 
 if systemctl is-enabled --quiet ai-resume-optimizer.service 2>/dev/null; then
     systemctl disable ai-resume-optimizer.service
@@ -522,18 +478,17 @@ fi
 prune_deployment_history
 printf '%s\n' "$source_revision" | install -m 0644 /dev/stdin "$remote_root/source-revision"
 docker image rm "$candidate_image" >/dev/null 2>&1 || true
-trap - ERR INT TERM
 
 echo "Deployment completed. Revision: $source_revision. Backup: $backup_root"
 REMOTE_SCRIPT
 }
 
 show_status() {
-    ssh "$SERVER_HOST" "cd '$REMOTE_ROOT' && docker compose --env-file '$REMOTE_ROOT/.env' -f docker-compose.yml ps && docker exec dgc-nginx nginx -t"
+    ssh "$SERVER_HOST" "cd '$REMOTE_ROOT' && env -u COMPOSE_FILE -u COMPOSE_PROFILES -u COMPOSE_ENV_FILES -u AI_TOOL_HUB_ENV_FILE -u AI_TOOL_HUB_IMAGE -u AI_TOOL_HUB_SOURCE_DIR -u AI_TOOL_HUB_BUILD_CONTEXT -u DGC_NETWORK_NAME -u GIT_SHA -u COMPOSE_PROJECT_NAME AI_TOOL_HUB_ENV_FILE='$REMOTE_ROOT/.env' AI_TOOL_HUB_IMAGE=ai-resume-optimizer:latest AI_TOOL_HUB_SOURCE_DIR='$REMOTE_ROOT/source' AI_TOOL_HUB_BUILD_CONTEXT='$REMOTE_ROOT/source' DGC_NETWORK_NAME=dramagenai-cloud_dgc-net GIT_SHA=status COMPOSE_PROJECT_NAME=weihub docker compose --project-name weihub --env-file '$REMOTE_ROOT/.env' -f docker-compose.yml ps && docker exec dgc-nginx nginx -t"
 }
 
 show_logs() {
-    ssh -t "$SERVER_HOST" "cd '$REMOTE_ROOT' && docker compose --env-file '$REMOTE_ROOT/.env' -f docker-compose.yml logs --tail 200 -f web"
+    ssh -t "$SERVER_HOST" "cd '$REMOTE_ROOT' && env -u COMPOSE_FILE -u COMPOSE_PROFILES -u COMPOSE_ENV_FILES -u AI_TOOL_HUB_ENV_FILE -u AI_TOOL_HUB_IMAGE -u AI_TOOL_HUB_SOURCE_DIR -u AI_TOOL_HUB_BUILD_CONTEXT -u DGC_NETWORK_NAME -u GIT_SHA -u COMPOSE_PROJECT_NAME AI_TOOL_HUB_ENV_FILE='$REMOTE_ROOT/.env' AI_TOOL_HUB_IMAGE=ai-resume-optimizer:latest AI_TOOL_HUB_SOURCE_DIR='$REMOTE_ROOT/source' AI_TOOL_HUB_BUILD_CONTEXT='$REMOTE_ROOT/source' DGC_NETWORK_NAME=dramagenai-cloud_dgc-net GIT_SHA=logs COMPOSE_PROJECT_NAME=weihub docker compose --project-name weihub --env-file '$REMOTE_ROOT/.env' -f docker-compose.yml logs --tail 200 -f web"
 }
 
 case "${1:-}" in

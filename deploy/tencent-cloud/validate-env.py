@@ -17,7 +17,19 @@ OPTIONAL = (
     "XDDPAY_GATEWAY",
     "XDDPAY_NOTIFY_URL",
 )
-TRACKED = set(REQUIRED + OPTIONAL)
+CONTROL = (
+    "AI_TOOL_HUB_ENV_FILE",
+    "AI_TOOL_HUB_IMAGE",
+    "AI_TOOL_HUB_SOURCE_DIR",
+    "AI_TOOL_HUB_BUILD_CONTEXT",
+    "DGC_NETWORK_NAME",
+    "GIT_SHA",
+    "COMPOSE_PROJECT_NAME",
+    "COMPOSE_FILE",
+    "COMPOSE_PROFILES",
+    "COMPOSE_ENV_FILES",
+)
+TRACKED = set(REQUIRED + OPTIONAL + CONTROL)
 ASSIGNMENT = re.compile(r"^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$")
 
 
@@ -94,6 +106,9 @@ def parse_env(path):
 def validate(path):
     try:
         values, interpolates = parse_env(path)
+        for key in CONTROL:
+            if key in values:
+                raise EnvError(key, "forbidden")
         for key in REQUIRED + OPTIONAL:
             if interpolates.get(key, False) and "$" in values.get(key, ""):
                 raise EnvError(key, "interpolation_unsupported")

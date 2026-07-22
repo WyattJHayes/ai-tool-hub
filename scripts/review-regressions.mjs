@@ -144,7 +144,7 @@ if (!fs.existsSync(path.join(root, productionComposePath))) {
   requireMatch(productionCompose, /^\s*-\s+weihub-app\s*$/m, `${productionComposePath} must define the weihub-app alias`);
   requireMatch(productionCompose, /restart:\s*unless-stopped/, `${productionComposePath} must restart unless stopped`);
   requireMatch(productionCompose, /image:\s*\$\{AI_TOOL_HUB_IMAGE:-ai-resume-optimizer:latest\}/, `${productionComposePath} must support a candidate image tag`);
-  requireMatch(productionCompose, /context:\s*\$\{AI_TOOL_HUB_SOURCE_DIR:-\.\/source\}/, `${productionComposePath} must support an isolated candidate source tree`);
+  requireMatch(productionCompose, /context:\s*\$\{AI_TOOL_HUB_BUILD_CONTEXT:-\.\/source\}/, `${productionComposePath} must support an isolated candidate source tree`);
   requireMatch(productionCompose, /^\s+GIT_SHA:\s*\$\{GIT_SHA:-unknown\}\s*$/m, `${productionComposePath} must forward the Git revision`);
   if (/^\s*ports:\s*$/m.test(productionCompose)) {
     failures.push(`${productionComposePath} must not publish application ports on the host`);
@@ -206,21 +206,23 @@ requireMatch(deploymentScript, /verify_candidate_checksum\s+"\$candidate_compose
 requireMatch(deploymentScript, /candidate_root="\$remote_root\/candidates\/\$expected_revision"/, 'deployment candidates must be scoped to the approved revision');
 requireMatch(deploymentScript, /validate_and_build_candidate/, 'deployment must validate and build the staged candidate');
 requireMatch(deploymentScript, /validate_and_build_candidate_preserving_active/, 'deployment must verify active files around staged config and build');
-requireMatch(deploymentScript, /prepare_rollback_image weihub-app "\$rollback_image"/, 'deployment must snapshot the running container image before activation');
+requireMatch(deploymentScript, /run_candidate_activation/, 'deployment must use the tested activation transaction');
+requireMatch(deploymentReleaseLib, /prepare_rollback_image weihub-app "\$rollback_image"/, 'deployment must snapshot the running container image before activation');
 requireMatch(deploymentReleaseLib, /docker container inspect --format '\{\{\.Image\}\}'/, 'rollback preparation must inspect the running container image ID');
-requireMatch(deploymentScript, /docker tag "\$rollback_image" ai-resume-optimizer:latest/, 'rollback must restore the captured image tag');
-requireMatch(deploymentScript, /cp "\$backup_root\/previous-docker-compose\.yml" "\$compose_file"/, 'rollback must restore the prior Compose configuration');
-requireMatch(deploymentScript, /docker compose[^\n]*-f "\$compose_file" up -d --force-recreate/, 'rollback must recreate the prior Compose service');
-requireMatch(deploymentScript, /handle_failure\(\)[\s\S]*?local status="\$1"[\s\S]*?rollback[\s\S]*?exit "\$status"/, 'rollback must preserve the triggering failure status');
-if (/docker image inspect ai-resume-optimizer:latest/.test(deploymentScript)) {
+requireMatch(deploymentReleaseLib, /docker tag "\$rollback_image" ai-resume-optimizer:latest/, 'rollback must restore the captured image tag');
+requireMatch(deploymentReleaseLib, /previous-docker-compose\.yml" "\$active_compose"/, 'rollback must restore the prior Compose configuration');
+requireMatch(deploymentReleaseLib, /restore_active_release[\s\S]*?run_release_compose[\s\S]*?up -d --force-recreate/, 'rollback must recreate the prior Compose service');
+requireMatch(deploymentReleaseLib, /restore_active_release[\s\S]*?return "\$status"/, 'activation rollback must preserve the triggering failure status');
+requireMatch(deploymentReleaseLib, /docker rm -f weihub-app/, 'rollback must remove the candidate container before recreation');
+if (/docker image inspect ai-resume-optimizer:latest/.test(deploymentScript + deploymentReleaseLib)) {
   failures.push('rollback preparation must not depend on the mutable latest tag');
 }
 requireMatch(deploymentScript, /candidate_image="ai-resume-optimizer:candidate-\$expected_revision"/, 'deployment must build a revision-specific candidate image');
-requireMatch(deploymentScript, /docker tag "\$candidate_image" ai-resume-optimizer:latest/, 'deployment must promote the candidate image only during activation');
+requireMatch(deploymentReleaseLib, /docker tag "\$candidate_image" ai-resume-optimizer:latest/, 'deployment must promote the candidate image only during activation');
 requireMatch(deploymentScript, /scan_privacy_logs weihub-app/, 'deployment must use the fail-closed privacy log helper');
 requireMatch(deploymentScript, /classify_aggregate_probe "\$aggregate_status" "\$aggregate_output"/, 'deployment must classify aggregate execution failures explicitly');
 requireMatch(deploymentScript, /python3 - "\$REMOTE_ROOT\/\.env"\s*<\s*"\$ENV_VALIDATOR"/, 'deployment must stream the approved env validator to the server');
-requireMatch(deploymentScript, /export\s+GIT_SHA=/, 'deployment must provide the revision to Docker Compose');
+requireMatch(deploymentReleaseLib, /GIT_SHA="\$revision"/, 'deployment must provide the fixed revision to Docker Compose');
 requireMatch(
   deploymentScript,
   /org\.opencontainers\.image\.revision/,
@@ -268,24 +270,48 @@ for (const [pattern, message] of [
 }
 
 const stagedBuildIndex = deploymentScript.indexOf('validate_and_build_candidate');
-const activeComposeInstallIndex = deploymentScript.indexOf('install -m 0644 "$candidate_compose" "$compose_file"');
-const activeNginxInstallIndex = deploymentScript.indexOf('install -m 0644 "$candidate_nginx" "$nginx_target"');
-if (stagedBuildIndex === -1 || activeComposeInstallIndex < stagedBuildIndex || activeNginxInstallIndex < stagedBuildIndex) {
+const activationIndex = deploymentScript.indexOf('run_candidate_activation');
+if (stagedBuildIndex === -1 || activationIndex < stagedBuildIndex) {
   failures.push('candidate config/build must finish before active Compose or Nginx replacement');
 }
 
-const rollbackPreparationIndex = deploymentScript.indexOf('prepare_rollback_image weihub-app');
-if (rollbackPreparationIndex === -1 || activeComposeInstallIndex < rollbackPreparationIndex || activeNginxInstallIndex < rollbackPreparationIndex) {
+const restorableCheckIndex = deploymentReleaseLib.indexOf('require_restorable_active_release "$active_source"');
+const rollbackPreparationIndex = deploymentReleaseLib.indexOf('prepare_rollback_image weihub-app');
+const activeSourceMoveIndex = deploymentReleaseLib.indexOf('mv "$active_source" "$backup_root/previous-source"');
+if (restorableCheckIndex === -1 || rollbackPreparationIndex < restorableCheckIndex || activeSourceMoveIndex < rollbackPreparationIndex) {
   failures.push('a restorable current container image must be tagged before activation');
 }
 requireMatch(deploymentEnvValidator, /interpolation_unsupported/, 'deployment env validation must reject Compose interpolation');
 requireMatch(deploymentEnvValidator, /quote\s*!=\s*"'"/, 'deployment env validation must preserve single-quoted literal semantics');
+for (const controlName of [
+  'AI_TOOL_HUB_ENV_FILE', 'AI_TOOL_HUB_IMAGE', 'AI_TOOL_HUB_SOURCE_DIR',
+  'AI_TOOL_HUB_BUILD_CONTEXT', 'DGC_NETWORK_NAME', 'GIT_SHA',
+  'COMPOSE_PROJECT_NAME', 'COMPOSE_FILE', 'COMPOSE_PROFILES',
+  'COMPOSE_ENV_FILES',
+]) {
+  requireMatch(deploymentEnvValidator, new RegExp(`"${controlName}"`), `deployment env validation must reject ${controlName}`);
+}
+for (const fixedControl of [
+  /AI_TOOL_HUB_ENV_FILE="\$env_file"/,
+  /AI_TOOL_HUB_IMAGE="\$image"/,
+  /AI_TOOL_HUB_SOURCE_DIR="\$source_dir"/,
+  /AI_TOOL_HUB_BUILD_CONTEXT="\$source_dir"/,
+  /DGC_NETWORK_NAME=dramagenai-cloud_dgc-net/,
+  /COMPOSE_PROJECT_NAME=weihub/,
+  /docker compose --project-name weihub --env-file "\$env_file" -f "\$compose_file"/,
+]) {
+  requireMatch(deploymentReleaseLib, fixedControl, 'release Compose invocations must fix every deployment-control value');
+}
 for (const [pattern, message] of [
   [/rejects Compose interpolation for every required key/, 'deployment behavior tests must cover required-key interpolation'],
   [/preserves single-quoted dollar literals/, 'deployment behavior tests must cover Compose single-quoted literals'],
   [/uses the running container image ID when latest is absent/, 'deployment behavior tests must cover rollback without latest'],
   [/fails before activation when no current image is restorable/, 'deployment behavior tests must cover missing rollback sources'],
   [/validate_and_build_candidate_preserving_active/, 'deployment behavior tests must exercise the active-file preservation seam'],
+  [/rejects quoted, unquoted, and duplicate deployment-control keys/, 'deployment behavior tests must reject env-file control overrides'],
+  [/fixes env path, image, build context, network, revision, and project/, 'deployment behavior tests must reject ambient control overrides'],
+  [/full activation failure restores source, config, image tag, service, and original status/, 'deployment behavior tests must cover full activation rollback'],
+  [/missing active Compose rejects activation before source, config, tag, or service writes/, 'deployment behavior tests must reject missing active Compose'],
 ]) {
   requireMatch(deploymentBehaviorTest, pattern, message);
 }

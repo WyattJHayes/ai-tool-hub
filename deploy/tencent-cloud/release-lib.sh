@@ -28,22 +28,50 @@ verify_source_archive() {
     echo "source_archive=verified"
 }
 
+run_release_compose() {
+    local env_file="$1"
+    local compose_file="$2"
+    local image="$3"
+    local source_dir="$4"
+    local revision="$5"
+    shift 5
+
+    env -u AI_TOOL_HUB_ENV_FILE \
+        -u AI_TOOL_HUB_IMAGE \
+        -u AI_TOOL_HUB_SOURCE_DIR \
+        -u AI_TOOL_HUB_BUILD_CONTEXT \
+        -u DGC_NETWORK_NAME \
+        -u GIT_SHA \
+        -u COMPOSE_PROJECT_NAME \
+        -u COMPOSE_FILE \
+        -u COMPOSE_PROFILES \
+        -u COMPOSE_ENV_FILES \
+        AI_TOOL_HUB_ENV_FILE="$env_file" \
+        AI_TOOL_HUB_IMAGE="$image" \
+        AI_TOOL_HUB_SOURCE_DIR="$source_dir" \
+        AI_TOOL_HUB_BUILD_CONTEXT="$source_dir" \
+        DGC_NETWORK_NAME=dramagenai-cloud_dgc-net \
+        GIT_SHA="$revision" \
+        COMPOSE_PROJECT_NAME=weihub \
+        docker compose --project-name weihub --env-file "$env_file" -f "$compose_file" "$@"
+}
+
 validate_and_build_candidate() {
     local compose_file="$1"
     local env_file="$2"
     local source_dir="$3"
+    local image="$4"
+    local revision="$5"
     local status
 
-    AI_TOOL_HUB_SOURCE_DIR="$source_dir" \
-        docker compose --env-file "$env_file" -f "$compose_file" config -q
+    run_release_compose "$env_file" "$compose_file" "$image" "$source_dir" "$revision" config -q
     status=$?
     if [ "$status" -ne 0 ]; then
         echo "candidate_config=failed" >&2
         return "$status"
     fi
 
-    AI_TOOL_HUB_SOURCE_DIR="$source_dir" \
-        docker compose --env-file "$env_file" -f "$compose_file" build
+    run_release_compose "$env_file" "$compose_file" "$image" "$source_dir" "$revision" build
     status=$?
     if [ "$status" -ne 0 ]; then
         echo "candidate_build=failed" >&2
@@ -67,8 +95,10 @@ validate_and_build_candidate_preserving_active() {
     local compose_file="$1"
     local env_file="$2"
     local source_dir="$3"
-    local active_compose="$4"
-    local active_nginx="$5"
+    local image="$4"
+    local revision="$5"
+    local active_compose="$6"
+    local active_nginx="$7"
     local compose_before
     local nginx_before
     local status
@@ -76,7 +106,7 @@ validate_and_build_candidate_preserving_active() {
     compose_before="$(release_file_state "$active_compose")" || return $?
     nginx_before="$(release_file_state "$active_nginx")" || return $?
 
-    validate_and_build_candidate "$compose_file" "$env_file" "$source_dir"
+    validate_and_build_candidate "$compose_file" "$env_file" "$source_dir" "$image" "$revision"
     status=$?
 
     if [ "$(release_file_state "$active_compose")" != "$compose_before" ] \
@@ -119,6 +149,113 @@ prepare_rollback_image() {
         return "$status"
     fi
     echo "rollback_image=prepared"
+}
+
+require_restorable_active_release() {
+    local active_source="$1"
+    local active_compose="$2"
+    local active_nginx="$3"
+
+    if [ ! -s "$active_compose" ]; then
+        echo "rollback_state=active_compose_missing" >&2
+        return 1
+    fi
+    if [ ! -d "$active_source" ]; then
+        echo "rollback_state=active_source_missing" >&2
+        return 1
+    fi
+    if [ ! -s "$active_nginx" ]; then
+        echo "rollback_state=active_nginx_missing" >&2
+        return 1
+    fi
+}
+
+restore_active_release() {
+    local active_source="$1"
+    local active_compose="$2"
+    local active_nginx="$3"
+    local backup_root="$4"
+    local env_file="$5"
+    local rollback_image="$6"
+    local revision="$7"
+
+    docker rm -f weihub-app >/dev/null 2>&1 || true
+    rm -rf "$active_source"
+    mv "$backup_root/previous-source" "$active_source"
+    install -m 0644 "$backup_root/previous-docker-compose.yml" "$active_compose"
+    install -m 0644 "$backup_root/previous-nginx.conf" "$active_nginx"
+    docker tag "$rollback_image" ai-resume-optimizer:latest
+    run_release_compose "$env_file" "$active_compose" \
+        ai-resume-optimizer:latest "$active_source" "$revision" \
+        up -d --force-recreate >/dev/null 2>&1
+    docker exec dgc-nginx nginx -t >/dev/null 2>&1 || true
+    docker exec dgc-nginx nginx -s reload >/dev/null 2>&1 || true
+}
+
+run_candidate_activation() {
+    local candidate_source="$1"
+    local active_source="$2"
+    local candidate_compose="$3"
+    local active_compose="$4"
+    local candidate_nginx="$5"
+    local active_nginx="$6"
+    local backup_root="$7"
+    local env_file="$8"
+    local candidate_image="$9"
+    local rollback_image="${10}"
+    local revision="${11}"
+    local verify_callback="${12}"
+    local status
+
+    handle_activation_signal() {
+        local signal_status="$1"
+        trap - INT TERM
+        if [ -d "$backup_root/previous-source" ]; then
+            restore_active_release "$active_source" "$active_compose" "$active_nginx" \
+                "$backup_root" "$env_file" "$rollback_image" "$revision" || true
+        fi
+        exit "$signal_status"
+    }
+
+    require_restorable_active_release "$active_source" "$active_compose" "$active_nginx" || return $?
+    if install -d -m 0700 "$backup_root" \
+        && cp "$active_compose" "$backup_root/previous-docker-compose.yml" \
+        && cp "$active_nginx" "$backup_root/previous-nginx.conf"; then
+        :
+    else
+        return $?
+    fi
+    prepare_rollback_image weihub-app "$rollback_image" || return $?
+    trap 'handle_activation_signal 130' INT
+    trap 'handle_activation_signal 143' TERM
+
+    if mv "$active_source" "$backup_root/previous-source"; then
+        :
+    else
+        status=$?
+        trap - INT TERM
+        return "$status"
+    fi
+
+    if mv "$candidate_source" "$active_source" \
+        && install -m 0644 "$candidate_compose" "$active_compose" \
+        && install -m 0644 "$candidate_nginx" "$active_nginx" \
+        && docker tag "$candidate_image" ai-resume-optimizer:latest \
+        && run_release_compose "$env_file" "$active_compose" \
+            ai-resume-optimizer:latest "$active_source" "$revision" \
+            up -d --force-recreate \
+        && "$verify_callback"; then
+        trap - INT TERM
+        echo "candidate_activation=passed"
+        return 0
+    else
+        status=$?
+    fi
+
+    trap - INT TERM
+    restore_active_release "$active_source" "$active_compose" "$active_nginx" \
+        "$backup_root" "$env_file" "$rollback_image" "$revision" || true
+    return "$status"
 }
 
 scan_privacy_logs() {
