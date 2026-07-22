@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint src --ext .ts,.tsx",
-    "test:resume": "tsx --test tests/resume/*.test.ts && node --test tests/resume-schema.test.mjs"
+    "test:resume": "tsx --test tests/resume/domain.test.ts tests/resume/importer.test.ts tests/resume/pdf.test.ts && NODE_OPTIONS=--conditions=react-server tsx --test tests/resume/quota.test.ts tests/resume/server-auth.test.ts && node --test tests/resume-schema.test.mjs"
   },
   "dependencies": {
     "@sentry/nextjs": "^10.66.0",
@@ -21,6 +21,7 @@
     "pdfjs-dist": "^5.7.284",
     "react": "^18",
     "react-dom": "^18",
+    "server-only": "0.0.1",
     "tailwind-merge": "^3.6.0",
     "zustand": "^5.0.14"
   },
