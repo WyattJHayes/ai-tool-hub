@@ -210,12 +210,13 @@ export function trapDialogTabKey(event: KeyboardEvent, dialog: HTMLElement): boo
   const first = focusable[0];
   const last = focusable.at(-1)!;
   const activeElement = dialog.ownerDocument?.activeElement ?? null;
-  if (event.shiftKey && (activeElement === first || !dialog.contains(activeElement))) {
+  const isDialogFallback = activeElement === dialog;
+  if (event.shiftKey && (activeElement === first || isDialogFallback || !dialog.contains(activeElement))) {
     event.preventDefault();
     last.focus();
     return true;
   }
-  if (!event.shiftKey && (activeElement === last || !dialog.contains(activeElement))) {
+  if (!event.shiftKey && (activeElement === last || isDialogFallback || !dialog.contains(activeElement))) {
     event.preventDefault();
     first.focus();
     return true;

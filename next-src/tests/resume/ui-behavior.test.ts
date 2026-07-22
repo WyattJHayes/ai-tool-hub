@@ -246,8 +246,24 @@ test('keeps Tab and Shift+Tab inside the dialog when no enabled child can receiv
     getClientRects: () => [],
     focus: () => focused.push('non-rendered'),
   };
+  const negativeTabIndexControl = {
+    hidden: false,
+    disabled: false,
+    tabIndex: -1,
+    getAttribute: () => '-1',
+    getClientRects: () => [{ width: 1 }],
+    focus: () => focused.push('negative-tabindex'),
+  };
+  const ariaHiddenControl = {
+    hidden: false,
+    disabled: false,
+    tabIndex: 0,
+    getAttribute: (name: string) => name === 'aria-hidden' ? 'true' : null,
+    getClientRects: () => [{ width: 1 }],
+    focus: () => focused.push('aria-hidden'),
+  };
   const dialog = {
-    querySelectorAll: () => [hiddenInput, disabledButton, nonRenderedControl],
+    querySelectorAll: () => [hiddenInput, disabledButton, nonRenderedControl, negativeTabIndexControl, ariaHiddenControl],
     contains: () => false,
     focus: () => focused.push('dialog'),
   };
@@ -264,6 +280,105 @@ test('keeps Tab and Shift+Tab inside the dialog when no enabled child can receiv
     assert.equal(prevented, true);
   }
   assert.deepEqual(focused, ['dialog', 'dialog']);
+});
+
+test('wraps from the dialog fallback after eligible controls re-enable', () => {
+  const trapDialogTabKey = requireExport('trapDialogTabKey');
+
+  for (const shiftKey of [false, true]) {
+    const focused: string[] = [];
+    const ownerDocument: { activeElement: unknown } = { activeElement: null };
+    const firstControl = {
+      hidden: false,
+      disabled: true,
+      tabIndex: 0,
+      getAttribute: () => null,
+      getClientRects: () => [{ width: 1 }],
+      focus: () => { focused.push('first'); ownerDocument.activeElement = firstControl; },
+    };
+    const lastControl = {
+      hidden: false,
+      disabled: true,
+      tabIndex: 0,
+      getAttribute: () => null,
+      getClientRects: () => [{ width: 1 }],
+      focus: () => { focused.push('last'); ownerDocument.activeElement = lastControl; },
+    };
+    const dialog = {
+      ownerDocument,
+      querySelectorAll: () => [firstControl, lastControl],
+      contains: (element: unknown) => element === dialog || element === firstControl || element === lastControl,
+      focus: () => { focused.push('dialog'); ownerDocument.activeElement = dialog; },
+    };
+
+    let preventedWhileDisabled = false;
+    assert.equal(trapDialogTabKey({
+      key: 'Tab',
+      shiftKey: false,
+      preventDefault: () => { preventedWhileDisabled = true; },
+    } as KeyboardEvent, dialog as unknown as HTMLElement), true);
+    assert.equal(preventedWhileDisabled, true);
+    assert.equal(ownerDocument.activeElement, dialog);
+
+    firstControl.disabled = false;
+    lastControl.disabled = false;
+    let preventedAfterEnable = false;
+    assert.equal(trapDialogTabKey({
+      key: 'Tab',
+      shiftKey,
+      preventDefault: () => { preventedAfterEnable = true; },
+    } as KeyboardEvent, dialog as unknown as HTMLElement), true);
+    assert.equal(preventedAfterEnable, true);
+    assert.deepEqual(focused, ['dialog', shiftKey ? 'last' : 'first']);
+  }
+});
+
+test('preserves outside, boundary, and interior dialog focus handling', () => {
+  const trapDialogTabKey = requireExport('trapDialogTabKey');
+  const focused: string[] = [];
+  const ownerDocument: { activeElement: unknown } = { activeElement: null };
+  const control = (name: string) => ({
+    hidden: false,
+    disabled: false,
+    tabIndex: 0,
+    getAttribute: () => null,
+    getClientRects: () => [{ width: 1 }],
+    focus() { focused.push(name); ownerDocument.activeElement = this; },
+  });
+  const first = control('first');
+  const middle = control('middle');
+  const last = control('last');
+  const outside = {};
+  const dialog = {
+    ownerDocument,
+    querySelectorAll: () => [first, middle, last],
+    contains: (element: unknown) => element === dialog || element === first || element === middle || element === last,
+    focus: () => { focused.push('dialog'); ownerDocument.activeElement = dialog; },
+  };
+  const cases = [
+    { active: outside, shiftKey: false, trapped: true, target: 'first' },
+    { active: outside, shiftKey: true, trapped: true, target: 'last' },
+    { active: first, shiftKey: true, trapped: true, target: 'last' },
+    { active: last, shiftKey: false, trapped: true, target: 'first' },
+    { active: first, shiftKey: false, trapped: false, target: null },
+    { active: middle, shiftKey: false, trapped: false, target: null },
+    { active: middle, shiftKey: true, trapped: false, target: null },
+    { active: last, shiftKey: true, trapped: false, target: null },
+  ];
+
+  for (const scenario of cases) {
+    focused.length = 0;
+    ownerDocument.activeElement = scenario.active;
+    let prevented = false;
+    const trapped = trapDialogTabKey({
+      key: 'Tab',
+      shiftKey: scenario.shiftKey,
+      preventDefault: () => { prevented = true; },
+    } as KeyboardEvent, dialog as unknown as HTMLElement);
+    assert.equal(trapped, scenario.trapped);
+    assert.equal(prevented, scenario.trapped);
+    assert.deepEqual(focused, scenario.target ? [scenario.target] : []);
+  }
 });
 
 test('save controller makes unsaved, saving, and saved observable in order', () => {
