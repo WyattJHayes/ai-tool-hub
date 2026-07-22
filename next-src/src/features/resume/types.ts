@@ -10,6 +10,52 @@ export type ResumeSectionKey =
 
 export type OptimizationLevel = 'light' | 'medium' | 'deep';
 
+export interface JDAnalysis {
+  jobTitle: string;
+  requiredSkills: string[];
+  preferredSkills: string[];
+  experienceYears: number;
+  education: string;
+  responsibilities: string[];
+  keywords: string[];
+  industry: string;
+  companyType: string;
+  matchDifficulty: 'easy' | 'medium' | 'hard';
+}
+
+export interface AIProgress {
+  status: 'analyzing' | 'optimizing';
+  level: OptimizationLevel;
+}
+
+export interface AIOptimizationResult {
+  level: OptimizationLevel;
+  optimizedData: ResumeDocumentV1;
+  score: number;
+  suggestions: string[];
+  jdMatch?: number;
+  atsScore?: number;
+  brandPosition?: string;
+  starApplications?: number;
+  keywordsOptimized?: number;
+  keywordsAdded?: string[];
+  quantifiedItems?: string[];
+  changes?: string[];
+}
+
+export type AIStreamEvent =
+  | { type: 'progress'; data: AIProgress }
+  | { type: 'token'; data: { content: string } }
+  | { type: 'done'; data: AIOptimizationResult }
+  | { type: 'error'; data: { error: { code: string; message: string; requestId: string } } };
+
+export interface ResumeQuotaSummary {
+  plan: 'free' | 'basic' | 'vip';
+  remaining: number | null;
+  total: number | null;
+  resetAt: string | null;
+}
+
 export interface ResumeItem {
   id: string;
 }

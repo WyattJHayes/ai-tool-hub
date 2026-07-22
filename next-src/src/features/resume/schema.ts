@@ -1,4 +1,6 @@
 import type {
+  AIOptimizationResult,
+  JDAnalysis,
   ResumeDocumentV1,
   ResumeEducation,
   ResumeExperience,
@@ -151,4 +153,145 @@ export function normalizeResumeDocument(input: unknown): ResumeDocumentV1 {
       }
       return createEmptyResume();
   }
+}
+
+function strictRecord(value: unknown): UnknownRecord {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new ResumeSchemaError('Invalid object.');
+  return value as UnknownRecord;
+}
+
+function strictString(value: unknown): string {
+  if (typeof value !== 'string' || value.length > MAX_STRING_LENGTH) throw new ResumeSchemaError('Invalid string.');
+  return value;
+}
+
+function strictNumber(value: unknown, minimum = 0, maximum = 100): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < minimum || value > maximum) {
+    throw new ResumeSchemaError('Invalid number.');
+  }
+  return value;
+}
+
+function strictStringList(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length > MAX_ITEMS_PER_SECTION) throw new ResumeSchemaError('Invalid list.');
+  return value.map(strictString);
+}
+
+function strictProfile(value: unknown): ResumeProfile {
+  const record = strictRecord(value);
+  return {
+    id: strictString(record.id),
+    fullName: strictString(record.fullName),
+    phone: strictString(record.phone),
+    email: strictString(record.email),
+    location: strictString(record.location),
+    title: strictString(record.title),
+  };
+}
+
+function strictExperience(value: unknown): ResumeExperience {
+  const record = strictRecord(value);
+  return {
+    id: strictString(record.id),
+    company: strictString(record.company),
+    role: strictString(record.role),
+    startDate: strictString(record.startDate),
+    endDate: strictString(record.endDate),
+    description: strictString(record.description),
+  };
+}
+
+function strictProject(value: unknown): ResumeProject {
+  const record = strictRecord(value);
+  return {
+    id: strictString(record.id),
+    name: strictString(record.name),
+    role: strictString(record.role),
+    startDate: strictString(record.startDate),
+    endDate: strictString(record.endDate),
+    description: strictString(record.description),
+  };
+}
+
+function strictEducation(value: unknown): ResumeEducation {
+  const record = strictRecord(value);
+  return {
+    id: strictString(record.id),
+    school: strictString(record.school),
+    major: strictString(record.major),
+    degree: strictString(record.degree),
+    startDate: strictString(record.startDate),
+    endDate: strictString(record.endDate),
+  };
+}
+
+function strictList<T>(value: unknown, parser: (item: unknown) => T): T[] {
+  if (!Array.isArray(value) || value.length > MAX_ITEMS_PER_SECTION) throw new ResumeSchemaError('Invalid list.');
+  return value.map(parser);
+}
+
+export function parseResumeDocument(input: unknown): ResumeDocumentV1 {
+  const record = strictRecord(input);
+  if (record.schemaVersion !== 1) throw new ResumeSchemaError('Invalid schema version.');
+  if (record.templateId !== 'precision' && record.templateId !== 'classic') {
+    throw new ResumeSchemaError('Invalid template.');
+  }
+  return {
+    schemaVersion: 1,
+    id: strictString(record.id),
+    name: strictString(record.name),
+    templateId: record.templateId,
+    profile: strictProfile(record.profile),
+    target: strictString(record.target),
+    summary: strictString(record.summary),
+    experience: strictList(record.experience, strictExperience),
+    projects: strictList(record.projects, strictProject),
+    education: strictList(record.education, strictEducation),
+    skills: strictStringList(record.skills),
+    certificates: strictStringList(record.certificates),
+    updatedAt: strictString(record.updatedAt),
+  };
+}
+
+export function parseJDAnalysis(input: unknown): JDAnalysis {
+  const record = strictRecord(input);
+  if (!['easy', 'medium', 'hard'].includes(String(record.matchDifficulty))) {
+    throw new ResumeSchemaError('Invalid match difficulty.');
+  }
+  return {
+    jobTitle: strictString(record.jobTitle),
+    requiredSkills: strictStringList(record.requiredSkills),
+    preferredSkills: strictStringList(record.preferredSkills),
+    experienceYears: strictNumber(record.experienceYears, 0, 100),
+    education: strictString(record.education),
+    responsibilities: strictStringList(record.responsibilities),
+    keywords: strictStringList(record.keywords),
+    industry: strictString(record.industry),
+    companyType: strictString(record.companyType),
+    matchDifficulty: record.matchDifficulty as JDAnalysis['matchDifficulty'],
+  };
+}
+
+export function parseAIOptimizationResult(input: unknown): AIOptimizationResult {
+  const record = strictRecord(input);
+  if (!['light', 'medium', 'deep'].includes(String(record.level))) {
+    throw new ResumeSchemaError('Invalid optimization level.');
+  }
+  const result: AIOptimizationResult = {
+    level: record.level as AIOptimizationResult['level'],
+    optimizedData: parseResumeDocument(record.optimizedData),
+    score: strictNumber(record.score),
+    suggestions: strictStringList(record.suggestions),
+  };
+  for (const key of ['jdMatch', 'atsScore'] as const) {
+    if (record[key] !== undefined) result[key] = strictNumber(record[key]);
+  }
+  for (const key of ['starApplications', 'keywordsOptimized'] as const) {
+    if (record[key] !== undefined) result[key] = strictNumber(record[key], 0, 10_000);
+  }
+  if (record.brandPosition !== undefined) result.brandPosition = strictString(record.brandPosition);
+  for (const key of ['keywordsAdded', 'quantifiedItems', 'changes'] as const) {
+    if (record[key] !== undefined) result[key] = strictStringList(record[key]);
+  }
+  return result;
 }

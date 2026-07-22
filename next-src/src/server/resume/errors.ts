@@ -9,6 +9,13 @@ const DEFAULT_MESSAGES: Record<string, string> = {
   QUOTA_ALREADY_SETTLED: 'The quota reservation was already settled.',
   QUOTA_ACCOUNT_INVALID: 'The resume quota account is unavailable.',
   QUOTA_UNAVAILABLE: 'The resume quota service is unavailable.',
+  REQUEST_INVALID: 'The request is invalid.',
+  AI_UPSTREAM: 'The AI service is unavailable.',
+  AI_TIMEOUT: 'The AI request timed out.',
+  AI_INVALID_RESPONSE: 'The AI service returned an invalid response.',
+  AI_CANCELLED: 'The AI request was cancelled.',
+  STREAM_INCOMPLETE: 'The AI stream ended before completion.',
+  INTERNAL_ERROR: 'The request could not be completed.',
 };
 
 export interface ResumeErrorBody {
