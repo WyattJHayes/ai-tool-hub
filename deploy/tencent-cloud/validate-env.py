@@ -52,14 +52,16 @@ def parse_quoted(raw, quote):
 def parse_value(raw):
     value = raw.strip()
     if not value:
-        return ""
+        return "", True
     if value[0] in ("'", '"'):
-        return parse_quoted(value, value[0])
+        quote = value[0]
+        return parse_quoted(value, quote), quote != "'"
     value = re.split(r"\s+#", value, maxsplit=1)[0]
-    return value.strip()
+    return value.strip(), True
 
 
 def parse_env(path):
+    interpolates = {}
     values = {}
     seen = set()
     with open(path, "r", encoding="utf-8") as handle:
@@ -83,15 +85,18 @@ def parse_env(path):
                 raise EnvError(key, "duplicate")
             seen.add(key)
             try:
-                values[key] = parse_value(raw_value)
+                values[key], interpolates[key] = parse_value(raw_value)
             except ValueError:
                 raise EnvError(key, "malformed") from None
-    return values
+    return values, interpolates
 
 
 def validate(path):
     try:
-        values = parse_env(path)
+        values, interpolates = parse_env(path)
+        for key in REQUIRED + OPTIONAL:
+            if interpolates.get(key, False) and "$" in values.get(key, ""):
+                raise EnvError(key, "interpolation_unsupported")
         for key in REQUIRED:
             if key not in values:
                 raise EnvError(key, "missing")

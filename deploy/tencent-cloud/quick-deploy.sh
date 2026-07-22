@@ -321,8 +321,9 @@ source_revision="$expected_revision"
 export GIT_SHA="$source_revision"
 export AI_TOOL_HUB_IMAGE="$candidate_image"
 
-if validate_and_build_candidate \
-    "$candidate_compose" "$remote_root/.env" "$candidate_source"; then
+if validate_and_build_candidate_preserving_active \
+    "$candidate_compose" "$remote_root/.env" "$candidate_source" \
+    "$compose_file" "$nginx_target"; then
     :
 else
     status=$?
@@ -348,10 +349,8 @@ if [ -s "$compose_file" ]; then
     cp "$compose_file" "$backup_root/previous-docker-compose.yml"
     had_compose=true
 fi
-if docker image inspect ai-resume-optimizer:latest >/dev/null 2>&1; then
-    rollback_image="ai-resume-optimizer:rollback-$timestamp"
-    docker tag ai-resume-optimizer:latest "$rollback_image"
-fi
+rollback_image="ai-resume-optimizer:rollback-$timestamp"
+prepare_rollback_image weihub-app "$rollback_image"
 
 rollback() {
     set +e
@@ -367,14 +366,9 @@ rollback() {
     else
         rm -f "$compose_file"
     fi
-    if [ -n "$rollback_image" ]; then
-        docker tag "$rollback_image" ai-resume-optimizer:latest
-        if [ "$had_compose" = true ]; then
-            docker compose --env-file "$remote_root/.env" -f "$compose_file" up -d --force-recreate >/dev/null 2>&1
-        fi
-    else
-        AI_TOOL_HUB_IMAGE="$candidate_image" \
-            docker compose --env-file "$remote_root/.env" -f "$candidate_compose" down >/dev/null 2>&1
+    docker tag "$rollback_image" ai-resume-optimizer:latest
+    if [ "$had_compose" = true ]; then
+        docker compose --env-file "$remote_root/.env" -f "$compose_file" up -d --force-recreate >/dev/null 2>&1
     fi
     docker exec dgc-nginx nginx -t >/dev/null 2>&1
     docker exec dgc-nginx nginx -s reload >/dev/null 2>&1

@@ -52,6 +52,75 @@ validate_and_build_candidate() {
     echo "candidate_build=passed"
 }
 
+release_file_state() {
+    local checksum
+
+    if [ -f "$1" ]; then
+        checksum="$(release_sha256 "$1")" || return $?
+        printf 'file:%s\n' "$checksum"
+    else
+        echo absent
+    fi
+}
+
+validate_and_build_candidate_preserving_active() {
+    local compose_file="$1"
+    local env_file="$2"
+    local source_dir="$3"
+    local active_compose="$4"
+    local active_nginx="$5"
+    local compose_before
+    local nginx_before
+    local status
+
+    compose_before="$(release_file_state "$active_compose")" || return $?
+    nginx_before="$(release_file_state "$active_nginx")" || return $?
+
+    validate_and_build_candidate "$compose_file" "$env_file" "$source_dir"
+    status=$?
+
+    if [ "$(release_file_state "$active_compose")" != "$compose_before" ] \
+        || [ "$(release_file_state "$active_nginx")" != "$nginx_before" ]; then
+        echo "candidate_active_files=changed" >&2
+        return 1
+    fi
+    return "$status"
+}
+
+prepare_rollback_image() {
+    local container="$1"
+    local rollback_tag="$2"
+    local image_id
+    local status
+
+    if image_id="$(docker container inspect --format '{{.Image}}' "$container" 2>/dev/null)"; then
+        :
+    else
+        status=$?
+        echo "rollback_image=unavailable" >&2
+        return "$status"
+    fi
+    if [[ ! "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+        echo "rollback_image=unavailable" >&2
+        return 1
+    fi
+    if docker image inspect "$image_id" >/dev/null 2>&1; then
+        :
+    else
+        status=$?
+        echo "rollback_image=unavailable" >&2
+        return "$status"
+    fi
+    if docker tag "$image_id" "$rollback_tag"; then
+        :
+    else
+        status=$?
+        echo "rollback_image=unavailable" >&2
+        return "$status"
+    fi
+    echo "rollback_image=prepared"
+}
+
 scan_privacy_logs() {
     local container="$1"
     local log_file
