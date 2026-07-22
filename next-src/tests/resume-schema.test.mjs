@@ -47,6 +47,7 @@ test('defines the atomic resume billing schema contract', () => {
   for (const signature of [
     /reserve_resume_quota\s*\(\s*p_user_id\s+uuid\s*,\s*p_action\s+text\s*,\s*p_idempotency_key\s+text\s*,\s*p_request_id\s+uuid\s*\)/i,
     /settle_resume_quota\s*\(\s*p_ledger_id\s+uuid\s*,\s*p_outcome\s+text\s*\)/i,
+    /compensate_resume_quota\s*\(\s*p_ledger_id\s+uuid\s*\)/i,
     /create_resume_order\s*\(\s*p_user_id\s+uuid\s*,\s*p_plan\s+text\s*,\s*p_order_number\s+text\s*\)/i,
     /expire_resume_order\s*\(\s*p_order_number\s+text\s*,\s*p_user_id\s+uuid\s*,\s*p_failure_reason\s+text\s*\)/i,
     /fulfill_resume_order\s*\(\s*p_order_number\s+text\s*,\s*p_channel_event_id\s+text\s*,\s*p_channel_transaction_id\s+text\s*,\s*p_amount_fen\s+integer\s*,\s*p_sanitized_payload\s+jsonb\s*\)/i,
@@ -74,6 +75,7 @@ test('rejects null and blank RPC inputs before enum comparisons', () => {
   const requiredNullChecks = {
     reserve_resume_quota: ['p_user_id', 'p_action', 'p_idempotency_key', 'p_request_id'],
     settle_resume_quota: ['p_ledger_id', 'p_outcome'],
+    compensate_resume_quota: ['p_ledger_id'],
     create_resume_order: ['p_user_id', 'p_plan', 'p_order_number'],
     expire_resume_order: ['p_order_number', 'p_user_id', 'p_failure_reason'],
     fulfill_resume_order: [
@@ -105,6 +107,7 @@ test('fixes search path and narrows execute grants for every definer RPC', () =>
   const permissions = [
     ['reserve_resume_quota', 'uuid, text, text, uuid', 'service_role'],
     ['settle_resume_quota', 'uuid, text', 'service_role'],
+    ['compensate_resume_quota', 'uuid', 'service_role'],
     ['create_resume_order', 'uuid, text, text', 'service_role'],
     ['expire_resume_order', 'text, uuid, text', 'authenticated, service_role'],
     ['fulfill_resume_order', 'text, text, text, integer, jsonb', 'service_role'],
@@ -140,12 +143,16 @@ test('defines rollback-only executable billing cases', () => {
   assert.match(sql, /^rollback;/im);
   assert.match(sql, /duplicate free reservation/i);
   assert.match(sql, /exactly-once refund leaves one independent reservation/i);
+  assert.match(sql, /compensation reverses reserved and consumed quota exactly once/i);
+  assert.match(sql, /compensation rejects an unknown ledger/i);
+  assert.match(sql, /unauthorized compensation is denied/i);
   assert.match(sql, /basic rejects the eleventh reservation/i);
   assert.match(sql, /vip remains unlimited/i);
   assert.match(sql, /duplicate payment identifiers grant once/i);
   assert.match(sql, /authenticated users cannot read or mutate another user's rows/i);
   assert.match(sql, /null enum and identifier inputs are rejected/i);
   assert.match(sql, /settle_resume_quota\s*\([^,]+,\s*null\s*\)/i);
+  assert.match(sql, /compensate_resume_quota\s*\(\s*null\s*\)/i);
   assert.match(sql, /create_resume_order\s*\([^,]+,\s*null\s*,/i);
   assert.match(sql, /same event with a new transaction is rejected/i);
   assert.match(sql, /new event with the same transaction is idempotent/i);

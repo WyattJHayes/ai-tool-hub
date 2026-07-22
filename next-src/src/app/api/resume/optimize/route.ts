@@ -2,7 +2,13 @@ import { parseAIOptimizationResult } from '@/features/resume/schema';
 import type { AIStreamEvent, OptimizationLevel } from '@/features/resume/types';
 import { streamResumeOptimization } from '@/server/resume/ai';
 import { ResumeApiError, toResumeErrorBody } from '@/server/resume/errors';
-import { reserveQuota, settleQuota, type QuotaReservation, type ReserveQuotaInput } from '@/server/resume/quota';
+import {
+  compensateQuota,
+  reserveQuota,
+  settleQuota,
+  type QuotaReservation,
+  type ReserveQuotaInput,
+} from '@/server/resume/quota';
 import { createSettlementCoordinator } from '@/server/resume/settlement';
 import { requireSupabaseUser, type SupabaseUserIdentity } from '@/server/supabase-admin';
 
@@ -20,6 +26,7 @@ export interface OptimizeRouteDependencies {
   authenticate(request: Request): Promise<SupabaseUserIdentity>;
   reserve(input: ReserveQuotaInput): Promise<QuotaReservation>;
   settle(ledgerId: string, outcome: 'consumed' | 'refunded', signal?: AbortSignal): Promise<unknown>;
+  compensate(ledgerId: string): Promise<unknown>;
   streamResumeOptimization(
     level: OptimizationLevel,
     resumeText: string,
@@ -33,6 +40,7 @@ const productionDependencies: OptimizeRouteDependencies = {
   authenticate: requireSupabaseUser,
   reserve: reserveQuota,
   settle: settleQuota,
+  compensate: compensateQuota,
   streamResumeOptimization,
   logger: console,
 };
@@ -97,7 +105,7 @@ export function createOptimizeRoute(dependencies: OptimizeRouteDependencies = pr
         reservation.ledgerId,
         outcome,
         outcome === 'consumed' ? consumeSettlementController.signal : undefined,
-      ));
+      ), () => dependencies.compensate(reservation.ledgerId));
       type StreamPhase = 'open' | 'consuming' | 'terminating' | 'done' | 'closed';
       let phase: StreamPhase = 'open';
       let consumerCancelled = false;
@@ -116,14 +124,19 @@ export function createOptimizeRoute(dependencies: OptimizeRouteDependencies = pr
         phase = 'closed';
         streamController?.close();
       };
-      const terminate = (error: ResumeApiError, emitError: boolean): Promise<void> => {
+      const terminate = (
+        error: ResumeApiError,
+        emitError: boolean,
+        compensateCancellation = false,
+      ): Promise<void> => {
         if (phase === 'done' || phase === 'closed') return Promise.resolve();
         if (termination) return termination;
         phase = 'terminating';
         stopGenerator();
         termination = (async () => {
           try {
-            await settlement.settle('refunded');
+            if (compensateCancellation) await settlement.compensate();
+            else await settlement.settle('refunded');
           } catch {
             dependencies.logger.error({ action: `optimize-${level}`, requestId: id, code: 'QUOTA_UNAVAILABLE' });
           }
@@ -137,7 +150,7 @@ export function createOptimizeRoute(dependencies: OptimizeRouteDependencies = pr
         return termination;
       };
       const abortFromRequest = () => {
-        void terminate(new ResumeApiError('AI_CANCELLED', 499), true);
+        void terminate(new ResumeApiError('AI_CANCELLED', 499), true, true);
       };
 
       const pump = async () => {
@@ -185,7 +198,7 @@ export function createOptimizeRoute(dependencies: OptimizeRouteDependencies = pr
         },
         async cancel() {
           consumerCancelled = true;
-          await terminate(new ResumeApiError('AI_CANCELLED', 499), false);
+          await terminate(new ResumeApiError('AI_CANCELLED', 499), false, true);
         },
       });
 

@@ -147,6 +147,16 @@ begin
   end;
 
   begin
+    perform public.compensate_resume_quota(null);
+    raise exception 'compensation accepted a null ledger identifier';
+  exception
+    when others then
+      if sqlerrm <> 'RESUME_INVALID_COMPENSATION' then
+        raise;
+      end if;
+  end;
+
+  begin
     perform public.create_resume_order(null, 'basic', 'invalid-null-order-user');
     raise exception 'order creation accepted a null user';
   exception
@@ -257,6 +267,90 @@ begin
         raise;
       end if;
   end;
+end;
+$$;
+
+-- Compensation rejects an unknown ledger.
+do $$
+begin
+  begin
+    perform public.compensate_resume_quota('30000000-0000-4000-8000-000000000001');
+    raise exception 'compensation accepted an unknown ledger';
+  exception
+    when others then
+      if sqlerrm <> 'RESUME_LEDGER_NOT_FOUND' then
+        raise;
+      end if;
+  end;
+end;
+$$;
+
+-- Compensation reverses reserved and consumed quota exactly once.
+do $$
+declare
+  v_reserved record;
+  v_consumed record;
+  v_used_before integer;
+  v_used_after_reserved integer;
+  v_used_after_consumed integer;
+  v_version_after_first integer;
+  v_version_after_repeat integer;
+  v_reserved_status text;
+  v_consumed_status text;
+begin
+  select * into v_reserved
+  from public.reserve_resume_quota(
+    '10000000-0000-4000-8000-000000000001',
+    'optimize-light',
+    'compensate-reserved',
+    '20000000-0000-4000-8000-000000000011'
+  );
+  select free_daily_used into v_used_before
+  from public.resume_quota_accounts
+  where user_id = '10000000-0000-4000-8000-000000000001';
+  perform public.compensate_resume_quota(v_reserved.ledger_id);
+  select free_daily_used, version into v_used_after_reserved, v_version_after_first
+  from public.resume_quota_accounts
+  where user_id = '10000000-0000-4000-8000-000000000001';
+  perform public.compensate_resume_quota(v_reserved.ledger_id);
+  select version into v_version_after_repeat
+  from public.resume_quota_accounts
+  where user_id = '10000000-0000-4000-8000-000000000001';
+
+  select * into v_consumed
+  from public.reserve_resume_quota(
+    '10000000-0000-4000-8000-000000000001',
+    'optimize-light',
+    'compensate-consumed',
+    '20000000-0000-4000-8000-000000000012'
+  );
+  perform public.settle_resume_quota(v_consumed.ledger_id, 'consumed');
+  perform public.compensate_resume_quota(v_consumed.ledger_id);
+
+  select free_daily_used into v_used_after_consumed
+  from public.resume_quota_accounts
+  where user_id = '10000000-0000-4000-8000-000000000001';
+  select status into v_reserved_status
+  from public.resume_usage_ledger
+  where id = v_reserved.ledger_id;
+  select status into v_consumed_status
+  from public.resume_usage_ledger
+  where id = v_consumed.ledger_id;
+
+  if v_used_after_reserved <> v_used_before - 1
+    or v_version_after_repeat <> v_version_after_first
+    or v_used_after_consumed <> v_used_after_reserved
+    or v_reserved_status <> 'refunded'
+    or v_consumed_status <> 'refunded' then
+    raise exception 'compensation mismatch: used %/%/%, versions %/%, statuses %/%',
+      v_used_before,
+      v_used_after_reserved,
+      v_used_after_consumed,
+      v_version_after_first,
+      v_version_after_repeat,
+      v_reserved_status,
+      v_consumed_status;
+  end if;
 end;
 $$;
 
@@ -592,6 +686,7 @@ $$;
 
 -- Authenticated users cannot read or mutate another user's rows.
 -- Unused authenticated user sees zero rows in all five tables.
+-- Unauthorized compensation is denied.
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
@@ -605,6 +700,13 @@ do $$
 declare
   v_visible integer;
 begin
+  begin
+    perform public.compensate_resume_quota(gen_random_uuid());
+    raise exception 'authenticated role invoked compensation';
+  exception
+    when insufficient_privilege then null;
+  end;
+
   select count(*) into v_visible
   from public.resume_quota_accounts;
   if v_visible <> 0 then

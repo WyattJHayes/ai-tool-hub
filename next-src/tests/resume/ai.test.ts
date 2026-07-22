@@ -201,11 +201,18 @@ interface RouteHarness {
   authCalls: number;
   reservations: ReserveQuotaInput[];
   settlements: Array<[string, 'consumed' | 'refunded']>;
+  compensations: string[];
   logs: unknown[][];
 }
 
 function routeHarness() {
-  const state: RouteHarness = { authCalls: 0, reservations: [], settlements: [], logs: [] };
+  const state: RouteHarness = {
+    authCalls: 0,
+    reservations: [],
+    settlements: [],
+    compensations: [],
+    logs: [],
+  };
   const dependencies = {
     authenticate: async () => {
       state.authCalls += 1;
@@ -217,6 +224,10 @@ function routeHarness() {
     },
     settle: async (ledgerId: string, outcome: 'consumed' | 'refunded') => {
       state.settlements.push([ledgerId, outcome]);
+      return {};
+    },
+    compensate: async (ledgerId: string) => {
+      state.compensations.push(ledgerId);
       return {};
     },
     logger: {
@@ -356,7 +367,7 @@ test('forwards duplicate idempotency keys to the atomic reservation adapter with
   ]);
 });
 
-test('settles optimize consumed before done and refunds exactly once for errors, incomplete streams, and cancellation', async () => {
+test('settles optimize consumed before done, refunds failures, and compensates cancellation', async () => {
   const successful = routeHarness();
   const failed = routeHarness();
   const incomplete = routeHarness();
@@ -381,7 +392,15 @@ test('settles optimize consumed before done and refunds exactly once for errors,
     },
   });
 
-  const successBody = await (await successRoute(postRequest('/api/resume/optimize', { level: 'light', resumeText: 'resume' }))).text();
+  const successController = new AbortController();
+  const successBody = await (await successRoute(postRequest(
+    '/api/resume/optimize',
+    { level: 'light', resumeText: 'resume' },
+    'success-before-abort',
+    successController.signal,
+  ))).text();
+  successController.abort();
+  await new Promise(resolve => setTimeout(resolve, 0));
   const failedBody = await (await failedRoute(postRequest('/api/resume/optimize', { level: 'light', resumeText: PRIVATE_RESUME }))).text();
   const incompleteBody = await (await incompleteRoute(postRequest('/api/resume/optimize', { level: 'light', resumeText: 'resume' }))).text();
   const cancelledResponse = await cancelledRoute(postRequest('/api/resume/optimize', { level: 'light', resumeText: 'resume' }));
@@ -395,7 +414,9 @@ test('settles optimize consumed before done and refunds exactly once for errors,
   assert.deepEqual(successful.state.settlements, [['ledger-1', 'consumed']]);
   assert.deepEqual(failed.state.settlements, [['ledger-1', 'refunded']]);
   assert.deepEqual(incomplete.state.settlements, [['ledger-1', 'refunded']]);
-  assert.deepEqual(cancelled.state.settlements, [['ledger-1', 'refunded']]);
+  assert.deepEqual(cancelled.state.settlements, []);
+  assert.deepEqual(successful.state.compensations, []);
+  assert.deepEqual(cancelled.state.compensations, ['ledger-1']);
   assert.doesNotMatch(JSON.stringify(failed.state.logs), /PRIVATE_RESUME_TEXT|PRIVATE_JD_TEXT/);
 });
 
@@ -414,7 +435,7 @@ test('sets the required SSE response headers', async () => {
   await response.text();
 });
 
-test('refunds cancellation before waiting for an abort-insensitive upstream generator to return', async () => {
+test('compensates cancellation before waiting for an abort-insensitive upstream generator to return', async () => {
   const { state, dependencies } = routeHarness();
   let releaseUpstream!: () => void;
   const upstreamReleased = new Promise<void>(resolve => { releaseUpstream = resolve; });
@@ -432,15 +453,16 @@ test('refunds cancellation before waiting for an abort-insensitive upstream gene
   await new Promise(resolve => setTimeout(resolve, 0));
 
   try {
-    assert.deepEqual(state.settlements, [['ledger-1', 'refunded']]);
+    assert.deepEqual(state.settlements, []);
+    assert.deepEqual(state.compensations, ['ledger-1']);
   } finally {
     releaseUpstream();
     await cancelling;
   }
 });
 
-test('cancellation racing a deferred failed consume refunds once and never delivers done', async () => {
-  const { dependencies } = routeHarness();
+test('cancellation racing a deferred failed consume compensates once and never delivers done', async () => {
+  const { state, dependencies } = routeHarness();
   const attempts: Array<'consumed' | 'refunded'> = [];
   const completed: Array<'consumed' | 'refunded'> = [];
   let consumeStarted!: () => void;
@@ -482,15 +504,74 @@ test('cancellation racing a deferred failed consume refunds once and never deliv
     await cancelling;
     assert.equal(read.done, true);
     assert.equal(read.value, undefined);
-    assert.deepEqual(attempts, ['consumed', 'refunded']);
-    assert.deepEqual(completed, ['refunded']);
+    assert.deepEqual(attempts, ['consumed']);
+    assert.deepEqual(completed, []);
+    assert.deepEqual(state.compensations, ['ledger-1']);
   } finally {
     if (!consumeSignal?.aborted) rejectConsume(new ResumeApiError('QUOTA_UNAVAILABLE', 503));
     await cancelling;
   }
 });
 
-test('request abort promptly refunds and terminates despite an abort-insensitive upstream generator', async () => {
+test('compensates once when a deferred consume commits after cancellation and never delivers done', async () => {
+  const { dependencies } = routeHarness();
+  const settlementAttempts: Array<'consumed' | 'refunded'> = [];
+  const settlementCompletions: Array<'consumed' | 'refunded'> = [];
+  const compensations: string[] = [];
+  let consumeStarted!: () => void;
+  let resolveConsume!: () => void;
+  let consumeSignal: AbortSignal | undefined;
+  const started = new Promise<void>(resolve => { consumeStarted = resolve; });
+  const deferredConsume = new Promise<void>(resolve => { resolveConsume = resolve; });
+  const requestController = new AbortController();
+  const route = createOptimizeRoute({
+    ...dependencies,
+    settle: async (_ledgerId, outcome, signal?: AbortSignal) => {
+      settlementAttempts.push(outcome);
+      if (outcome === 'consumed') {
+        consumeSignal = signal;
+        consumeStarted();
+        await deferredConsume;
+      }
+      settlementCompletions.push(outcome);
+      return {};
+    },
+    compensate: async (ledgerId: string) => {
+      compensations.push(ledgerId);
+      return {};
+    },
+    streamResumeOptimization: async function* () {
+      yield { type: 'done', data: optimizationFixture() };
+    },
+  });
+  const response = await route(postRequest(
+    '/api/resume/optimize',
+    { level: 'light', resumeText: 'resume' },
+    'committed-after-cancel',
+    requestController.signal,
+  ));
+  const reader = response.body!.getReader();
+  const pendingRead = reader.read();
+  await started;
+  requestController.abort();
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  assert.equal(consumeSignal?.aborted, true);
+  assert.deepEqual(compensations, []);
+  resolveConsume();
+
+  const errorFrame = await pendingRead;
+  assert.equal(errorFrame.done, false);
+  const errorText = new TextDecoder().decode(errorFrame.value);
+  assert.match(errorText, /event: error[\s\S]*AI_CANCELLED/);
+  assert.doesNotMatch(errorText, /event: done/);
+  assert.equal((await reader.read()).done, true);
+  assert.deepEqual(settlementAttempts, ['consumed']);
+  assert.deepEqual(settlementCompletions, ['consumed']);
+  assert.deepEqual(compensations, ['ledger-1']);
+});
+
+test('request abort promptly compensates and terminates despite an abort-insensitive upstream generator', async () => {
   const { state, dependencies } = routeHarness();
   let releaseUpstream!: () => void;
   const upstreamReleased = new Promise<void>(resolve => { releaseUpstream = resolve; });
@@ -515,7 +596,8 @@ test('request abort promptly refunds and terminates despite an abort-insensitive
   await new Promise(resolve => setTimeout(resolve, 0));
 
   try {
-    assert.deepEqual(state.settlements, [['ledger-1', 'refunded']]);
+    assert.deepEqual(state.settlements, []);
+    assert.deepEqual(state.compensations, ['ledger-1']);
     const errorFrame = await pendingRead;
     assert.equal(errorFrame.done, false);
     assert.match(new TextDecoder().decode(errorFrame.value), /event: error[\s\S]*AI_CANCELLED/);

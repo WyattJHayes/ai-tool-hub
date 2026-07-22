@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  compensateQuota,
   reserveQuota,
   ResumeApiError,
   settleQuota,
@@ -83,6 +84,53 @@ test('forwards an abort signal to an abortable settlement RPC', async () => {
   await settleQuota(client, 'ledger-1', 'refunded', controller.signal);
 
   assert.deepEqual(seenSignals, [controller.signal]);
+});
+
+test('compensates quota with the exact RPC name and ledger-only arguments', async () => {
+  const calls: unknown[][] = [];
+  const compensatedRow = { id: 'ledger-1', status: 'refunded', quota_delta: -1 };
+  const client: ResumeRpcClient = {
+    rpc: async (name, args) => {
+      calls.push([name, args]);
+      return { data: compensatedRow, error: null };
+    },
+  };
+
+  const result = await compensateQuota(client, 'ledger-1');
+
+  assert.deepEqual(calls, [['compensate_resume_quota', {
+    p_ledger_id: 'ledger-1',
+  }]]);
+  assert.equal(result, compensatedRow);
+});
+
+test('maps compensation failures to stable nonleaking errors', async () => {
+  const clients: ResumeRpcClient[] = [
+    {
+      rpc: async () => ({
+        data: null,
+        error: { message: 'PRIVATE COMPENSATION SQL', details: 'PRIVATE_RESUME_TEXT' },
+      }),
+    },
+    {
+      rpc: async () => {
+        throw new Error('PRIVATE ledger and service role details');
+      },
+    },
+  ];
+
+  for (const client of clients) {
+    await assert.rejects(
+      () => compensateQuota(client, 'ledger-1'),
+      error => {
+        assert.ok(error instanceof ResumeApiError);
+        assert.equal(error.code, 'QUOTA_UNAVAILABLE');
+        assert.equal(error.status, 503);
+        assert.doesNotMatch(String(error), /PRIVATE|ledger|service role|SQL/);
+        return true;
+      },
+    );
+  }
 });
 
 test('maps quota exhaustion to a stable 429 error without SQL details', async () => {

@@ -400,6 +400,81 @@ begin
 end;
 $$;
 
+create or replace function compensate_resume_quota(
+  p_ledger_id uuid
+)
+returns public.resume_usage_ledger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_ledger public.resume_usage_ledger%rowtype;
+  v_account public.resume_quota_accounts%rowtype;
+  v_is_service boolean;
+begin
+  v_is_service := session_user in ('postgres', 'supabase_admin')
+    or coalesce((select auth.jwt() ->> 'role'), '') = 'service_role';
+  if not v_is_service then
+    raise exception using errcode = '42501', message = 'RESUME_SERVICE_ROLE_REQUIRED';
+  end if;
+
+  if p_ledger_id is null then
+    raise exception using errcode = '22023', message = 'RESUME_INVALID_COMPENSATION';
+  end if;
+
+  select ledger.*
+  into v_ledger
+  from public.resume_usage_ledger as ledger
+  where ledger.id = p_ledger_id
+  for update;
+
+  if not found then
+    raise exception using errcode = 'P0002', message = 'RESUME_LEDGER_NOT_FOUND';
+  end if;
+
+  select account.*
+  into v_account
+  from public.resume_quota_accounts as account
+  where account.user_id = v_ledger.user_id
+  for update;
+
+  if not found then
+    raise exception using errcode = 'P0001', message = 'RESUME_ACCOUNT_NOT_FOUND';
+  end if;
+
+  if v_ledger.status = 'refunded' then
+    return v_ledger;
+  end if;
+
+  if v_ledger.quota_delta = -1 then
+    if v_ledger.plan = 'free'
+      and v_account.plan = 'free'
+      and v_account.free_usage_date = v_ledger.quota_window_date then
+      update public.resume_quota_accounts as account
+      set free_daily_used = greatest(0, account.free_daily_used - 1),
+          version = account.version + 1,
+          updated_at = pg_catalog.statement_timestamp()
+      where account.id = v_account.id;
+    elsif v_ledger.plan = 'basic' and v_account.plan = 'basic' then
+      update public.resume_quota_accounts as account
+      set quota_remaining = least(account.quota_total, account.quota_remaining + 1),
+          version = account.version + 1,
+          updated_at = pg_catalog.statement_timestamp()
+      where account.id = v_account.id;
+    end if;
+  end if;
+
+  update public.resume_usage_ledger as ledger
+  set status = 'refunded',
+      settled_at = pg_catalog.statement_timestamp()
+  where ledger.id = p_ledger_id
+  returning ledger.* into v_ledger;
+
+  return v_ledger;
+end;
+$$;
+
 create or replace function create_resume_order(
   p_user_id uuid,
   p_plan text,
@@ -789,12 +864,14 @@ $$;
 
 revoke execute on function reserve_resume_quota(uuid, text, text, uuid) from public, anon, authenticated;
 revoke execute on function settle_resume_quota(uuid, text) from public, anon, authenticated;
+revoke execute on function compensate_resume_quota(uuid) from public, anon, authenticated;
 revoke execute on function create_resume_order(uuid, text, text) from public, anon, authenticated;
 revoke execute on function expire_resume_order(text, uuid, text) from public, anon, authenticated;
 revoke execute on function fulfill_resume_order(text, text, text, integer, jsonb) from public, anon, authenticated;
 
 grant execute on function reserve_resume_quota(uuid, text, text, uuid) to service_role;
 grant execute on function settle_resume_quota(uuid, text) to service_role;
+grant execute on function compensate_resume_quota(uuid) to service_role;
 grant execute on function create_resume_order(uuid, text, text) to service_role;
 grant execute on function expire_resume_order(text, uuid, text) to authenticated, service_role;
 grant execute on function fulfill_resume_order(text, text, text, integer, jsonb) to service_role;

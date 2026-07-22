@@ -64,6 +64,7 @@ function mapQuotaError(error: unknown): ResumeApiError {
       return new ResumeApiError('QUOTA_EXHAUSTED', 429);
     case 'RESUME_INVALID_RESERVATION':
     case 'RESUME_INVALID_SETTLEMENT':
+    case 'RESUME_INVALID_COMPENSATION':
       return new ResumeApiError('QUOTA_INVALID_REQUEST', 400);
     case 'RESUME_LEDGER_NOT_FOUND':
       return new ResumeApiError('QUOTA_RESERVATION_NOT_FOUND', 404);
@@ -169,6 +170,31 @@ export async function settleQuota(
       operation = operation.abortSignal(signal) as ResumeRpcOperation;
     }
     result = await operation;
+  } catch {
+    throw new ResumeApiError('QUOTA_UNAVAILABLE', 503);
+  }
+  if (result.error) throw mapQuotaError(result.error);
+  if (!result.data || typeof result.data !== 'object') {
+    throw new ResumeApiError('QUOTA_UNAVAILABLE', 503);
+  }
+  return result.data;
+}
+
+export function compensateQuota(ledgerId: string): Promise<unknown>;
+export function compensateQuota(client: ResumeRpcClient, ledgerId: string): Promise<unknown>;
+export async function compensateQuota(
+  clientOrLedgerId: ResumeRpcClient | string,
+  injectedLedgerId?: string,
+): Promise<unknown> {
+  const client = typeof clientOrLedgerId === 'string' ? defaultClient() : clientOrLedgerId;
+  const ledgerId = typeof clientOrLedgerId === 'string' ? clientOrLedgerId : injectedLedgerId;
+  if (!ledgerId) throw new ResumeApiError('QUOTA_INVALID_REQUEST', 400);
+
+  let result: ResumeRpcResult;
+  try {
+    result = await client.rpc('compensate_resume_quota', {
+      p_ledger_id: ledgerId,
+    });
   } catch {
     throw new ResumeApiError('QUOTA_UNAVAILABLE', 503);
   }
