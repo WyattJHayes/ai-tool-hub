@@ -106,6 +106,11 @@ if [ "\${1:-}" = image ] && [ "\${2:-}" = inspect ]; then
 fi
 if [ "\${1:-}" = tag ]; then
   printf 'tag:%s:%s\n' "\${2:-}" "\${3:-}" >> "$DOCKER_LOG"
+  if [ "\${FAKE_RESTORE_FAILURE:-}" = image-tag ] \
+    && [ "\${2:-}" = rollback:test ] \
+    && [ "\${3:-}" = ai-resume-optimizer:latest ]; then
+    exit 84
+  fi
   if [ "\${3:-}" = ai-resume-optimizer:latest ]; then
     if [ "\${2:-}" = "$CANDIDATE_IMAGE" ]; then
       printf candidate > "$LATEST_TARGET"
@@ -130,6 +135,10 @@ if [ "\${1:-}" = compose ]; then
     "\${DGC_NETWORK_NAME:-}" \
     "\${GIT_SHA:-}" "\${COMPOSE_PROJECT_NAME:-}" >> "$DOCKER_LOG"
   printf 'compose-args:%s\n' "$*" >> "$DOCKER_LOG"
+  if [ "\${FAKE_RESTORE_FAILURE:-}" = compose ] \
+    && [ "$(cat "$LATEST_TARGET")" = rollback ]; then
+    exit 85
+  fi
   if [ "\${*: -1}" = up ] || [[ " $* " == *" up "* ]]; then
     cp "$LATEST_TARGET" "$RUNNING_IMAGE"
   fi
@@ -139,6 +148,33 @@ exit 0
 `);
   chmodSync(binary, 0o755);
   return binary;
+}
+
+function fakeRestorationCommands(directory) {
+  const move = path.join(directory, 'mv');
+  writeFileSync(move, `#!/usr/bin/env bash
+set -u
+if [ "\${FAKE_RESTORE_FAILURE:-}" = source ] && [[ "\${1:-}" == */previous-source ]]; then
+  exit 81
+fi
+exec /bin/mv "$@"
+`);
+  chmodSync(move, 0o755);
+
+  const install = path.join(directory, 'install');
+  writeFileSync(install, `#!/usr/bin/env bash
+set -u
+for argument in "$@"; do
+  if [ "\${FAKE_RESTORE_FAILURE:-}" = config ] && [[ "$argument" == */previous-docker-compose.yml ]]; then
+    exit 82
+  fi
+  if [ "\${FAKE_RESTORE_FAILURE:-}" = nginx ] && [[ "$argument" == */previous-nginx.conf ]]; then
+    exit 83
+  fi
+done
+exec /usr/bin/install "$@"
+`);
+  chmodSync(install, 0o755);
 }
 
 test('env validator accepts Compose-style quoted and unquoted values without printing values', () => {
@@ -434,6 +470,70 @@ test('full activation failure restores source, config, image tag, service, and o
   assert.match(output, /compose-env:\/intended\/runtime\.env:ai-resume-optimizer:latest:/);
   assert.doesNotMatch(output, /malicious/);
 });
+
+for (const [failure, step] of [
+  ['source', 'source'],
+  ['config', 'compose_config'],
+  ['nginx', 'nginx_config'],
+  ['image-tag', 'image_tag'],
+  ['compose', 'compose_recreate'],
+]) {
+  test(`restoration ${failure} failure returns a distinct status and reports only the failed step`, () => {
+    const directory = temporaryDirectory();
+    const activeSource = path.join(directory, 'active-source');
+    const candidateSource = path.join(directory, 'candidate-source');
+    const activeCompose = path.join(directory, 'active-compose.yml');
+    const candidateCompose = path.join(directory, 'candidate-compose.yml');
+    const activeNginx = path.join(directory, 'active-nginx.conf');
+    const candidateNginx = path.join(directory, 'candidate-nginx.conf');
+    const backupRoot = path.join(directory, 'backup-private-path');
+    const dockerLog = path.join(directory, 'docker.log');
+    const latestTarget = path.join(directory, 'latest-target');
+    const runningImage = path.join(directory, 'running-image');
+    mkdirSync(activeSource);
+    mkdirSync(candidateSource);
+    writeFileSync(path.join(activeSource, 'version'), 'prior source');
+    writeFileSync(path.join(candidateSource, 'version'), 'candidate source');
+    writeFileSync(activeCompose, 'prior compose');
+    writeFileSync(candidateCompose, 'candidate compose');
+    writeFileSync(activeNginx, 'prior nginx');
+    writeFileSync(candidateNginx, 'candidate nginx');
+    fakeActivationDocker(directory);
+    fakeRestorationCommands(directory);
+
+    const result = run('/bin/bash', ['-c', `
+      source "$RELEASE_LIB"
+      fail_verification() { return 73; }
+      run_candidate_activation \
+        "$CANDIDATE_SOURCE" "$ACTIVE_SOURCE" \
+        "$CANDIDATE_COMPOSE" "$ACTIVE_COMPOSE" \
+        "$CANDIDATE_NGINX" "$ACTIVE_NGINX" \
+        "$BACKUP_ROOT" /intended/private-runtime.env "$CANDIDATE_IMAGE" \
+        rollback:test intended-revision fail_verification
+    `], { env: {
+      RELEASE_LIB: releaseLib,
+      ACTIVE_SOURCE: activeSource,
+      CANDIDATE_SOURCE: candidateSource,
+      ACTIVE_COMPOSE: activeCompose,
+      CANDIDATE_COMPOSE: candidateCompose,
+      ACTIVE_NGINX: activeNginx,
+      CANDIDATE_NGINX: candidateNginx,
+      BACKUP_ROOT: backupRoot,
+      CANDIDATE_IMAGE: 'candidate:test-revision',
+      DOCKER_LOG: dockerLog,
+      LATEST_TARGET: latestTarget,
+      RUNNING_IMAGE: runningImage,
+      FAKE_RESTORE_FAILURE: failure,
+      PATH: `${directory}:${process.env.PATH}`,
+    } });
+
+    assert.equal(result.status, 75, result.stderr);
+    assert.match(result.stderr, new RegExp(`restoration_step=${step} status=failed`));
+    assert.match(result.stderr, /candidate_restoration=failed original_status=73 restoration_status=75/);
+    assert.doesNotMatch(result.stdout + result.stderr, /private-runtime|backup-private-path|candidate:test-revision/);
+    assert.match(readFileSync(dockerLog, 'utf8'), /container-removed/);
+  });
+}
 
 test('missing active Compose rejects activation before source, config, tag, or service writes', () => {
   const directory = temporaryDirectory();

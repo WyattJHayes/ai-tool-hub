@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { createEmptyResume, normalizeResumeDocument, ResumeSchemaError } from '../../src/features/resume/schema';
-import { createResumeStorage, RESUME_STORAGE_KEY, useResumeStore } from '../../src/features/resume/store';
+import {
+  createResumeStorage,
+  RESUME_STORAGE_BACKUP_KEY,
+  RESUME_STORAGE_KEY,
+  useResumeStore,
+} from '../../src/features/resume/store';
 import type { ResumeChange, ResumeDocumentV1, ResumeExperience } from '../../src/features/resume/types';
 
 function resetStore() {
@@ -252,16 +257,119 @@ test('persists only the document under the versioned storage key', () => {
   assert.deepEqual(Object.keys(partialize?.(useResumeStore.getState()) ?? {}), ['document']);
 });
 
-test('drops malformed persisted resume state and clears its storage entry', async () => {
-  let cleared = false;
+test('backs up malformed JSON exactly and blocks the first edit without overwriting primary bytes', async () => {
+  const raw = '{not-json';
+  const values = new Map([[RESUME_STORAGE_KEY, raw]]);
+  const issues: unknown[] = [];
   const storage = createResumeStorage({
-    getItem: () => '{not-json',
-    setItem: () => undefined,
-    removeItem: () => { cleared = true; },
+    getItem: key => values.get(key) ?? null,
+    setItem: (key, value) => { values.set(key, value); },
+    removeItem: key => { values.delete(key); },
+  }, { onIssue: issue => issues.push(issue) });
+
+  assert.equal(await storage.getItem(RESUME_STORAGE_KEY), null);
+  assert.equal(values.get(RESUME_STORAGE_KEY), raw);
+  assert.equal(values.get(RESUME_STORAGE_BACKUP_KEY), raw);
+  assert.equal(await storage.getRecoveryItem(), raw);
+  assert.deepEqual(storage.getIssue(), { code: 'malformed', blocking: true, recoverable: true });
+  await assert.rejects(async () => storage.setItem(RESUME_STORAGE_KEY, { state: { document: createEmptyResume() } }));
+  assert.equal(values.get(RESUME_STORAGE_KEY), raw);
+  assert.equal(issues.length, 1);
+});
+
+test('preserves unsupported future documents instead of deleting or normalizing them', async () => {
+  const raw = JSON.stringify({ state: { document: { schemaVersion: 99, privateFutureField: 'KEEP_BYTES' } }, version: 0 });
+  const values = new Map([[RESUME_STORAGE_KEY, raw]]);
+  const storage = createResumeStorage({
+    getItem: key => values.get(key) ?? null,
+    setItem: (key, value) => { values.set(key, value); },
+    removeItem: key => { values.delete(key); },
   });
 
   assert.equal(await storage.getItem(RESUME_STORAGE_KEY), null);
-  assert.equal(cleared, true);
+  assert.deepEqual(storage.getIssue(), { code: 'unsupported', blocking: true, recoverable: true });
+  assert.equal(values.get(RESUME_STORAGE_KEY), raw);
+  assert.equal(values.get(RESUME_STORAGE_BACKUP_KEY), raw);
+});
+
+test('preserves raw bytes when document normalization fails unexpectedly', async () => {
+  const raw = JSON.stringify({ state: { document: { schemaVersion: 1 } }, version: 0 });
+  const values = new Map([[RESUME_STORAGE_KEY, raw]]);
+  const storage = createResumeStorage({
+    getItem: key => values.get(key) ?? null,
+    setItem: (key, value) => { values.set(key, value); },
+    removeItem: key => { values.delete(key); },
+  }, {
+    normalize: () => { throw new Error('normalizer failed'); },
+  });
+
+  assert.equal(await storage.getItem(RESUME_STORAGE_KEY), null);
+  assert.deepEqual(storage.getIssue(), { code: 'normalization-failed', blocking: true, recoverable: true });
+  assert.equal(values.get(RESUME_STORAGE_KEY), raw);
+  assert.equal(values.get(RESUME_STORAGE_BACKUP_KEY), raw);
+});
+
+test('surfaces storage get, set, and remove exceptions without deleting existing bytes', async () => {
+  const readIssues: unknown[] = [];
+  let failReads = true;
+  const unreadable = createResumeStorage({
+    getItem: () => {
+      if (failReads) throw new Error('read denied');
+      return null;
+    },
+    setItem: () => undefined,
+    removeItem: () => undefined,
+  }, { onIssue: issue => readIssues.push(issue) });
+  assert.equal(await unreadable.getItem(RESUME_STORAGE_KEY), null);
+  assert.deepEqual(unreadable.getIssue(), { code: 'read-failed', blocking: true, recoverable: false });
+  assert.equal(readIssues.length, 1);
+  failReads = false;
+  assert.equal(await unreadable.getItem(RESUME_STORAGE_KEY), null);
+  assert.equal(unreadable.getIssue(), null);
+
+  const validRaw = JSON.stringify({ state: { document: createEmptyResume(() => 'fixed-id') }, version: 0 });
+  const values = new Map([[RESUME_STORAGE_KEY, validRaw]]);
+  let failWrites = false;
+  let failRemovals = false;
+  const fragile = createResumeStorage({
+    getItem: key => values.get(key) ?? null,
+    setItem: (key, value) => {
+      if (failWrites) throw new Error('write denied');
+      values.set(key, value);
+    },
+    removeItem: key => {
+      if (failRemovals) throw new Error('remove denied');
+      values.delete(key);
+    },
+  });
+  assert.ok(await fragile.getItem(RESUME_STORAGE_KEY));
+  failWrites = true;
+  await assert.rejects(async () => fragile.setItem(RESUME_STORAGE_KEY, { state: { document: createEmptyResume() } }));
+  assert.deepEqual(fragile.getIssue(), { code: 'write-failed', blocking: false, recoverable: true });
+  assert.equal(values.get(RESUME_STORAGE_KEY), validRaw);
+  failWrites = false;
+  failRemovals = true;
+  await assert.rejects(async () => fragile.removeItem(RESUME_STORAGE_KEY));
+  assert.deepEqual(fragile.getIssue(), { code: 'remove-failed', blocking: true, recoverable: true });
+  assert.equal(values.get(RESUME_STORAGE_KEY), validRaw);
+});
+
+test('explicit storage resolution keeps the raw backup and permits a fresh document write', async () => {
+  const raw = '{broken-primary';
+  const values = new Map([[RESUME_STORAGE_KEY, raw]]);
+  const storage = createResumeStorage({
+    getItem: key => values.get(key) ?? null,
+    setItem: (key, value) => { values.set(key, value); },
+    removeItem: key => { values.delete(key); },
+  });
+  await storage.getItem(RESUME_STORAGE_KEY);
+
+  await storage.resolve();
+  await storage.setItem(RESUME_STORAGE_KEY, { state: { document: createEmptyResume(() => 'fresh-id') }, version: 0 });
+
+  assert.equal(values.get(RESUME_STORAGE_BACKUP_KEY), raw);
+  assert.match(values.get(RESUME_STORAGE_KEY) ?? '', /fresh-id/);
+  assert.equal(storage.getIssue(), null);
 });
 
 test('resolves the direct jsPDF dependency at or above the safe version', () => {

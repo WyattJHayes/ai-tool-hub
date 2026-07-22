@@ -13,7 +13,13 @@ import { useRouter } from 'next/navigation';
 import { AuthModal } from '@/components/auth/AuthModal';
 import { resumeApi, type ResumePlansAvailability } from '@/features/resume/api';
 import { exportResumePdf } from '@/features/resume/pdf';
-import { useResumeStore } from '@/features/resume/store';
+import {
+  getResumeStorageRecoveryItem,
+  resolveResumeStorageWithEmptyDocument,
+  retryResumeStoragePersistence,
+  useResumeStorageIssue,
+  useResumeStore,
+} from '@/features/resume/store';
 import {
   createProtectedResumeActionCoordinator,
   createSaveStatusController,
@@ -29,6 +35,7 @@ import { ImportDialog } from './ImportDialog';
 import { QuotaDrawer } from './QuotaDrawer';
 import { ResumeEditor } from './ResumeEditor';
 import { ResumePreview } from './ResumePreview';
+import { ResumeStorageAlert } from './ResumeStorageAlert';
 import { ResumeToolbar, type ResumeSaveStatus } from './ResumeToolbar';
 
 type ResumeView = 'edit' | 'preview';
@@ -51,6 +58,7 @@ export function ResumeWorkspace() {
   const router = useRouter();
   const document = useResumeStore(state => state.document);
   const saveState = useResumeStore(state => state.saveState);
+  const storageIssue = useResumeStorageIssue();
   const undo = useResumeStore(state => state.undo);
   const isLoggedIn = useUserStore(state => state.isLoggedIn);
   const deferredDocument = useDeferredValue(document);
@@ -67,6 +75,7 @@ export function ResumeWorkspace() {
   const [availability, setAvailability] = useState<ResumePlansAvailability | null>(null);
   const [accountRefreshing, setAccountRefreshing] = useState(false);
   const [accountRefreshVersion, setAccountRefreshVersion] = useState(0);
+  const [storageBusy, setStorageBusy] = useState(false);
   const [jobDescription, setJobDescription] = useState('');
   const [resumedAction, setResumedAction] = useState<{
     id: number;
@@ -199,8 +208,57 @@ export function ResumeWorkspace() {
     setJobDescription(value);
   }, []);
 
+  const handleStorageDownload = useCallback(async () => {
+    setStorageBusy(true);
+    try {
+      const raw = await getResumeStorageRecoveryItem();
+      if (raw === null) return;
+      const url = URL.createObjectURL(new Blob([raw], { type: 'text/plain;charset=utf-8' }));
+      const link = window.document.createElement('a');
+      link.href = url;
+      link.download = 'weihub-resume-recovery.txt';
+      link.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setStorageBusy(false);
+    }
+  }, []);
+
+  const handleStorageRetry = useCallback(async () => {
+    setStorageBusy(true);
+    try {
+      await retryResumeStoragePersistence();
+    } finally {
+      setStorageBusy(false);
+    }
+  }, []);
+
+  const handleStorageReset = useCallback(async () => {
+    if (!window.confirm('原始本地数据将保留为恢复备份，并新建一份空白简历。是否继续？')) return;
+    setStorageBusy(true);
+    try {
+      await resolveResumeStorageWithEmptyDocument();
+    } finally {
+      setStorageBusy(false);
+    }
+  }, []);
+
   const effectiveQuota = isLoggedIn ? quota : null;
   const quotaLabel = effectiveQuota?.remaining === null && effectiveQuota ? '不限' : String(effectiveQuota?.remaining ?? '--');
+
+  if (storageIssue?.blocking) {
+    return (
+      <main className="resume-page carbon-tool-surface">
+        <ResumeStorageAlert
+          issue={storageIssue}
+          busy={storageBusy}
+          onDownload={() => void handleStorageDownload()}
+          onRetry={() => void handleStorageRetry()}
+          onReset={() => void handleStorageReset()}
+        />
+      </main>
+    );
+  }
 
   return (
     <main className="resume-page carbon-tool-surface">
@@ -215,6 +273,16 @@ export function ResumeWorkspace() {
         onAccount={handleAccount}
         quotaLabel={quotaLabel}
       />
+
+      {storageIssue ? (
+        <ResumeStorageAlert
+          issue={storageIssue}
+          busy={storageBusy}
+          onDownload={() => void handleStorageDownload()}
+          onRetry={() => void handleStorageRetry()}
+          onReset={() => void handleStorageReset()}
+        />
+      ) : null}
 
       <div className="resume-mobile-segments" role="group" aria-label="工作区视图">
         <button type="button" aria-pressed={view === 'edit'} onClick={() => setView('edit')}>编辑</button>

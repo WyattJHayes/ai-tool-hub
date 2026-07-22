@@ -188,7 +188,8 @@ test('ships the complete AI validation, stream, and canonical diff review workfl
   assert.match(panel, /每次 1 次额度/);
   assert.match(panel, /disabled=\{[^}]*!hasJobDescription/);
   assert.match(panel, /aria-live=['"]polite['"]/);
-  assert.match(panel, /computeResumeChanges/);
+  assert.match(panel, /createAIResumeSubmission/);
+  assert.match(panel, /computeSubmittedAIChanges/);
   assert.match(panel, /setChanges/);
   assert.match(panel, /acceptChange/);
   assert.match(panel, /acceptAllChanges/);

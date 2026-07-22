@@ -212,7 +212,12 @@ requireMatch(deploymentReleaseLib, /docker container inspect --format '\{\{\.Ima
 requireMatch(deploymentReleaseLib, /docker tag "\$rollback_image" ai-resume-optimizer:latest/, 'rollback must restore the captured image tag');
 requireMatch(deploymentReleaseLib, /previous-docker-compose\.yml" "\$active_compose"/, 'rollback must restore the prior Compose configuration');
 requireMatch(deploymentReleaseLib, /restore_active_release[\s\S]*?run_release_compose[\s\S]*?up -d --force-recreate/, 'rollback must recreate the prior Compose service');
-requireMatch(deploymentReleaseLib, /restore_active_release[\s\S]*?return "\$status"/, 'activation rollback must preserve the triggering failure status');
+requireMatch(deploymentReleaseLib, /RESTORATION_FAILED_STATUS=75/, 'rollback restoration failures must use a distinct status');
+requireMatch(deploymentReleaseLib, /restoration_step=\$step status=failed/, 'rollback failures must identify only the failed restoration step');
+requireMatch(deploymentReleaseLib, /candidate_restoration=failed original_status=\$status restoration_status=\$restoration_status/, 'activation must report restoration failure separately from the candidate failure');
+if (/restore_active_release[\s\S]{0,300}\|\| true/.test(deploymentReleaseLib)) {
+  failures.push('activation must never suppress restore_active_release failures');
+}
 requireMatch(deploymentReleaseLib, /docker rm -f weihub-app/, 'rollback must remove the candidate container before recreation');
 if (/docker image inspect ai-resume-optimizer:latest/.test(deploymentScript + deploymentReleaseLib)) {
   failures.push('rollback preparation must not depend on the mutable latest tag');
@@ -311,6 +316,7 @@ for (const [pattern, message] of [
   [/rejects quoted, unquoted, and duplicate deployment-control keys/, 'deployment behavior tests must reject env-file control overrides'],
   [/fixes env path, image, build context, network, revision, and project/, 'deployment behavior tests must reject ambient control overrides'],
   [/full activation failure restores source, config, image tag, service, and original status/, 'deployment behavior tests must cover full activation rollback'],
+  [/restoration .* failure returns a distinct status and reports only the failed step/, 'deployment behavior tests must inject every restoration-step failure'],
   [/missing active Compose rejects activation before source, config, tag, or service writes/, 'deployment behavior tests must reject missing active Compose'],
 ]) {
   requireMatch(deploymentBehaviorTest, pattern, message);

@@ -112,6 +112,7 @@ export function createOptimizeRoute(dependencies: OptimizeRouteDependencies = pr
       let generator: AsyncGenerator<AIStreamEvent> | undefined;
       let streamController: ReadableStreamDefaultController<Uint8Array> | undefined;
       let termination: Promise<void> | undefined;
+      let resultReady = false;
 
       const detachRequestAbort = () => request.signal.removeEventListener('abort', abortFromRequest);
       const stopGenerator = () => {
@@ -166,6 +167,7 @@ export function createOptimizeRoute(dependencies: OptimizeRouteDependencies = pr
             } else if (event.type === 'done') {
               const result = parseAIOptimizationResult(event.data);
               if (result.level !== level) throw new ResumeApiError('AI_INVALID_RESPONSE', 502);
+              resultReady = true;
               phase = 'consuming';
               await settlement.settle('consumed');
               if (phase !== 'consuming') return;
@@ -187,7 +189,7 @@ export function createOptimizeRoute(dependencies: OptimizeRouteDependencies = pr
             throw new ResumeApiError('STREAM_INCOMPLETE', 502);
           }
         } catch (error) {
-          await terminate(normalizedError(error), !consumerCancelled);
+          await terminate(normalizedError(error), !consumerCancelled, resultReady);
         }
       };
 

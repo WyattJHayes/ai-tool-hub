@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import { persist, type PersistStorage, type StateStorage, type StorageValue } from 'zustand/middleware';
+import { useSyncExternalStore } from 'react';
 import { createEmptyResume, normalizeResumeDocument } from './schema';
 import type {
   ResumeChange,
@@ -13,6 +14,32 @@ import type {
 } from './types';
 
 export const RESUME_STORAGE_KEY = 'weihub-resume-v1';
+export const RESUME_STORAGE_BACKUP_KEY = 'weihub-resume-v1-recovery-v1';
+
+export type ResumeStorageIssueCode =
+  | 'malformed'
+  | 'unsupported'
+  | 'normalization-failed'
+  | 'read-failed'
+  | 'write-failed'
+  | 'remove-failed';
+
+export interface ResumeStorageIssue {
+  code: ResumeStorageIssueCode;
+  blocking: boolean;
+  recoverable: boolean;
+}
+
+interface ResumeStorageOptions {
+  normalize?: (input: unknown) => ResumeDocumentV1;
+  onIssue?: (issue: ResumeStorageIssue | null) => void;
+}
+
+export interface ResumePersistStorage extends PersistStorage<Pick<ResumeStore, 'document'>> {
+  getIssue(): ResumeStorageIssue | null;
+  getRecoveryItem(): Promise<string | null>;
+  resolve(): Promise<void>;
+}
 
 type RepeatableSectionKey = 'experience' | 'projects' | 'education';
 type CollectionSectionKey = RepeatableSectionKey | 'skills' | 'certificates';
@@ -49,33 +76,197 @@ const serverStorage: StateStorage = {
 
 export function createResumeStorage(
   storage: StateStorage,
-): PersistStorage<Pick<ResumeStore, 'document'>> {
-  const parse = (serialized: string | null): StorageValue<Pick<ResumeStore, 'document'>> | null => {
-    if (serialized === null) return null;
+  options: ResumeStorageOptions = {},
+): ResumePersistStorage {
+  const normalize = options.normalize ?? normalizeResumeDocument;
+  let issue: ResumeStorageIssue | null = null;
+  let blocked = false;
+  let lastPrimaryRaw: string | null = null;
+
+  const report = (nextIssue: ResumeStorageIssue | null) => {
+    issue = nextIssue;
+    options.onIssue?.(nextIssue);
+  };
+
+  const fail = (code: ResumeStorageIssueCode, blocking: boolean, recoverable: boolean) => {
+    blocked = blocking;
+    report({ code, blocking, recoverable });
+  };
+
+  const preserve = (
+    serialized: string,
+    code: Extract<ResumeStorageIssueCode, 'malformed' | 'unsupported' | 'normalization-failed'>,
+  ): StorageValue<Pick<ResumeStore, 'document'>> | null | Promise<null> => {
+    blocked = true;
+    lastPrimaryRaw = serialized;
+    const finish = () => {
+      report({ code, blocking: true, recoverable: true });
+      return null;
+    };
     try {
-      const value: unknown = JSON.parse(serialized);
-      if (value !== null && typeof value === 'object' && Object.hasOwn(value, 'state')) {
-        return value as StorageValue<Pick<ResumeStore, 'document'>>;
-      }
+      const stored = storage.setItem(RESUME_STORAGE_BACKUP_KEY, serialized);
+      return stored instanceof Promise ? stored.then(finish, finish) : finish();
     } catch {
-      // A malformed local document must not prevent the user from opening a fresh resume.
+      return finish();
     }
-    void storage.removeItem(RESUME_STORAGE_KEY);
-    return null;
+  };
+
+  const parse = (
+    serialized: string | null,
+  ): StorageValue<Pick<ResumeStore, 'document'>> | null | Promise<null> => {
+    if (serialized === null) {
+      lastPrimaryRaw = null;
+      blocked = false;
+      if (issue?.blocking) report(null);
+      return null;
+    }
+    lastPrimaryRaw = serialized;
+    let value: unknown;
+    try {
+      value = JSON.parse(serialized);
+    } catch {
+      return preserve(serialized, 'malformed');
+    }
+    if (!value || typeof value !== 'object' || !Object.hasOwn(value, 'state')) {
+      return preserve(serialized, 'malformed');
+    }
+    const state = (value as { state?: unknown }).state;
+    if (!state || typeof state !== 'object' || !Object.hasOwn(state, 'document')) {
+      return preserve(serialized, 'malformed');
+    }
+    const document = (state as { document?: unknown }).document;
+    let normalized: ResumeDocumentV1;
+    try {
+      normalized = normalize(document);
+    } catch {
+      const version = document && typeof document === 'object'
+        ? (document as { schemaVersion?: unknown }).schemaVersion
+        : undefined;
+      return preserve(serialized, typeof version === 'number' && version > 1 ? 'unsupported' : 'normalization-failed');
+    }
+    blocked = false;
+    if (issue?.blocking) report(null);
+    return {
+      state: { document: normalized },
+      version: typeof (value as { version?: unknown }).version === 'number'
+        ? (value as { version: number }).version
+        : 0,
+    };
   };
 
   return {
     getItem: (name) => {
-      const value = storage.getItem(name);
-      return value instanceof Promise ? value.then(parse) : parse(value);
+      try {
+        const value = storage.getItem(name);
+        return value instanceof Promise
+          ? value.then(parse, () => {
+            fail('read-failed', true, false);
+            return null;
+          })
+          : parse(value);
+      } catch {
+        fail('read-failed', true, false);
+        return null;
+      }
     },
-    setItem: (name, value) => storage.setItem(name, JSON.stringify(value)),
-    removeItem: (name) => storage.removeItem(name),
+    setItem: (name, value) => {
+      if (name === RESUME_STORAGE_KEY && blocked) {
+        throw new Error('Resume persistence is blocked until storage recovery is resolved.');
+      }
+      const serialized = JSON.stringify(value);
+      const finish = () => {
+        if (name === RESUME_STORAGE_KEY) lastPrimaryRaw = serialized;
+        if (issue?.code === 'write-failed') report(null);
+      };
+      const reject = () => {
+        fail('write-failed', false, lastPrimaryRaw !== null);
+        throw new Error('Resume persistence failed.');
+      };
+      try {
+        const result = storage.setItem(name, serialized);
+        return result instanceof Promise ? result.then(finish, reject) : finish();
+      } catch {
+        return reject();
+      }
+    },
+    removeItem: (name) => {
+      const finish = () => {
+        if (name === RESUME_STORAGE_KEY) lastPrimaryRaw = null;
+        if (issue?.code === 'remove-failed') report(null);
+      };
+      const reject = () => {
+        fail('remove-failed', true, lastPrimaryRaw !== null);
+        throw new Error('Resume persistence removal failed.');
+      };
+      try {
+        const result = storage.removeItem(name);
+        return result instanceof Promise ? result.then(finish, reject) : finish();
+      } catch {
+        return reject();
+      }
+    },
+    getIssue: () => issue,
+    async getRecoveryItem() {
+      try {
+        const backup = await storage.getItem(RESUME_STORAGE_BACKUP_KEY);
+        if (backup !== null) return backup;
+        return await storage.getItem(RESUME_STORAGE_KEY);
+      } catch {
+        fail('read-failed', true, false);
+        return null;
+      }
+    },
+    async resolve() {
+      let primary: string | null;
+      try {
+        primary = await storage.getItem(RESUME_STORAGE_KEY);
+      } catch {
+        fail('read-failed', true, false);
+        throw new Error('Resume persistence read failed.');
+      }
+      if (primary !== null) {
+        try {
+          await storage.setItem(RESUME_STORAGE_BACKUP_KEY, primary);
+        } catch {
+          fail('write-failed', true, true);
+          throw new Error('Resume recovery backup failed.');
+        }
+      }
+      try {
+        await storage.removeItem(RESUME_STORAGE_KEY);
+      } catch {
+        fail('remove-failed', true, primary !== null);
+        throw new Error('Resume persistence removal failed.');
+      }
+      lastPrimaryRaw = null;
+      blocked = false;
+      report(null);
+    },
   };
+}
+
+let browserStorageIssue: ResumeStorageIssue | null = null;
+const storageIssueListeners = new Set<() => void>();
+
+function publishBrowserStorageIssue(issue: ResumeStorageIssue | null) {
+  browserStorageIssue = issue;
+  for (const listener of storageIssueListeners) listener();
+}
+
+export function useResumeStorageIssue(): ResumeStorageIssue | null {
+  return useSyncExternalStore(
+    listener => {
+      storageIssueListeners.add(listener);
+      return () => storageIssueListeners.delete(listener);
+    },
+    () => browserStorageIssue,
+    () => null,
+  );
 }
 
 const browserStorage = createResumeStorage(
   typeof window === 'undefined' ? serverStorage : window.localStorage,
+  { onIssue: publishBrowserStorageIssue },
 );
 
 function cloneDocument(document: ResumeDocumentV1): ResumeDocumentV1 {
@@ -353,3 +544,38 @@ export const useResumeStore = create<ResumeStore>()(persist(
     },
   },
 ));
+
+export async function getResumeStorageRecoveryItem(): Promise<string | null> {
+  return browserStorage.getRecoveryItem();
+}
+
+export async function retryResumeStoragePersistence(): Promise<boolean> {
+  const currentIssue = browserStorage.getIssue();
+  try {
+    if (currentIssue?.blocking) {
+      await useResumeStore.persist.rehydrate();
+    } else {
+      useResumeStore.setState({ document: cloneDocument(useResumeStore.getState().document) });
+    }
+  } catch {
+    return false;
+  }
+  return browserStorage.getIssue() === null;
+}
+
+export async function resolveResumeStorageWithEmptyDocument(): Promise<boolean> {
+  try {
+    await browserStorage.resolve();
+    useResumeStore.setState({
+      document: createEmptyResume(),
+      undoStack: [],
+      changeUndoStack: [],
+      stagedImport: null,
+      changes: [],
+      backup: null,
+    });
+  } catch {
+    return false;
+  }
+  return browserStorage.getIssue() === null;
+}

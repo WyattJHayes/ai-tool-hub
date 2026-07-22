@@ -2,7 +2,13 @@ import { parseJDAnalysis } from '@/features/resume/schema';
 import type { JDAnalysis } from '@/features/resume/types';
 import { analyzeJobDescription } from '@/server/resume/ai';
 import { ResumeApiError, toResumeErrorBody } from '@/server/resume/errors';
-import { reserveQuota, settleQuota, type QuotaReservation, type ReserveQuotaInput } from '@/server/resume/quota';
+import {
+  compensateQuota,
+  reserveQuota,
+  settleQuota,
+  type QuotaReservation,
+  type ReserveQuotaInput,
+} from '@/server/resume/quota';
 import { createSettlementCoordinator, type SettlementCoordinator } from '@/server/resume/settlement';
 import { requireSupabaseUser, type SupabaseUserIdentity } from '@/server/supabase-admin';
 
@@ -18,6 +24,7 @@ export interface AnalyzeJdRouteDependencies {
   authenticate(request: Request): Promise<SupabaseUserIdentity>;
   reserve(input: ReserveQuotaInput): Promise<QuotaReservation>;
   settle(ledgerId: string, outcome: 'consumed' | 'refunded'): Promise<unknown>;
+  compensate(ledgerId: string): Promise<unknown>;
   analyzeJobDescription(jdText: string, signal: AbortSignal): Promise<JDAnalysis>;
   logger: RouteLogger;
 }
@@ -26,6 +33,7 @@ const productionDependencies: AnalyzeJdRouteDependencies = {
   authenticate: requireSupabaseUser,
   reserve: reserveQuota,
   settle: settleQuota,
+  compensate: compensateQuota,
   analyzeJobDescription,
   logger: console,
 };
@@ -51,6 +59,7 @@ export function createAnalyzeJdRoute(dependencies: AnalyzeJdRouteDependencies = 
   return async function POST(request: Request): Promise<Response> {
     const id = requestId(request);
     let settlement: SettlementCoordinator | undefined;
+    let resultReady = false;
 
     try {
       const user = await dependencies.authenticate(request);
@@ -70,14 +79,21 @@ export function createAnalyzeJdRoute(dependencies: AnalyzeJdRouteDependencies = 
         idempotencyKey: idempotencyKey(request),
         requestId: id,
       });
-      settlement = createSettlementCoordinator(outcome => dependencies.settle(reservation.ledgerId, outcome));
+      settlement = createSettlementCoordinator(
+        outcome => dependencies.settle(reservation.ledgerId, outcome),
+        () => dependencies.compensate(reservation.ledgerId),
+      );
       const result = parseJDAnalysis(await dependencies.analyzeJobDescription(jdText, request.signal));
+      resultReady = true;
+      if (request.signal.aborted) throw new ResumeApiError('AI_CANCELLED', 499);
       await settlement.settle('consumed');
+      if (request.signal.aborted) throw new ResumeApiError('AI_CANCELLED', 499);
       dependencies.logger.info({ action: 'analyze-jd', requestId: id, status: 'consumed' });
       return Response.json(result);
     } catch (error) {
       try {
-        await settlement?.settle('refunded');
+        if (resultReady) await settlement?.compensate();
+        else await settlement?.settle('refunded');
       } catch {
         dependencies.logger.error({ action: 'analyze-jd', requestId: id, code: 'QUOTA_UNAVAILABLE' });
       }

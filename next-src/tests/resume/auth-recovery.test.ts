@@ -2,11 +2,12 @@ import assert from 'node:assert/strict';
 import test, { before } from 'node:test';
 
 type RecoveryModule = typeof import('../../src/features/auth/recovery');
-type RecoverySession = { user?: object } | null;
+type RecoverySession = { user?: { id?: string; email?: string } } | null;
 type RecoveryCallback = (event: string, session: RecoverySession) => void;
 type IntentStore = {
   captureUrlHash(hash: string): boolean;
-  mark(): void;
+  bindUser(userId: string): void;
+  userId(): string | null;
   isActive(): boolean;
   clear(): void;
 };
@@ -66,7 +67,7 @@ function memoryStorage() {
   };
 }
 
-function recoveryAuth(initialUser: object | null) {
+function recoveryAuth(initialUser: { id?: string; email?: string } | null) {
   let user = initialUser;
   let getSessionImpl = async () => ({ data: { session: user ? { user } : null }, error: null });
   const callbacks: RecoveryCallback[] = [];
@@ -74,7 +75,7 @@ function recoveryAuth(initialUser: object | null) {
   return {
     callbacks,
     updates,
-    setUser(nextUser: object | null) { user = nextUser; },
+    setUser(nextUser: { id?: string; email?: string } | null) { user = nextUser; },
     setGetSession(next: typeof getSessionImpl) { getSessionImpl = next; },
     emit(event: string, session: RecoverySession) {
       for (const callback of [...callbacks]) callback(event, session);
@@ -122,13 +123,16 @@ test('invalid or expired recovery does not call updateUser', async () => {
 });
 
 test('event before page start preserves recovery intent for the controller', async () => {
-  const client = recoveryAuth({ id: 'user-1' });
-  const intent = createIntentStore();
+  const storage = memoryStorage();
+  const client = recoveryAuth({ id: 'user-1', email: 'PRIVATE_EMAIL@example.com' });
+  const intent = createIntentStore(storage);
   const globalSubscription = registerIntentListener(client.auth, intent);
 
   assert.equal(client.callbacks.length, 1);
-  client.emit('PASSWORD_RECOVERY', { user: { id: 'user-1' } });
+  client.emit('PASSWORD_RECOVERY', { user: { id: 'user-1', email: 'PRIVATE_EMAIL@example.com' } });
   assert.equal(intent.isActive(), true);
+  assert.equal(intent.userId(), 'user-1');
+  assert.doesNotMatch(JSON.stringify([...storage.values]), /PRIVATE_EMAIL/);
 
   let authorized = 0;
   const controller = createController({
@@ -167,7 +171,7 @@ test('event during page start authorizes without waiting for URL inspection', as
   controller.dispose();
 });
 
-test('captured intent survives a consumed recovery URL without retaining tokens', async () => {
+test('a forged recovery URL marker never authorizes an ordinary existing session', async () => {
   const storage = memoryStorage();
   const intent = createIntentStore(storage);
   assert.equal(intent.captureUrlHash('#access_token=PRIVATE_TOKEN&type=recovery&refresh_token=PRIVATE_REFRESH'), true);
@@ -181,8 +185,53 @@ test('captured intent survives a consumed recovery URL without retaining tokens'
     onAuthorized: () => undefined,
   });
 
-  assert.equal(await controller.start(), true);
+  assert.equal(await controller.start(), false);
+  assert.deepEqual(await controller.updatePassword('new-password', 'new-password'), {
+    ok: false,
+    error: '重置链接无效或已过期，请重新申请。',
+  });
+  assert.deepEqual(client.updates, []);
   controller.dispose();
+});
+
+test('recovery authorization rejects a mismatched current session and clears the binding', async () => {
+  const client = recoveryAuth({ id: 'recovered-user' });
+  const intent = createIntentStore();
+  const globalSubscription = registerIntentListener(client.auth, intent);
+  client.emit('PASSWORD_RECOVERY', { user: { id: 'recovered-user' } });
+
+  const controller = createController({ auth: client.auth, intent, clearRecoveryUrl: () => undefined, onAuthorized: () => undefined });
+  assert.equal(await controller.start(), true);
+  client.setUser({ id: 'ordinary-user' });
+
+  assert.equal((await controller.updatePassword('new-password', 'new-password')).ok, false);
+  assert.deepEqual(client.updates, []);
+  assert.equal(intent.isActive(), false);
+  controller.dispose();
+  globalSubscription.unsubscribe();
+});
+
+test('expired user-bound recovery intent is cleaned up and cannot authorize refresh', async () => {
+  let now = 1_000;
+  const storage = memoryStorage();
+  const intent = createIntentStore(storage, () => now);
+  const client = recoveryAuth({ id: 'user-1' });
+  const globalSubscription = registerIntentListener(client.auth, intent);
+  client.emit('PASSWORD_RECOVERY', { user: { id: 'user-1' } });
+  assert.equal(intent.userId(), 'user-1');
+
+  now += 15 * 60 * 1_000 + 1;
+  const refreshed = createController({ auth: client.auth, intent, clearRecoveryUrl: () => undefined, onAuthorized: () => undefined });
+
+  assert.equal(await refreshed.start(), false);
+  assert.equal(intent.userId(), null);
+  assert.equal(storage.values.size, 0);
+  assert.deepEqual(await refreshed.updatePassword('new-password', 'new-password'), {
+    ok: false,
+    error: '重置链接无效或已过期，请重新申请。',
+  });
+  refreshed.dispose();
+  globalSubscription.unsubscribe();
 });
 
 test('refresh keeps callback-captured recovery authorization until password update succeeds', async () => {

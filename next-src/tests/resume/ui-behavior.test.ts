@@ -3,6 +3,7 @@ import test, { before } from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ResumePreview } from '../../src/components/resume/ResumePreview';
+import { useResumeStore } from '../../src/features/resume/store';
 import type { ResumeChange, ResumeDocumentV1 } from '../../src/features/resume/types';
 import type { ResumePaymentClient, ResumePaymentOrder } from '../../src/features/resume/api';
 
@@ -517,6 +518,62 @@ test('stages structural rows and string-list changes when AI candidate identifie
   assert.deepEqual(JSON.parse(changes[0].after), candidate.experience);
   assert.deepEqual(JSON.parse(changes[1].after), candidate.skills);
   assert.deepEqual(JSON.parse(changes[2].after), candidate.certificates);
+});
+
+test('submitted AI scalar changes conflict with edits made while the request is in flight', () => {
+  const createAIResumeSubmission = requireExport('createAIResumeSubmission');
+  const computeSubmittedAIChanges = requireExport('computeSubmittedAIChanges');
+  const submitted = createAIResumeSubmission(resume({ summary: 'Submitted summary' }), 'Current JD');
+  const candidate = { ...submitted.document, summary: 'AI summary' };
+  const edited = resume({ summary: 'Edited while waiting' });
+  useResumeStore.setState({ ...useResumeStore.getInitialState(), document: edited }, true);
+
+  const changes = computeSubmittedAIChanges(submitted, candidate, () => 'scalar-change');
+  useResumeStore.getState().setChanges(changes);
+
+  assert.equal(changes[0].before, 'Submitted summary');
+  assert.equal(useResumeStore.getState().acceptAllChanges(), 'conflict');
+  assert.equal(useResumeStore.getState().document.summary, 'Edited while waiting');
+  assert.deepEqual(useResumeStore.getState().changes, []);
+});
+
+test('submitted AI repeatable-section changes conflict atomically with in-flight structural edits', () => {
+  const createAIResumeSubmission = requireExport('createAIResumeSubmission');
+  const computeSubmittedAIChanges = requireExport('computeSubmittedAIChanges');
+  const submittedDocument = resume({
+    experience: [{ id: 'submitted-row', company: 'Acme', role: 'Engineer', startDate: '', endDate: '', description: 'Submitted work' }],
+  });
+  const submitted = createAIResumeSubmission(submittedDocument, 'Current JD');
+  const candidate = resume({
+    experience: [{ id: 'ai-row', company: 'Acme', role: 'Senior Engineer', startDate: '', endDate: '', description: 'AI work' }],
+  });
+  const manualRow = { id: 'manual-row', company: 'Manual Co', role: 'Lead', startDate: '', endDate: '', description: 'Manual work' };
+  const edited = resume({ experience: [...submittedDocument.experience, manualRow] });
+  useResumeStore.setState({ ...useResumeStore.getInitialState(), document: edited }, true);
+
+  const changes = computeSubmittedAIChanges(submitted, candidate, () => 'collection-change');
+  useResumeStore.getState().setChanges(changes);
+
+  assert.equal(changes[0].field, 'items');
+  assert.deepEqual(JSON.parse(changes[0].before), submittedDocument.experience);
+  assert.equal(useResumeStore.getState().acceptAllChanges(), 'conflict');
+  assert.deepEqual(useResumeStore.getState().document.experience, edited.experience);
+  assert.deepEqual(useResumeStore.getState().changes, []);
+});
+
+test('AI submission captures the current JD supplier value and canonical document exactly once', () => {
+  const createAIResumeSubmission = requireExport('createAIResumeSubmission');
+  const suppliedDocument = resume({ summary: 'Current supplied document' });
+  let suppliedJobDescription = 'Current supplied JD';
+
+  const submitted = createAIResumeSubmission(suppliedDocument, suppliedJobDescription);
+  suppliedDocument.summary = 'Later document edit';
+  suppliedJobDescription = 'Later JD edit';
+
+  assert.equal(submitted.document.summary, 'Current supplied document');
+  assert.equal(submitted.jobDescription, 'Current supplied JD');
+  assert.notEqual(submitted.document, suppliedDocument);
+  assert.equal(suppliedJobDescription, 'Later JD edit');
 });
 
 test('resumes a pending protected action once without retaining resume or JD content', () => {

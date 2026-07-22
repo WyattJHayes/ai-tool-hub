@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+readonly RESTORATION_FAILED_STATUS=75
+
 release_sha256() {
     if command -v sha256sum >/dev/null 2>&1; then
         sha256sum "$1" | awk '{print $1}'
@@ -178,18 +180,69 @@ restore_active_release() {
     local env_file="$5"
     local rollback_image="$6"
     local revision="$7"
+    local restoration_failed=0
+    local step
 
-    docker rm -f weihub-app >/dev/null 2>&1 || true
-    rm -rf "$active_source"
-    mv "$backup_root/previous-source" "$active_source"
-    install -m 0644 "$backup_root/previous-docker-compose.yml" "$active_compose"
-    install -m 0644 "$backup_root/previous-nginx.conf" "$active_nginx"
-    docker tag "$rollback_image" ai-resume-optimizer:latest
-    run_release_compose "$env_file" "$active_compose" \
+    step=candidate_cleanup
+    if ! docker rm -f weihub-app >/dev/null 2>&1; then
+        echo "restoration_step=$step status=failed" >&2
+        restoration_failed=1
+    fi
+
+    step=source_cleanup
+    if ! rm -rf "$active_source" >/dev/null 2>&1; then
+        echo "restoration_step=$step status=failed" >&2
+        restoration_failed=1
+    fi
+
+    step=source
+    if ! mv "$backup_root/previous-source" "$active_source" >/dev/null 2>&1; then
+        echo "restoration_step=$step status=failed" >&2
+        restoration_failed=1
+    fi
+
+    step=compose_config
+    if ! install -m 0644 "$backup_root/previous-docker-compose.yml" "$active_compose" >/dev/null 2>&1; then
+        echo "restoration_step=$step status=failed" >&2
+        restoration_failed=1
+    fi
+
+    step=nginx_config
+    if ! install -m 0644 "$backup_root/previous-nginx.conf" "$active_nginx" >/dev/null 2>&1; then
+        echo "restoration_step=$step status=failed" >&2
+        restoration_failed=1
+    fi
+
+    step=image_tag
+    if ! docker tag "$rollback_image" ai-resume-optimizer:latest >/dev/null 2>&1; then
+        echo "restoration_step=$step status=failed" >&2
+        restoration_failed=1
+    fi
+
+    step=compose_recreate
+    if ! run_release_compose "$env_file" "$active_compose" \
         ai-resume-optimizer:latest "$active_source" "$revision" \
-        up -d --force-recreate >/dev/null 2>&1
-    docker exec dgc-nginx nginx -t >/dev/null 2>&1 || true
-    docker exec dgc-nginx nginx -s reload >/dev/null 2>&1 || true
+        up -d --force-recreate >/dev/null 2>&1; then
+        echo "restoration_step=$step status=failed" >&2
+        restoration_failed=1
+    fi
+
+    step=nginx_test
+    if docker exec dgc-nginx nginx -t >/dev/null 2>&1; then
+        step=nginx_reload
+        if ! docker exec dgc-nginx nginx -s reload >/dev/null 2>&1; then
+            echo "restoration_step=$step status=failed" >&2
+            restoration_failed=1
+        fi
+    else
+        echo "restoration_step=$step status=failed" >&2
+        restoration_failed=1
+    fi
+
+    if [ "$restoration_failed" -ne 0 ]; then
+        return "$RESTORATION_FAILED_STATUS"
+    fi
+    echo "candidate_restoration=passed"
 }
 
 run_candidate_activation() {
@@ -206,13 +259,20 @@ run_candidate_activation() {
     local revision="${11}"
     local verify_callback="${12}"
     local status
+    local restoration_status
 
     handle_activation_signal() {
         local signal_status="$1"
         trap - INT TERM
         if [ -d "$backup_root/previous-source" ]; then
-            restore_active_release "$active_source" "$active_compose" "$active_nginx" \
-                "$backup_root" "$env_file" "$rollback_image" "$revision" || true
+            if restore_active_release "$active_source" "$active_compose" "$active_nginx" \
+                "$backup_root" "$env_file" "$rollback_image" "$revision"; then
+                :
+            else
+                restoration_status=$?
+                echo "candidate_restoration=failed original_status=$signal_status restoration_status=$restoration_status" >&2
+                exit "$restoration_status"
+            fi
         fi
         exit "$signal_status"
     }
@@ -253,8 +313,14 @@ run_candidate_activation() {
     fi
 
     trap - INT TERM
-    restore_active_release "$active_source" "$active_compose" "$active_nginx" \
-        "$backup_root" "$env_file" "$rollback_image" "$revision" || true
+    if restore_active_release "$active_source" "$active_compose" "$active_nginx" \
+        "$backup_root" "$env_file" "$rollback_image" "$revision"; then
+        :
+    else
+        restoration_status=$?
+        echo "candidate_restoration=failed original_status=$status restoration_status=$restoration_status" >&2
+        return "$restoration_status"
+    fi
     return "$status"
 }
 

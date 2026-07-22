@@ -2,7 +2,13 @@ import { parseResumeDocument } from '@/features/resume/schema';
 import type { ResumeDocumentV1 } from '@/features/resume/types';
 import { parseResume } from '@/server/resume/ai';
 import { ResumeApiError, toResumeErrorBody } from '@/server/resume/errors';
-import { reserveQuota, settleQuota, type QuotaReservation, type ReserveQuotaInput } from '@/server/resume/quota';
+import {
+  compensateQuota,
+  reserveQuota,
+  settleQuota,
+  type QuotaReservation,
+  type ReserveQuotaInput,
+} from '@/server/resume/quota';
 import { createSettlementCoordinator, type SettlementCoordinator } from '@/server/resume/settlement';
 import { requireSupabaseUser, type SupabaseUserIdentity } from '@/server/supabase-admin';
 
@@ -18,6 +24,7 @@ export interface ParseRouteDependencies {
   authenticate(request: Request): Promise<SupabaseUserIdentity>;
   reserve(input: ReserveQuotaInput): Promise<QuotaReservation>;
   settle(ledgerId: string, outcome: 'consumed' | 'refunded'): Promise<unknown>;
+  compensate(ledgerId: string): Promise<unknown>;
   parseResume(text: string, signal: AbortSignal): Promise<ResumeDocumentV1>;
   logger: RouteLogger;
 }
@@ -26,6 +33,7 @@ const productionDependencies: ParseRouteDependencies = {
   authenticate: requireSupabaseUser,
   reserve: reserveQuota,
   settle: settleQuota,
+  compensate: compensateQuota,
   parseResume,
   logger: console,
 };
@@ -56,6 +64,7 @@ export function createParseRoute(dependencies: ParseRouteDependencies = producti
   return async function POST(request: Request): Promise<Response> {
     const id = requestId(request);
     let settlement: SettlementCoordinator | undefined;
+    let resultReady = false;
 
     try {
       const user = await dependencies.authenticate(request);
@@ -75,14 +84,21 @@ export function createParseRoute(dependencies: ParseRouteDependencies = producti
         idempotencyKey: idempotencyKey(request),
         requestId: id,
       });
-      settlement = createSettlementCoordinator(outcome => dependencies.settle(reservation.ledgerId, outcome));
+      settlement = createSettlementCoordinator(
+        outcome => dependencies.settle(reservation.ledgerId, outcome),
+        () => dependencies.compensate(reservation.ledgerId),
+      );
       const result = parseResumeDocument(await dependencies.parseResume(text, request.signal));
+      resultReady = true;
+      if (request.signal.aborted) throw new ResumeApiError('AI_CANCELLED', 499);
       await settlement.settle('consumed');
+      if (request.signal.aborted) throw new ResumeApiError('AI_CANCELLED', 499);
       dependencies.logger.info({ action: 'parse', requestId: id, status: 'consumed' });
       return Response.json(result);
     } catch (error) {
       try {
-        await settlement?.settle('refunded');
+        if (resultReady) await settlement?.compensate();
+        else await settlement?.settle('refunded');
       } catch {
         dependencies.logger.error({ action: 'parse', requestId: id, code: 'QUOTA_UNAVAILABLE' });
       }

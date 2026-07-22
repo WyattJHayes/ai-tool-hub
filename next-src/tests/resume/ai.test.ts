@@ -315,42 +315,147 @@ test('settles parse and JD reservations consumed on success and refunded once on
   assert.doesNotMatch(JSON.stringify([...parse.state.logs, ...analyze.state.logs]), /PRIVATE_RESUME_TEXT|PRIVATE_JD_TEXT/);
 });
 
-test('parse and JD each refund exactly once after consumed settlement fails', async () => {
+test('parse and JD compensate a commit-then-transport-error exactly once with Basic and VIP semantics', async () => {
   const scenarios = [
     {
+      plan: 'basic' as const,
       path: '/api/resume/parse',
       body: { text: 'resume' },
-      create: (settle: (ledgerId: string, outcome: 'consumed' | 'refunded') => Promise<unknown>) => {
+      create: (overrides: Record<string, unknown>) => {
         const harness = routeHarness();
-        return createParseRoute({ ...harness.dependencies, settle, parseResume: async () => documentFixture() });
+        return createParseRoute({ ...harness.dependencies, ...overrides, parseResume: async () => documentFixture() });
       },
     },
     {
+      plan: 'vip' as const,
       path: '/api/resume/analyze-jd',
       body: { jdText: 'job description' },
-      create: (settle: (ledgerId: string, outcome: 'consumed' | 'refunded') => Promise<unknown>) => {
+      create: (overrides: Record<string, unknown>) => {
         const harness = routeHarness();
-        return createAnalyzeJdRoute({ ...harness.dependencies, settle, analyzeJobDescription: async () => jdFixture() });
+        return createAnalyzeJdRoute({ ...harness.dependencies, ...overrides, analyzeJobDescription: async () => jdFixture() });
       },
     },
   ];
 
   for (const scenario of scenarios) {
-    const attempts: Array<'consumed' | 'refunded'> = [];
-    const completed: Array<'consumed' | 'refunded'> = [];
-    const route = scenario.create(async (_ledgerId, outcome) => {
-      attempts.push(outcome);
-      if (outcome === 'consumed') throw new ResumeApiError('QUOTA_UNAVAILABLE', 503);
-      completed.push(outcome);
-      return {};
+    const calls: string[] = [];
+    let remaining: number | null = scenario.plan === 'basic' ? 10 : null;
+    const route = scenario.create({
+      reserve: async () => {
+        calls.push(`reserve:${scenario.plan}`);
+        if (remaining !== null) remaining -= 1;
+        return { ledgerId: 'ledger-1', plan: scenario.plan, remaining, total: remaining === null ? null : 10, resetAt: null };
+      },
+      settle: async (_ledgerId: string, outcome: 'consumed' | 'refunded') => {
+        calls.push(`settle:${outcome}`);
+        if (outcome === 'consumed') {
+          // The database commit succeeded, but the RPC response was lost in transit.
+          throw new ResumeApiError('QUOTA_UNAVAILABLE', 503);
+        }
+        if (remaining !== null) remaining += 1;
+        return {};
+      },
+      compensate: async () => {
+        calls.push('compensate');
+        if (remaining !== null) remaining += 1;
+        return {};
+      },
     });
 
     const response = await route(postRequest(scenario.path, scenario.body));
 
     assert.equal(response.status, 503);
-    assert.deepEqual(attempts, ['consumed', 'refunded']);
-    assert.deepEqual(completed, ['refunded']);
+    assert.deepEqual(calls, [`reserve:${scenario.plan}`, 'settle:consumed', 'compensate']);
+    assert.equal(remaining, scenario.plan === 'basic' ? 10 : null);
   }
+});
+
+test('parse and JD compensate post-result cancellation before response delivery', async () => {
+  const scenarios = [
+    {
+      path: '/api/resume/parse',
+      body: { text: 'resume' },
+      create: (overrides: Record<string, unknown>) => {
+        const harness = routeHarness();
+        return createParseRoute({ ...harness.dependencies, ...overrides, parseResume: async () => documentFixture() });
+      },
+    },
+    {
+      path: '/api/resume/analyze-jd',
+      body: { jdText: 'job description' },
+      create: (overrides: Record<string, unknown>) => {
+        const harness = routeHarness();
+        return createAnalyzeJdRoute({ ...harness.dependencies, ...overrides, analyzeJobDescription: async () => jdFixture() });
+      },
+    },
+  ];
+
+  for (const scenario of scenarios) {
+    const calls: string[] = [];
+    let consumeStarted!: () => void;
+    let finishConsume!: () => void;
+    const started = new Promise<void>(resolve => { consumeStarted = resolve; });
+    const consume = new Promise<void>(resolve => { finishConsume = resolve; });
+    const requestController = new AbortController();
+    const route = scenario.create({
+      reserve: async () => {
+        calls.push('reserve');
+        return { ledgerId: 'ledger-1', plan: 'basic' as const, remaining: 9, total: 10, resetAt: null };
+      },
+      settle: async (_ledgerId: string, outcome: 'consumed' | 'refunded') => {
+        calls.push(`settle:${outcome}`);
+        if (outcome === 'consumed') {
+          consumeStarted();
+          await consume;
+        }
+        return {};
+      },
+      compensate: async () => {
+        calls.push('compensate');
+        return {};
+      },
+    });
+
+    const pendingResponse = route(postRequest(scenario.path, scenario.body, 'post-result-cancel', requestController.signal));
+    await started;
+    requestController.abort();
+    finishConsume();
+    const response = await pendingResponse;
+
+    assert.equal(response.status, 499);
+    assert.equal((await response.json()).error.code, 'AI_CANCELLED');
+    assert.deepEqual(calls, ['reserve', 'settle:consumed', 'compensate']);
+  }
+});
+
+test('optimize compensates a consumed commit with a lost RPC response and never delivers done', async () => {
+  const { dependencies } = routeHarness();
+  const calls: string[] = [];
+  const route = createOptimizeRoute({
+    ...dependencies,
+    reserve: async () => {
+      calls.push('reserve:basic');
+      return { ledgerId: 'ledger-1', plan: 'basic', remaining: 9, total: 10, resetAt: null };
+    },
+    settle: async (_ledgerId, outcome) => {
+      calls.push(`settle:${outcome}`);
+      if (outcome === 'consumed') throw new ResumeApiError('QUOTA_UNAVAILABLE', 503);
+      return {};
+    },
+    compensate: async () => {
+      calls.push('compensate');
+      return {};
+    },
+    streamResumeOptimization: async function* () {
+      yield { type: 'done', data: optimizationFixture() };
+    },
+  });
+
+  const body = await (await route(postRequest('/api/resume/optimize', { level: 'light', resumeText: 'resume' }))).text();
+
+  assert.match(body, /event: error[\s\S]*QUOTA_UNAVAILABLE/);
+  assert.doesNotMatch(body, /event: done/);
+  assert.deepEqual(calls, ['reserve:basic', 'settle:consumed', 'compensate']);
 });
 
 test('forwards duplicate idempotency keys to the atomic reservation adapter without deriving identity from input', async () => {

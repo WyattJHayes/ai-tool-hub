@@ -13,6 +13,7 @@ import type {
   ResumePurchasablePlan,
 } from './api';
 import type { ResumeQuotaSummary } from './types';
+import { normalizeResumeDocument } from './schema';
 
 export type ResumeImportMode = 'merge' | 'replace';
 export type ResumeSaveState = 'unsaved' | 'saving' | 'saved' | 'error';
@@ -524,6 +525,29 @@ export function computeResumeChanges(
   appendCollectionChange(changes, makeId, 'skills', current.skills, candidate.skills);
   appendCollectionChange(changes, makeId, 'certificates', current.certificates, candidate.certificates);
   return changes;
+}
+
+export interface AIResumeSubmission {
+  document: ResumeDocumentV1;
+  jobDescription: string;
+}
+
+export function createAIResumeSubmission(
+  document: ResumeDocumentV1,
+  jobDescription: string,
+): AIResumeSubmission {
+  return {
+    document: normalizeResumeDocument(document),
+    jobDescription,
+  };
+}
+
+export function computeSubmittedAIChanges(
+  submission: AIResumeSubmission,
+  candidate: ResumeDocumentV1,
+  makeId: () => string = () => globalThis.crypto.randomUUID(),
+): ResumeChange[] {
+  return computeResumeChanges(submission.document, normalizeResumeDocument(candidate), makeId);
 }
 
 export interface PaymentScheduler {

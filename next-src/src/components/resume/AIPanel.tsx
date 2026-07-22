@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, Sparkles, Square, Undo2, X } from 'lucide-react';
 import { ClientResumeApiError, resumeApi } from '@/features/resume/api';
-import { normalizeResumeDocument } from '@/features/resume/schema';
 import { useResumeStore } from '@/features/resume/store';
 import {
-  computeResumeChanges,
+  computeSubmittedAIChanges,
+  createAIResumeSubmission,
   createAIUndoController,
+  type AIResumeSubmission,
   type PendingResumeAction,
   type ProtectedResumeActionContext,
 } from '@/features/resume/ui';
@@ -128,9 +129,8 @@ export function AIPanel({
     documentRef.current = document;
   }, [document]);
 
-  const stageCandidate = useCallback((candidate: ResumeDocumentV1, score?: number) => {
-    const normalized = normalizeResumeDocument(candidate);
-    const nextChanges = computeResumeChanges(documentRef.current, normalized);
+  const stageCandidate = useCallback((submission: AIResumeSubmission, candidate: ResumeDocumentV1, score?: number) => {
+    const nextChanges = computeSubmittedAIChanges(submission, candidate);
     if (!nextChanges.length) {
       setState('error');
       setError('AI 已完成，但没有可审阅的字段修改。');
@@ -156,8 +156,11 @@ export function AIPanel({
     setError('');
     setProgress('正在校验本地输入');
     setTokens('');
-    const sourceDocument = context?.document ?? documentRef.current;
-    const sourceJobDescription = context?.jobDescription ?? jobDescription;
+    const submission = createAIResumeSubmission(
+      context?.document ?? documentRef.current,
+      context?.jobDescription ?? jobDescription,
+    );
+    const sourceJobDescription = submission.jobDescription;
     try {
       if ((action.kind === 'analyze-jd' || (action.kind === 'optimize' && action.level !== 'light')) && !sourceJobDescription.trim()) {
         throw new Error('JD_REQUIRED');
@@ -165,7 +168,7 @@ export function AIPanel({
       setState('reserving');
       setProgress('正在预留 1 次额度');
       if (action.kind === 'parse') {
-        stageCandidate(await resumeApi.parseResume(JSON.stringify(sourceDocument), controller.signal));
+        stageCandidate(submission, await resumeApi.parseResume(JSON.stringify(submission.document), controller.signal));
       } else if (action.kind === 'analyze-jd') {
         setAnalysis(await resumeApi.analyzeJobDescription(sourceJobDescription, controller.signal));
         setState('idle');
@@ -173,7 +176,7 @@ export function AIPanel({
       } else {
         const result = await resumeApi.streamOptimize(
           action.level,
-          JSON.stringify(sourceDocument),
+          JSON.stringify(submission.document),
           sourceJobDescription,
           {
             onProgress: value => {
@@ -187,7 +190,7 @@ export function AIPanel({
           },
           controller.signal,
         );
-        stageCandidate(result.optimizedData, result.score);
+        stageCandidate(submission, result.optimizedData, result.score);
       }
     } catch (reason) {
       if (reason instanceof Error && reason.message === 'JD_REQUIRED') {
