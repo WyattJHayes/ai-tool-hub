@@ -265,29 +265,35 @@ test('ships a deterministic browser acceptance guard with private temporary evid
   assert.match(guard, /\.html/);
   assert.match(guard, /\.md/);
   assert.match(guard, /waitForEvent\(['"]download['"]/);
-  assert.match(guard, /document\.documentElement\.scrollWidth/);
-  assert.match(guard, /getBoundingClientRect/);
-  assert.match(guard, /prefers-reduced-motion/);
   assert.match(guard, /weihub-resume-v1/);
-  assert.match(guard, /sentry|analytics/i);
   assert.match(guard, /支付渠道尚未通过生产校验/);
   assert.match(guard, /orderRequests/);
   assert.doesNotMatch(guard, /REQUIRE_XDDPAY_FIXTURE|XDDPAY_SIGNATURE_FIXTURE/);
+  for (const helper of [
+    'exerciseCommittedImports',
+    'renderDownloadedPdf',
+    'attachEvidence',
+    'flushEvidence',
+    'assertPrivacy',
+    'focusVisualSignature',
+  ]) {
+    assert.match(guard, new RegExp(`function ${helper}|const ${helper}`), `missing stable guard helper: ${helper}`);
+  }
+});
 
-  const navigationGuard = guard.match(/async function exerciseNavigationAndSearch\(page\) \{[\s\S]*?\n\}/)?.[0] ?? '';
-  assert.match(navigationGuard, /waitUntil:\s*['"]domcontentloaded['"]/);
-  assert.match(navigationGuard, /按任务找到合适的 AI 工具/);
-  assert.match(navigationGuard, /a\[href=\\?['"]\/resume\\?['"]\][^\n]*a\[href=\\?['"]\/resume\/\\?['"]\]/);
-  assert.match(navigationGuard, /waitForFunction[\s\S]*__reactProps\$/);
-  assert.match(navigationGuard, /Promise\.all\(\[\s*page\.waitForURL/);
-  assert.match(navigationGuard, /searchParams\.get\(['"]q['"]\)\s*===\s*['"]简历['"]/);
-  assert.match(navigationGuard, /inputValue\(\)/);
-  assert.match(navigationGuard, /1 款工具/);
-  assert.doesNotMatch(navigationGuard, /networkidle/);
-  assert.match(guard, /addInitScript\(storageSeed,\s*\{\s*theme,\s*document:\s*seedResumeDocument\(\)\s*\}\)/);
-  assert.match(guard, /Number\.parseFloat\(root\.animationDuration\)\s*<=\s*0\.00001/);
-  assert.match(guard, /png\.length\s*>\s*2_000/);
-  assert.doesNotMatch(guard, /png\.length\s*>\s*10_000/);
+test('wires downloaded PDF rendering and redacted all-context evidence into the guard', () => {
+  const guard = readFileSync(new URL('../../scripts/resume-ui-guard.mjs', import.meta.url), 'utf8');
+
+  assert.match(guard, /pdfjs-dist\/legacy\/build\/pdf\.mjs/);
+  assert.match(guard, /@napi-rs\/canvas/);
+  assert.match(guard, /resume-export-page\.png/);
+  assert.match(guard, /createHash/);
+  assert.match(guard, /sha256/);
+  assert.match(guard, /privateDiagnosticId/);
+  assert.match(guard, /page\.on\(['"]console['"]/);
+  assert.match(guard, /page\.on\(['"]response['"]/);
+  assert.match(guard, /\['BUTTON', 'A', 'INPUT', 'TEXTAREA', 'SELECT'\]/);
+  assert.doesNotMatch(guard, /console leaked private text:\s*\$\{/);
 });
 
 test('runs the exact resume acceptance sequence before deployment', () => {

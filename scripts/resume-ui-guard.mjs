@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
 import { prepareQaDir } from './carbon-qa-path.mjs';
 
@@ -13,12 +15,21 @@ const serverLog = process.env.RESUME_SERVER_LOG || '';
 const privateSentinel = 'RESUME-PRIVATE-SENTINEL-11';
 const jdSentinel = 'JD-PRIVATE-SENTINEL-11';
 const aiSentinel = 'AI-PRIVATE-SENTINEL-11';
+const fixtureMarkers = {
+  txt: 'TXT-PRIVATE-SENTINEL-11',
+  html: 'HTML-PRIVATE-SENTINEL-11',
+  md: 'MARKDOWN-PRIVATE-SENTINEL-11',
+  pdf: 'PDF-PRIVATE-SENTINEL-11',
+  docx: 'DOCX-PRIVATE-SENTINEL-11',
+};
 const allowedPrivateStorageKey = 'weihub-resume-v1';
 const rootDir = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const nextRequire = createRequire(path.join(rootDir, 'next-src/package.json'));
 const { jsPDF } = nextRequire('jspdf');
 const JSZip = nextRequire('jszip');
 const sharp = nextRequire('sharp');
+const { createCanvas } = nextRequire('@napi-rs/canvas');
+const pdfJsModule = import(pathToFileURL(nextRequire.resolve('pdfjs-dist/legacy/build/pdf.mjs')).href);
 
 const viewports = [
   { width: 1440, height: 900 },
@@ -27,10 +38,9 @@ const viewports = [
   { width: 320, height: 844 },
 ];
 const themes = ['light', 'dark'];
-const privateValues = [privateSentinel, jdSentinel, aiSentinel];
+const privateValues = [privateSentinel, jdSentinel, aiSentinel, ...Object.values(fixtureMarkers)];
 const responseDiagnostics = [];
 const requestDiagnostics = [];
-const consoleDiagnostics = [];
 const externalMockState = {
   exhausted: false,
   quotaRemaining: 12,
@@ -267,9 +277,26 @@ async function routeBrowserSupabase(page) {
 
 function installFetchDiagnostics() {
   const nativeFetch = window.fetch;
+  window.__resumeQaEvidence = { captureFailures: [], pending: 0, responses: [] };
   window.fetch = async function qaFetch(...args) {
     try {
-      return await nativeFetch.apply(this, args);
+      const response = await nativeFetch.apply(this, args);
+      const url = response.url;
+      const pathname = new URL(url).pathname;
+      const finiteAccountResponse = /\/api\/resume\/(?:quota|plans|orders|payment)/.test(pathname);
+      if ((pathname.startsWith('/api/') && response.status >= 400) || finiteAccountResponse) {
+        window.__resumeQaEvidence.pending += 1;
+        void response.clone().text()
+          .then((body) => window.__resumeQaEvidence.responses.push({
+            body,
+            channel: response.status >= 400 ? 'api-error-response' : 'quota-order-response',
+            status: response.status,
+            url,
+          }))
+          .catch(() => window.__resumeQaEvidence.captureFailures.push({ status: response.status, url }))
+          .finally(() => { window.__resumeQaEvidence.pending -= 1; });
+      }
+      return response;
     } catch (error) {
       console.error('QA fetch failed before a response', String(args[0]), error instanceof Error ? error.stack : String(error));
       throw error;
@@ -282,30 +309,27 @@ function installFetchDiagnostics() {
 
 async function createFixtures() {
   const fixtureDir = await prepareQaDir(path.join(qaDir, 'fixtures'));
-  const resumeText = `${privateSentinel}\nqa@example.test\n\nExperience\nAcme | Engineer | 2023 - Present\nBuilt local-first tools.\n\nEducation\nExample University | Computer Science | Bachelor | 2018 - 2022\n\nSkills\nTypeScript, Playwright`;
+  const resumeText = (marker) => `${marker}\nqa@example.test\n\nExperience\nAcme | Engineer | 2023 - Present\nBuilt local-first tools.\n\nEducation\nExample University | Computer Science | Bachelor | 2018 - 2022\n\nSkills\nTypeScript, Playwright`;
   const fixtures = {
-    txt: path.join(fixtureDir, 'resume-private.txt'),
-    html: path.join(fixtureDir, 'resume-private.html'),
-    md: path.join(fixtureDir, 'resume-private.md'),
-    pdf: path.join(fixtureDir, 'resume-private.pdf'),
-    docx: path.join(fixtureDir, 'resume-private.docx'),
+    txt: { kind: 'TXT', marker: fixtureMarkers.txt, path: path.join(fixtureDir, 'resume-private.txt') },
+    html: { kind: 'HTML', marker: fixtureMarkers.html, path: path.join(fixtureDir, 'resume-private.html') },
+    md: { kind: 'Markdown', marker: fixtureMarkers.md, path: path.join(fixtureDir, 'resume-private.md') },
+    pdf: { kind: 'PDF', marker: fixtureMarkers.pdf, path: path.join(fixtureDir, 'resume-private.pdf') },
+    docx: { kind: 'DOCX', marker: fixtureMarkers.docx, path: path.join(fixtureDir, 'resume-private.docx') },
   };
-  await writeFile(fixtures.txt, resumeText);
-  await writeFile(fixtures.html, `<main><h1>${privateSentinel}</h1><p>qa@example.test</p><h2>Skills</h2><p>TypeScript, Playwright</p></main>`);
-  await writeFile(fixtures.md, `# ${privateSentinel}\n\nqa@example.test\n\n## Skills\nTypeScript, Playwright`);
+  await writeFile(fixtures.txt.path, resumeText(fixtures.txt.marker));
+  await writeFile(fixtures.html.path, `<main>\n${fixtures.html.marker}\nqa@example.test\n<h2>Experience</h2>\nAcme | Engineer | 2023 - Present\nBuilt local-first tools.\n<h2>Education</h2>\nExample University | Computer Science | Bachelor | 2018 - 2022\n<h2>Skills</h2>\nTypeScript, Playwright\n</main>`);
+  await writeFile(fixtures.md.path, `# ${fixtures.md.marker}\n\nqa@example.test\n\n## Experience\nAcme | Engineer | 2023 - Present\nBuilt local-first tools.\n\n## Education\nExample University | Computer Science | Bachelor | 2018 - 2022\n\n## Skills\nTypeScript, Playwright`);
 
   const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
-  pdf.text(privateSentinel, 48, 72);
-  pdf.text('qa@example.test', 48, 96);
-  pdf.text('Skills', 48, 132);
-  pdf.text('TypeScript, Playwright', 48, 156);
-  await writeFile(fixtures.pdf, Buffer.from(pdf.output('arraybuffer')));
+  pdf.text(fixtures.pdf.marker, 48, 72);
+  await writeFile(fixtures.pdf.path, Buffer.from(pdf.output('arraybuffer')));
 
   const zip = new JSZip();
   zip.file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>');
   zip.folder('_rels').file('.rels', '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>');
-  zip.folder('word').file('document.xml', `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>${privateSentinel}</w:t></w:r></w:p><w:p><w:r><w:t>qa@example.test</w:t></w:r></w:p><w:p><w:r><w:t>Skills</w:t></w:r></w:p><w:p><w:r><w:t>TypeScript, Playwright</w:t></w:r></w:p></w:body></w:document>`);
-  await writeFile(fixtures.docx, await zip.generateAsync({ type: 'nodebuffer' }));
+  zip.folder('word').file('document.xml', `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>${fixtures.docx.marker}</w:t></w:r></w:p><w:p><w:r><w:t>qa@example.test</w:t></w:r></w:p><w:p><w:r><w:t>Skills</w:t></w:r></w:p><w:p><w:r><w:t>TypeScript, Playwright</w:t></w:r></w:p></w:body></w:document>`);
+  await writeFile(fixtures.docx.path, await zip.generateAsync({ type: 'nodebuffer' }));
   return fixtures;
 }
 
@@ -325,6 +349,90 @@ function storageSeed({ theme, document = seedResumeDocument() }) {
 
 function containsPrivateText(value) {
   return privateValues.some((sentinel) => String(value).includes(sentinel));
+}
+
+function privateDiagnosticId(value) {
+  return createHash('sha256').update(String(value)).digest('hex').slice(0, 12);
+}
+
+function redactPrivateText(value) {
+  let redacted = String(value);
+  for (const privateValue of privateValues) {
+    redacted = redacted.replaceAll(privateValue, `[redacted:${privateDiagnosticId(privateValue)}]`);
+  }
+  return redacted;
+}
+
+function safeJson(value) {
+  return redactPrivateText(JSON.stringify(value));
+}
+
+function assertPrivateFree(channel, value, { url = '', status = 0 } = {}) {
+  if (!containsPrivateText(value)) return;
+  const safeUrl = redactPrivateText(url || '-');
+  throw new Error(`privacy violation channel=${channel} url=${safeUrl} status=${status || '-'} id=${privateDiagnosticId(value)}`);
+}
+
+function createEvidence() {
+  return {
+    captureFailures: [],
+    consoleEntries: [],
+    orderRequests: [],
+    responseBodies: [],
+    storageSnapshots: [],
+    telemetryRequests: [],
+  };
+}
+
+function attachEvidence(page, evidence) {
+  page.on('console', (message) => {
+    const entry = {
+      channel: `console:${message.type()}`,
+      text: message.text(),
+      url: message.location().url || '',
+    };
+    evidence.consoleEntries.push(entry);
+  });
+  page.on('request', (request) => {
+    const url = request.url();
+    const pathname = new URL(url).pathname;
+    if (pathname.startsWith('/api/resume/')) requestDiagnostics.push({ method: request.method(), url });
+    if (/\/api\/resume\/(?:orders|payment)/.test(pathname)) evidence.orderRequests.push(url);
+    if (/sentry|analytics|telemetry|collect/i.test(url)) {
+      evidence.telemetryRequests.push({ body: request.postData() || '', url });
+    }
+  });
+  page.on('response', (response) => {
+    const url = response.url();
+    const pathname = new URL(url).pathname;
+    const status = response.status();
+    if (pathname.startsWith('/api/resume/')) responseDiagnostics.push({ url, status });
+  });
+}
+
+async function flushEvidence(page, evidence) {
+  await page.waitForFunction(() => !window.__resumeQaEvidence || window.__resumeQaEvidence.pending === 0);
+  const captured = await page.evaluate(() => {
+    if (!window.__resumeQaEvidence) return { captureFailures: [], responses: [] };
+    return {
+      captureFailures: window.__resumeQaEvidence.captureFailures.splice(0),
+      responses: window.__resumeQaEvidence.responses.splice(0),
+    };
+  });
+  evidence.responseBodies.push(...captured.responses);
+  evidence.captureFailures.push(...captured.captureFailures.map((entry) => ({
+    channel: 'response-body-capture',
+    id: privateDiagnosticId(`${entry.status}:${entry.url}`),
+    status: entry.status,
+    url: redactPrivateText(entry.url),
+  })));
+}
+
+async function captureStorage(page, evidence, label) {
+  const entries = await page.evaluate(() => Object.fromEntries(
+    Object.keys(localStorage).map((key) => [key, localStorage.getItem(key)]),
+  ));
+  evidence.storageSnapshots.push({ entries, label });
 }
 
 async function assertPageIdentity(page, label) {
@@ -373,11 +481,14 @@ async function assertVisibleControlGeometry(page, label) {
         if (x > 1 && y > 1) overlaps.push([a.name, b.name]);
       }
     }
-    const undersized = visible.filter((item) => ['BUTTON', 'A'].includes(item.tag) && (item.width < 44 || item.height < 44));
+    const undersized = visible.filter((item) => (
+      ['BUTTON', 'A', 'INPUT', 'TEXTAREA', 'SELECT'].includes(item.tag)
+      && (item.width < 44 || item.height < 44)
+    ));
     return { overlaps: overlaps.slice(0, 5), undersized: undersized.slice(0, 5) };
   });
-  assert.deepEqual(result.overlaps, [], `${label}: visible controls overlap: ${JSON.stringify(result.overlaps)}`);
-  assert.deepEqual(result.undersized, [], `${label}: controls below 44px: ${JSON.stringify(result.undersized)}`);
+  assert.deepEqual(result.overlaps, [], `${label}: visible controls overlap: ${safeJson(result.overlaps)}`);
+  assert.deepEqual(result.undersized, [], `${label}: controls below 44px: ${safeJson(result.undersized)}`);
 }
 
 async function assertA4Pixels(page, label) {
@@ -388,6 +499,18 @@ async function assertA4Pixels(page, label) {
   const channels = stats.channels.slice(0, 3);
   assert.ok(png.length > 2_000, `${label}: A4 screenshot is unexpectedly small`);
   assert.ok(channels.some((channel) => channel.min !== channel.max), `${label}: A4 has no nonzero pixel variation`);
+}
+
+function focusVisualSignature(style) {
+  return [
+    style.outlineColor,
+    style.outlineOffset,
+    style.outlineStyle,
+    style.outlineWidth,
+    style.boxShadow,
+    style.borderColor,
+    style.backgroundColor,
+  ].join('|');
 }
 
 async function assertAccessibility(page, label) {
@@ -409,19 +532,40 @@ async function assertAccessibility(page, label) {
   assert.equal(new Set(result.controls).size, result.controls.length, `${label}: duplicate visible form labels`);
   assert.ok(result.dialogNames.every(Boolean), `${label}: unnamed dialog`);
 
-  await page.locator('body').press('Tab');
-  const focus = await page.evaluate(() => {
-    const element = document.activeElement;
-    if (!(element instanceof HTMLElement)) return null;
-    const style = getComputedStyle(element);
-    const rect = element.getBoundingClientRect();
-    return {
-      tag: element.tagName,
-      visible: rect.width > 0 && rect.height > 0,
-      indicator: style.outlineStyle !== 'none' || style.boxShadow !== 'none' || style.borderColor !== 'rgba(0, 0, 0, 0)',
-    };
-  });
-  assert.ok(focus?.visible && focus.indicator, `${label}: keyboard focus is not visibly rendered`);
+  await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+  let focus = null;
+  for (let attempt = 0; attempt < 40 && !focus; attempt += 1) {
+    await page.keyboard.press('Tab');
+    focus = await page.evaluate(() => {
+      const element = document.activeElement;
+      if (!(element instanceof HTMLElement) || !element.closest('.resume-page')) return null;
+      const rect = element.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return null;
+      const signature = () => {
+        const style = getComputedStyle(element);
+        return {
+          backgroundColor: style.backgroundColor,
+          borderColor: style.borderColor,
+          boxShadow: style.boxShadow,
+          outlineColor: style.outlineColor,
+          outlineOffset: style.outlineOffset,
+          outlineStyle: style.outlineStyle,
+          outlineWidth: style.outlineWidth,
+        };
+      };
+      const focused = signature();
+      element.blur();
+      const blurred = signature();
+      element.focus();
+      return { blurred, focused, tag: element.tagName, visible: true };
+    });
+  }
+  assert.ok(focus?.visible, `${label}: keyboard focus did not reach a visible resume control`);
+  assert.notEqual(
+    focusVisualSignature(focus.focused),
+    focusVisualSignature(focus.blurred),
+    `${label}: focused control has no visual change from its blurred state`,
+  );
 }
 
 async function assertLastEditorActionVisible(page, label) {
@@ -440,22 +584,140 @@ async function assertLastEditorActionVisible(page, label) {
   assert.ok(geometry.bottom <= geometry.fixedTop + 1, `${label}: fixed UI covers the last editor action`);
 }
 
-async function importFixture(page, fixturePath, commit = false) {
+async function importFixture(page, fixture) {
   await page.getByRole('button', { name: '导入', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '导入简历' });
   await dialog.waitFor();
-  await dialog.locator('input[type="file"]').setInputFiles(fixturePath);
-  await dialog.getByText(path.basename(fixturePath), { exact: true }).waitFor({ timeout: 15_000 });
-  if (commit) {
-    await dialog.getByRole('button', { name: '替换', exact: true }).click();
-    await page.getByText('简历已导入', { exact: true }).waitFor();
-  } else {
-    await page.keyboard.press('Escape');
-    await dialog.waitFor({ state: 'hidden' });
+  await dialog.locator('input[type="file"]').setInputFiles(fixture.path);
+  await dialog.getByText(path.basename(fixture.path), { exact: true }).waitFor({ timeout: 15_000 });
+  await dialog.getByRole('button', { name: '替换', exact: true }).click();
+  await dialog.waitFor({ state: 'hidden' });
+}
+
+async function assertDocumentMarker(page, marker, label) {
+  await page.waitForFunction(
+    ({ key, expected }) => (
+      [...document.querySelectorAll('input')].some((input) => input.value.includes(expected))
+      && (document.querySelector('[data-resume-page]')?.textContent || '').includes(expected)
+      && (localStorage.getItem(key) || '').includes(expected)
+    ),
+    { expected: marker, key: allowedPrivateStorageKey },
+  );
+  const editorContainsMarker = (await page.getByLabel('姓名', { exact: true }).inputValue()).includes(marker);
+  const previewContainsMarker = await page.locator('[data-resume-page]').evaluate(
+    (element, expected) => (element.textContent || '').includes(expected),
+    marker,
+  );
+  const storageContainsMarker = await page.evaluate(
+    ({ key, expected }) => (localStorage.getItem(key) || '').includes(expected),
+    { expected: marker, key: allowedPrivateStorageKey },
+  );
+  assert.equal(editorContainsMarker, true, `${label}: editor did not contain expected imported content`);
+  assert.equal(previewContainsMarker, true, `${label}: workspace preview did not contain expected imported content`);
+  assert.equal(storageContainsMarker, true, `${label}: imported content was not persisted`);
+}
+
+async function exerciseCommittedImports(page, fixtures) {
+  for (const fixture of Object.values(fixtures)) {
+    await importFixture(page, fixture);
+    try {
+      await page.waitForFunction(
+        ({ key, marker }) => (localStorage.getItem(key) || '').includes(marker),
+        { key: allowedPrivateStorageKey, marker: fixture.marker },
+      );
+    } catch (error) {
+      const state = await page.evaluate(
+        ({ key, marker }) => ({
+          editor: [...document.querySelectorAll('input')].some((input) => input.value.includes(marker)),
+          preview: (document.querySelector('[data-resume-page]')?.textContent || '').includes(marker),
+          storage: (localStorage.getItem(key) || '').includes(marker),
+        }),
+        { key: allowedPrivateStorageKey, marker: fixture.marker },
+      );
+      throw new Error(`${fixture.kind} import persistence timeout state=${safeJson(state)} id=${privateDiagnosticId(fixture.marker)}`, { cause: error });
+    }
+    await assertDocumentMarker(page, fixture.marker, `${fixture.kind} import`);
+
+    await page.getByRole('button', { name: '撤销导入', exact: true }).click();
+    await page.waitForFunction(
+      ({ key, marker }) => (localStorage.getItem(key) || '').includes(marker),
+      { key: allowedPrivateStorageKey, marker: privateSentinel },
+    );
+    await assertDocumentMarker(page, privateSentinel, `${fixture.kind} undo`);
+    await page.reload({ waitUntil: 'networkidle' });
+    await assertDocumentMarker(page, privateSentinel, `${fixture.kind} restored persistence`);
   }
 }
 
-async function waitForReview(page) {
+async function grayscaleSample(input) {
+  return sharp(input)
+    .flatten({ background: '#ffffff' })
+    .resize(180, 255, { fit: 'fill' })
+    .grayscale()
+    .raw()
+    .toBuffer();
+}
+
+function inkProfile(sample, width, height) {
+  const rows = Array.from({ length: height }, () => 0);
+  const columns = Array.from({ length: width }, () => 0);
+  let count = 0;
+  for (let index = 0; index < sample.length; index += 1) {
+    if (sample[index] >= 245) continue;
+    const row = Math.floor(index / width);
+    const column = index % width;
+    rows[row] += 1;
+    columns[column] += 1;
+    count += 1;
+  }
+  return { columns, count, rows };
+}
+
+function normalizedProfileDifference(left, right, scale) {
+  return left.reduce((total, value, index) => total + Math.abs(value - right[index]) / scale, 0) / left.length;
+}
+
+async function renderDownloadedPdf(pdfPath, sourcePngPath) {
+  const pdfBytes = await readFile(pdfPath);
+  assert.equal(pdfBytes.length > 1_000 && pdfBytes.subarray(0, 4).toString() === '%PDF', true, 'generated PDF is blank or invalid');
+  const pdfjs = await pdfJsModule;
+  const loadingTask = pdfjs.getDocument({ data: new Uint8Array(pdfBytes), disableWorker: true });
+  try {
+    const document = await loadingTask.promise;
+    assert.equal(document.numPages, 1, 'generated PDF must contain exactly one A4 page');
+    const pdfPage = await document.getPage(1);
+    const pointWidth = Math.abs(pdfPage.view[2] - pdfPage.view[0]);
+    const pointHeight = Math.abs(pdfPage.view[3] - pdfPage.view[1]);
+    assert.equal(Math.abs(pointWidth - 595.28) < 1 && Math.abs(pointHeight - 841.89) < 1, true, 'generated PDF page is not A4');
+
+    const viewport = pdfPage.getViewport({ scale: 2 });
+    const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
+    await pdfPage.render({ canvas, viewport, background: 'rgb(255,255,255)' }).promise;
+    const renderedPng = canvas.toBuffer('image/png');
+    const renderedPath = path.join(qaDir, 'resume-export-page.png');
+    await writeFile(renderedPath, renderedPng);
+
+    const stats = await sharp(renderedPng).stats();
+    assert.equal(stats.channels.slice(0, 3).some((channel) => channel.min !== channel.max), true, 'rendered PDF page has no pixel variation');
+
+    const [sourceSample, renderedSample] = await Promise.all([
+      grayscaleSample(sourcePngPath),
+      grayscaleSample(renderedPng),
+    ]);
+    const sourceInk = inkProfile(sourceSample, 180, 255);
+    const renderedInk = inkProfile(renderedSample, 180, 255);
+    assert.equal(sourceInk.count > 0 && renderedInk.count > 0, true, 'source or rendered PDF content is blank');
+    const inkRatio = renderedInk.count / sourceInk.count;
+    const rowDifference = normalizedProfileDifference(sourceInk.rows, renderedInk.rows, 180);
+    const columnDifference = normalizedProfileDifference(sourceInk.columns, renderedInk.columns, 255);
+    assert.equal(inkRatio >= 0.65 && inkRatio <= 1.45, true, `rendered PDF content density diverged from source (${inkRatio.toFixed(3)})`);
+    assert.equal(rowDifference <= 0.08 && columnDifference <= 0.08, true, `rendered PDF layout diverged from source (rows=${rowDifference.toFixed(3)}, columns=${columnDifference.toFixed(3)})`);
+  } finally {
+    await loadingTask.destroy();
+  }
+}
+
+async function waitForReview(page, evidence) {
   try {
     await page.getByText('修改审阅', { exact: true }).waitFor({ timeout: 20_000 });
   } catch (error) {
@@ -467,11 +729,15 @@ async function waitForReview(page) {
         .filter((key) => key.startsWith('sb-'))
         .map((key) => [key, Boolean(localStorage.getItem(key))])),
     }));
-    throw new Error(`AI review did not open: ${JSON.stringify({
+    throw new Error(`AI review did not open: ${safeJson({
       ...state,
       requests: requestDiagnostics.slice(-5),
       responses: responseDiagnostics.slice(-5),
-      console: consoleDiagnostics.slice(-5),
+      console: evidence.consoleEntries.slice(-5).map((entry) => ({
+        channel: entry.channel,
+        id: privateDiagnosticId(entry.text),
+        url: redactPrivateText(entry.url),
+      })),
     })}`, { cause: error });
   }
 }
@@ -484,22 +750,18 @@ async function exerciseAnonymousFlow(page, fixtures) {
   await page.getByLabel('简历名称', { exact: true }).fill('Private QA Resume');
   await page.getByText('已保存', { exact: true }).waitFor();
   await page.reload({ waitUntil: 'networkidle' });
-  assert.equal(await page.getByLabel('姓名', { exact: true }).inputValue(), privateSentinel, 'anonymous edit was not restored after refresh');
+  assert.equal((await page.getByLabel('姓名', { exact: true }).inputValue()) === privateSentinel, true, 'anonymous edit was not restored after refresh');
 
-  await importFixture(page, fixtures.txt, true);
-  await page.getByRole('button', { name: '撤销导入', exact: true }).click();
-  assert.equal(await page.getByLabel('姓名', { exact: true }).inputValue(), privateSentinel, 'import undo did not restore the anonymous edit');
-  for (const fixture of [fixtures.html, fixtures.md, fixtures.pdf, fixtures.docx]) {
-    await importFixture(page, fixture);
-  }
+  await exerciseCommittedImports(page, fixtures);
 
+  const sourcePngPath = path.join(qaDir, 'resume-export-source.png');
+  await page.locator('[data-resume-page]').screenshot({ path: sourcePngPath });
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'PDF', exact: true }).click();
   const download = await downloadPromise;
   const pdfPath = path.join(qaDir, 'resume-export.pdf');
   await download.saveAs(pdfPath);
-  const pdfBytes = await readFile(pdfPath);
-  assert.ok(pdfBytes.length > 1_000 && pdfBytes.subarray(0, 4).toString() === '%PDF', 'generated PDF is blank or invalid');
+  await renderDownloadedPdf(pdfPath, sourcePngPath);
   await assertA4Pixels(page, 'anonymous PDF preview');
 }
 
@@ -518,22 +780,22 @@ async function exerciseAuthAiAndPayment(page, evidence) {
   await authDialog.getByLabel('邮箱', { exact: true }).fill('qa@example.test');
   await authDialog.getByLabel('密码', { exact: true }).fill('qa-password-11');
   await authDialog.getByRole('button', { name: '登录', exact: true }).click();
-  await waitForReview(page);
+  await waitForReview(page, evidence);
   await authDialog.waitFor({ state: 'hidden' });
 
   await page.getByRole('button', { name: '全部接受', exact: true }).click();
   await page.getByRole('button', { name: '撤销 AI 修改', exact: true }).click();
-  await waitForReview(page);
+  await waitForReview(page, evidence);
   await page.getByRole('button', { name: '关闭修改审阅', exact: true }).click();
 
   for (const level of ['中度优化', '深度优化']) {
     await page.getByRole('button', { name: new RegExp(level) }).click();
-    await waitForReview(page);
+    await waitForReview(page, evidence);
     await page.getByRole('button', { name: '关闭修改审阅', exact: true }).click();
   }
 
   await page.getByRole('button', { name: /AI 解析当前简历/ }).click();
-  await waitForReview(page);
+  await waitForReview(page, evidence);
   await page.getByRole('button', { name: '关闭修改审阅', exact: true }).click();
   await page.getByRole('button', { name: /分析 JD/ }).click();
   await page.getByText(/已识别岗位：QA Engineer/).waitFor({ timeout: 20_000 });
@@ -555,12 +817,25 @@ async function exerciseAuthAiAndPayment(page, evidence) {
   assert.equal(evidence.orderRequests.length, 0, `disabled payment unexpectedly requested ${evidence.orderRequests.join(', ')}`);
   const accountResponses = await page.evaluate(async (paths) => Promise.all(paths.map(async (requestPath) => {
     const response = await fetch(requestPath);
-    return { url: response.url, status: response.status, body: await response.text() };
+    return { url: response.url, status: response.status };
   })), ['/api/resume/quota', '/api/resume/plans']);
-  for (const response of accountResponses) {
-    evidence.quotaOrderBodies.push(response);
-    if (response.status >= 400) evidence.apiErrorBodies.push(response);
-  }
+  assert.equal(accountResponses.every((response) => response.status >= 200), true, 'quota or plan inspection did not return a response');
+}
+
+async function exercisePrivateApiFailures(page) {
+  const failures = await page.evaluate(async (cases) => Promise.all(cases.map(async ([requestPath, body]) => {
+    const response = await fetch(requestPath, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return { path: requestPath, status: response.status };
+  })), [
+    ['/api/resume/parse', { text: privateSentinel }],
+    ['/api/resume/analyze-jd', { jdText: jdSentinel }],
+    ['/api/resume/optimize', { level: 'light', resumeText: privateSentinel, jdText: jdSentinel }],
+  ]);
+  assert.equal(failures.every((response) => response.status >= 400), true, 'private API failure probes unexpectedly succeeded');
 }
 
 async function exerciseNavigationAndSearch(page) {
@@ -588,7 +863,7 @@ async function exerciseNavigationAndSearch(page) {
   }
 }
 
-async function assertViewport(browser, viewport, theme) {
+async function assertViewport(browser, viewport, theme, evidence) {
   const label = `${viewport.width}x${viewport.height}-${theme}`;
   const context = await browser.newContext({
     viewport,
@@ -597,7 +872,9 @@ async function assertViewport(browser, viewport, theme) {
     bypassCSP: true,
   });
   await context.addInitScript(storageSeed, { theme, document: seedResumeDocument() });
+  await context.addInitScript(installFetchDiagnostics);
   const page = await context.newPage();
+  attachEvidence(page, evidence);
   await routeBrowserSupabase(page);
   try {
     await page.goto(`${baseUrl}/resume/`, { waitUntil: 'networkidle' });
@@ -618,11 +895,14 @@ async function assertViewport(browser, viewport, theme) {
       await name.fill(`${privateSentinel}-MOBILE`);
       const preview = page.getByRole('button', { name: '预览', exact: true });
       await preview.press('Enter');
-      await page.getByText(`${privateSentinel}-MOBILE`, { exact: true }).waitFor();
+      await page.waitForFunction(
+        (marker) => (document.querySelector('[data-resume-page]')?.textContent || '').includes(marker),
+        `${privateSentinel}-MOBILE`,
+      );
       await assertA4Pixels(page, `${label} A4`);
       const edit = page.getByRole('button', { name: '编辑', exact: true });
       await edit.press('Enter');
-      assert.equal(await name.inputValue(), `${privateSentinel}-MOBILE`, `${label}: mobile switching lost content`);
+      assert.equal((await name.inputValue()) === `${privateSentinel}-MOBILE`, true, `${label}: mobile switching lost content`);
       await assertLastEditorActionVisible(page, label);
     } else {
       await assertA4Pixels(page, `${label} A4`);
@@ -632,32 +912,50 @@ async function assertViewport(browser, viewport, theme) {
     await assertAccessibility(page, label);
     await page.screenshot({ path: path.join(qaDir, `${label}.png`), fullPage: false });
   } finally {
+    await captureStorage(page, evidence, label).catch((error) => evidence.captureFailures.push({
+      channel: 'storage-capture',
+      id: privateDiagnosticId(error instanceof Error ? error.stack : error),
+      status: 0,
+      url: redactPrivateText(page.url()),
+    }));
+    await flushEvidence(page, evidence);
     await context.close();
   }
 }
 
-async function assertPrivacy(page, evidence) {
-  for (const issue of evidence.consoleIssues) {
-    assert.equal(containsPrivateText(issue), false, `console leaked private text: ${issue}`);
-  }
-  for (const entry of evidence.apiErrorBodies) {
-    assert.equal(containsPrivateText(entry.body), false, `${entry.url} response leaked private text`);
+async function assertPrivacy(evidence) {
+  assert.deepEqual(evidence.captureFailures, [], `evidence capture failed: ${safeJson(evidence.captureFailures)}`);
+  for (const entry of evidence.consoleEntries) {
+    assertPrivateFree(entry.channel, entry.text, entry);
   }
   for (const entry of evidence.telemetryRequests) {
-    assert.equal(containsPrivateText(`${entry.url}\n${entry.body}`), false, `${entry.url} telemetry leaked private text`);
+    assertPrivateFree('telemetry-request', `${entry.url}\n${entry.body}`, entry);
   }
-  for (const entry of evidence.quotaOrderBodies) {
-    assert.equal(containsPrivateText(entry.body), false, `${entry.url} quota/order response leaked private text`);
+  for (const entry of evidence.responseBodies) {
+    assertPrivateFree(entry.channel, entry.body, entry);
   }
-  const storage = await page.evaluate(() => Object.fromEntries(Object.keys(localStorage).map((key) => [key, localStorage.getItem(key)])));
-  for (const [key, value] of Object.entries(storage)) {
-    if (key !== allowedPrivateStorageKey) {
-      assert.equal(containsPrivateText(value), false, `localStorage key ${key} leaked private text`);
+  for (const snapshot of evidence.storageSnapshots) {
+    for (const [key, value] of Object.entries(snapshot.entries)) {
+      if (key !== allowedPrivateStorageKey) {
+        assertPrivateFree(`local-storage:${snapshot.label}:${key}`, value);
+      }
     }
   }
+  for (const pathname of ['/api/resume/parse', '/api/resume/analyze-jd', '/api/resume/optimize']) {
+    assert.equal(
+      evidence.responseBodies.some((entry) => new URL(entry.url).pathname === pathname && entry.status >= 400),
+      true,
+      `missing captured error response for ${pathname}`,
+    );
+  }
+  assert.equal(
+    evidence.responseBodies.some((entry) => new URL(entry.url).pathname === '/api/resume/optimize' && entry.status === 429),
+    true,
+    'missing captured exhausted-quota response',
+  );
   if (serverLog) {
     const log = await readFile(serverLog, 'utf8').catch(() => '');
-    assert.equal(containsPrivateText(log), false, 'Next server log leaked private text');
+    assertPrivateFree('next-server-log', log);
   }
 }
 
@@ -667,56 +965,38 @@ const browser = await chromium.launch({ headless: true });
 let exitCode = 0;
 
 try {
+  const evidence = createEvidence();
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce', bypassCSP: true });
   const page = await context.newPage();
   await page.addInitScript(installFetchDiagnostics);
+  attachEvidence(page, evidence);
   await routeBrowserSupabase(page);
-  const evidence = {
-    apiErrorBodies: [],
-    consoleIssues: [],
-    orderRequests: [],
-    quotaOrderBodies: [],
-    telemetryRequests: [],
-  };
-  page.on('console', (message) => {
-    if (!['error', 'warning'].includes(message.type())) return;
-    consoleDiagnostics.push({ type: message.type(), text: message.text(), url: message.location().url || '' });
-    const location = message.location().url || '';
-    if (location.includes('/api/resume/plans')) return;
-    evidence.consoleIssues.push(message.text());
-  });
-  page.on('request', (request) => {
-    const url = request.url();
-    const pathname = new URL(url).pathname;
-    if (pathname.startsWith('/api/resume/')) requestDiagnostics.push({ method: request.method(), url });
-    if (/\/api\/resume\/(?:orders|payment)/.test(pathname)) evidence.orderRequests.push(url);
-    if (/sentry|analytics|telemetry|collect/i.test(url)) {
-      evidence.telemetryRequests.push({ url, body: request.postData() || '' });
-    }
-  });
-  page.on('response', (response) => {
-    const url = response.url();
-    const pathname = new URL(url).pathname;
-    if (!pathname.startsWith('/api/')) return;
-    if (pathname.startsWith('/api/resume/')) responseDiagnostics.push({ url, status: response.status() });
-  });
 
   try {
     await exerciseAnonymousFlow(page, fixtures);
     await exerciseAuthAiAndPayment(page, evidence);
-    await assertPrivacy(page, evidence);
+    await exercisePrivateApiFailures(page);
+    await flushEvidence(page, evidence);
     await exerciseNavigationAndSearch(page);
   } finally {
+    await captureStorage(page, evidence, 'primary-flow').catch((error) => evidence.captureFailures.push({
+      channel: 'storage-capture',
+      id: privateDiagnosticId(error instanceof Error ? error.stack : error),
+      status: 0,
+      url: redactPrivateText(page.url()),
+    }));
+    await flushEvidence(page, evidence);
     await context.close();
   }
 
   for (const viewport of viewports) {
-    for (const theme of themes) await assertViewport(browser, viewport, theme);
+    for (const theme of themes) await assertViewport(browser, viewport, theme, evidence);
   }
+  await assertPrivacy(evidence);
   console.log(`resume UI guard passed; evidence: ${qaDir}`);
 } catch (error) {
   exitCode = 1;
-  console.error(error instanceof Error ? error.stack : error);
+  console.error(redactPrivateText(error instanceof Error ? error.stack : error));
 } finally {
   await browser.close();
   await new Promise((resolve) => externalServer.close(resolve));
