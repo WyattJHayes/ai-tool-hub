@@ -641,11 +641,6 @@ body:has(.resume-page) > footer {
   width: 18px;
   height: 18px;
   color: var(--muted);
-  transition: transform var(--transition-duration) ease-out;
-}
-
-.resume-editor-section__toggle svg[data-open='true'] {
-  transform: rotate(180deg);
 }
 
 .resume-editor-section__body {
@@ -787,8 +782,7 @@ body:has(.resume-page) > footer {
   top: 0;
   left: 0;
   width: 210mm;
-  transform: scale(0.68);
-  transform-origin: top left;
+  zoom: 0.68;
 }
 
 .resume-paper {
@@ -1421,14 +1415,6 @@ body:has(.resume-page) > footer {
   font-weight: 500;
 }
 
-.resume-spinner {
-  animation: resume-spin 900ms linear infinite;
-}
-
-@keyframes resume-spin {
-  to { transform: rotate(360deg); }
-}
-
 .resume-import-summary {
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr) auto;
@@ -1541,7 +1527,7 @@ body:has(.resume-page) > footer {
   }
 
   .resume-preview-document {
-    transform: scale(0.58);
+    zoom: 0.58;
   }
 }
 
@@ -1688,7 +1674,7 @@ body:has(.resume-page) > footer {
   }
 
   .resume-preview-document {
-    transform: scale(0.44);
+    zoom: 0.44;
   }
 
   .resume-mobile-action {
@@ -1751,7 +1737,7 @@ body:has(.resume-page) > footer {
   }
 
   .resume-preview-document {
-    transform: scale(0.35);
+    zoom: 0.35;
   }
 }
 
@@ -1810,7 +1796,7 @@ body:has(.resume-page) > footer {
 
   .resume-preview-document {
     position: static;
-    transform: none;
+    zoom: 1;
   }
 }
 /* resume-workspace:end */

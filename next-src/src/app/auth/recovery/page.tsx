@@ -76,7 +76,7 @@ export default function PasswordRecoveryPage() {
             <input id="recovery-confirmation" className="h-12 w-full border border-[var(--line-strong)] bg-[var(--surface)] px-3" type="password" autoComplete="new-password" minLength={8} required value={confirmation} onChange={event => setConfirmation(event.target.value)} />
             {error ? <p className="text-sm text-[var(--signal-ink)]" role="alert">{error}</p> : null}
             <button className="flex min-h-12 w-full items-center justify-center bg-[var(--accent)] font-medium text-[var(--on-accent)] disabled:opacity-50" type="submit" disabled={state === 'saving'}>
-              {state === 'saving' ? <><Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /><span className="sr-only">更新中</span></> : '更新密码'}
+              {state === 'saving' ? <><Loader2 className="h-4 w-4" aria-hidden="true" /><span className="sr-only">更新中</span></> : '更新密码'}
             </button>
           </form>
         ) : null}

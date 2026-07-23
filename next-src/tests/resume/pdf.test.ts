@@ -123,13 +123,13 @@ test('waits for fonts then renders A4 pages in order with sanitized output names
   }
 });
 
-test('removes preview-only scaling in the html2canvas clone before rendering', async () => {
+test('removes preview-only zoom in the html2canvas clone before rendering', async () => {
   const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
   Object.defineProperty(globalThis, 'document', {
     configurable: true,
     value: { fonts: { ready: Promise.resolve() } },
   });
-  const clonedPreview = { style: { position: 'absolute', transform: 'scale(0.68)' } };
+  const clonedPreview = { style: { position: 'absolute', zoom: '0.68' } };
 
   try {
     await exportResumePdf(preview([page()]), 'resume', async () => ({
@@ -151,7 +151,7 @@ test('removes preview-only scaling in the html2canvas clone before rendering', a
       }),
     }));
 
-    assert.deepEqual(clonedPreview.style, { position: 'static', transform: 'none' });
+    assert.deepEqual(clonedPreview.style, { position: 'static', zoom: '1' });
   } finally {
     if (originalDocument) Object.defineProperty(globalThis, 'document', originalDocument);
     else Reflect.deleteProperty(globalThis, 'document');

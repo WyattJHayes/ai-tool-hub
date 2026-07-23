@@ -63,7 +63,7 @@ function preparePdfClone(clonedDocument: Document): void {
   const previewDocument = clonedDocument.querySelector<HTMLElement>('.resume-preview-document');
   if (!previewDocument) return;
   previewDocument.style.position = 'static';
-  previewDocument.style.transform = 'none';
+  previewDocument.style.zoom = '1';
 }
 
 export async function exportResumePdf(

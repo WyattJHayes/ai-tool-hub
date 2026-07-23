@@ -710,7 +710,8 @@ test('mobile compare tray preserves the accepted inset anatomy and visible selec
 
 test('mobile navigation recognizes nested tool routes', () => {
   const nav = read('src/components/layout/BottomNav.tsx');
-  assert.match(nav, /pathname\.startsWith\(`\$\{item\.href\}\/`\)/);
+  assert.match(nav, /const activeHref = item\.href\.replace\(/);
+  assert.match(nav, /pathname === activeHref \|\| pathname\.startsWith\(`\$\{activeHref\}\//);
 });
 
 test('legacy tool surfaces use canonical platform and accessible compare limits', () => {
