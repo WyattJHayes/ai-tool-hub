@@ -10,6 +10,7 @@ const navItems = [
   { href: '/tools', label: '工具' },
   { href: '/scenes', label: '场景' },
   { href: '/leaderboard', label: '排行' },
+  { href: '/resume/', label: '简历优化' },
 ];
 
 export default function Navbar() {
@@ -41,7 +42,8 @@ export default function Navbar() {
 
         <div className="hidden h-full items-center gap-7 md:flex">
           {navItems.map((item) => {
-            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+            const activeHref = item.href.replace(/\/$/, '');
+            const active = pathname === activeHref || pathname.startsWith(`${activeHref}/`);
             return (
               <Link
                 key={item.href}

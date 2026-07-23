@@ -582,7 +582,9 @@ async function assertOutline(target, expectedColor, label) {
 }
 
 async function assertFocusColors(page, scenario, theme, label) {
-  const normalTarget = page.getByRole('button', { name: theme === 'dark' ? '切换到亮色主题' : '切换到暗色主题' });
+  const normalTarget = scenario.name === 'auth'
+    ? page.getByRole('dialog', { name: '登录' }).getByRole('button', { name: '关闭登录窗口' })
+    : page.getByRole('button', { name: theme === 'dark' ? '切换到亮色主题' : '切换到暗色主题' });
   await focusByKeyboard(page, normalTarget, `${label} normal`);
   await assertOutline(normalTarget, themes[theme].focus, `${label} normal focus`);
 

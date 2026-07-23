@@ -56,3 +56,27 @@ test('CSP allows Supabase HTTP and realtime connections', async () => {
   assert.match(csp, /https:\/\/\*\.supabase\.co/);
   assert.match(csp, /wss:\/\/\*\.supabase\.co/);
 });
+
+test('resume API failures never reflect private resume or job-description text', async () => {
+  const sentinel = 'RESUME-PRIVATE-API-SENTINEL-11';
+  const cases = [
+    ['/api/resume/parse', { text: sentinel }],
+    ['/api/resume/analyze-jd', { jdText: sentinel }],
+    ['/api/resume/optimize', { level: 'light', resumeText: sentinel, jdText: sentinel }],
+  ];
+
+  for (const [path, body] of cases) {
+    const response = await post(path, body);
+    assert.ok(response.status >= 400, `${path} unexpectedly accepted an anonymous private payload`);
+    const responseText = await response.text();
+    assert.doesNotMatch(responseText, new RegExp(sentinel), `${path} reflected private text`);
+    assert.doesNotMatch(responseText, /resumeText|jdText|RESUME-PRIVATE/i, `${path} exposed private field details`);
+  }
+});
+
+test('payment success routes remain absent while the provider boundary is disabled', async () => {
+  for (const path of ['/api/resume/orders', '/api/resume/orders/pending', '/api/resume/payment/callback']) {
+    const response = await fetch(`${baseUrl}${path}`);
+    assert.equal(response.status, 404, `${path} must stay fail-closed until the provider adapter is authoritative`);
+  }
+});
