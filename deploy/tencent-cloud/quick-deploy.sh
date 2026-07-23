@@ -380,9 +380,15 @@ verify_local_tls() {
 verify_local_permanent_redirect() {
     local host="$1"
     local url="$2"
+    local expected_url="$3"
+    local final
     local status
     status="$(curl --noproxy '*' --resolve "$host:443:127.0.0.1" --silent --output /dev/null --write-out '%{http_code}' --max-time 10 "$url" || true)"
-    [ "$status" = 301 ] || [ "$status" = 308 ]
+    final="$(curl --noproxy '*' --resolve "$host:443:127.0.0.1" \
+        --location --max-redirs 5 --silent --output /dev/null \
+        --write-out '%{http_code} %{url_effective}' --max-time 10 "$url" || true)"
+    { [ "$status" = 301 ] || [ "$status" = 308 ]; } \
+        && [ "$final" = "200 $expected_url" ]
 }
 
 verify_local_status() {
@@ -436,7 +442,8 @@ verify_candidate_release() {
     if ! verify_local_tls weihub.cloud https://weihub.cloud/ \
         || ! verify_local_tls weihub.cloud https://weihub.cloud/resume/ \
         || ! verify_local_tls weihub.cloud https://weihub.cloud/love/ \
-        || ! verify_local_permanent_redirect weihub.cloud https://weihub.cloud/resume-optimizer/ \
+        || ! verify_local_permanent_redirect weihub.cloud \
+            https://weihub.cloud/resume-optimizer/ https://weihub.cloud/resume \
         || ! verify_local_status weihub.cloud https://weihub.cloud/api/resume/orders 404 \
         || ! verify_local_status weihub.cloud https://weihub.cloud/api/resume/orders/pending 404 \
         || ! verify_local_status weihub.cloud https://weihub.cloud/api/resume/payments/xddpay/notify 404 \
