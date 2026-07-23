@@ -57,7 +57,8 @@ jobs:
             next-src/tests/task-first-ui-contract.test.mjs
           npm --prefix next-src run lint
           npm --prefix next-src run build
-          npm --prefix next-src audit --omit=dev
+          node --test scripts/next-audit-guard.test.mjs
+          node scripts/next-audit-guard.mjs
 
       - name: Run Next.js API regressions
         run: |
