@@ -104,6 +104,16 @@ requireMatch(
 );
 requireMatch(
   nginxConfig,
+  /location\s*=\s*\/resume-optimizer\s*{\s*return\s+301\s+\/resume\s*;\s*}/,
+  `${nginxConfigPath} must redirect the legacy resume path to /resume`
+);
+requireMatch(
+  nginxConfig,
+  /location\s*=\s*\/resume-optimizer\/\s*{\s*return\s+301\s+\/resume\s*;\s*}/,
+  `${nginxConfigPath} must redirect the trailing-slash legacy resume path to /resume`
+);
+requireMatch(
+  nginxConfig,
   /location\s*=\s*\/reset-domain-cache\s*{[\s\S]*?default_type\s+text\/html\s*;[\s\S]*?add_header\s+Clear-Site-Data\s+['"]?['"]cache['"]['"]?\s+always\s*;[\s\S]*?add_header\s+Cache-Control\s+['"]no-store['"]\s+always\s*;[\s\S]*?return\s+200\s+['"][\s\S]*?http-equiv=["']refresh["'][\s\S]*?domain-cache-reset=2[\s\S]*?['"]\s*;/i,
   `${nginxConfigPath} must serve a cache-only recovery page for legacy permanent redirects`
 );
@@ -235,6 +245,11 @@ if (/docker image inspect ai-resume-optimizer:latest/.test(deploymentScript + de
 requireMatch(deploymentScript, /candidate_image="ai-resume-optimizer:candidate-\$expected_revision"/, 'deployment must build a revision-specific candidate image');
 requireMatch(deploymentReleaseLib, /docker tag "\$candidate_image" ai-resume-optimizer:latest/, 'deployment must promote the candidate image only during activation');
 requireMatch(deploymentScript, /scan_privacy_logs weihub-app/, 'deployment must use the fail-closed privacy log helper');
+requireMatch(
+  deploymentScript,
+  /verify_local_permanent_redirect[\s\S]*?--location[\s\S]*?%\{url_effective\}[\s\S]*?200/,
+  'deployment must follow the legacy resume redirect and verify its final 200 destination',
+);
 requireMatch(deploymentScript, /classify_aggregate_probe "\$aggregate_status" "\$aggregate_output"/, 'deployment must classify aggregate execution failures explicitly');
 requireMatch(deploymentScript, /python3 - "\$REMOTE_ROOT\/\.env"\s*<\s*"\$ENV_VALIDATOR"/, 'deployment must stream the approved env validator to the server');
 requireMatch(deploymentReleaseLib, /GIT_SHA="\$revision"/, 'deployment must provide the fixed revision to Docker Compose');
