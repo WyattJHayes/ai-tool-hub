@@ -195,7 +195,7 @@ upload_sources() {
     trap 'rm -rf "$temp_root"' RETURN
     archive="$temp_root/source.tar"
 
-    git -C "$PROJECT_ROOT" archive --format=tar --output="$archive" "$source_revision:next-src"
+    create_source_archive "$PROJECT_ROOT" "$source_revision" "$archive"
     source_checksum="$(release_sha256 "$archive")"
 
     ssh "$SERVER_HOST" install -d -m 0755 "$candidate_root"
@@ -235,7 +235,7 @@ deploy_remote() {
     temp_root="$(mktemp -d)"
     trap 'rm -rf "$temp_root"' RETURN
     archive="$temp_root/source.tar"
-    git -C "$PROJECT_ROOT" archive --format=tar --output="$archive" "$expected_revision:next-src"
+    create_source_archive "$PROJECT_ROOT" "$expected_revision" "$archive"
     expected_checksum="$(release_sha256 "$archive")"
     expected_compose_checksum="$(release_sha256 "$COMPOSE_SOURCE")"
     expected_nginx_checksum="$(release_sha256 "$NGINX_SOURCE")"
@@ -313,7 +313,7 @@ source "$candidate_release_lib"
 verify_source_archive "$candidate_archive" "$expected_checksum"
 
 install -d -m 0755 "$candidate_source"
-tar -xf "$candidate_archive" -C "$candidate_source"
+tar -xf "$candidate_archive" -C "$candidate_source" --strip-components=1
 source_revision="$expected_revision"
 
 if validate_and_build_candidate_preserving_active \

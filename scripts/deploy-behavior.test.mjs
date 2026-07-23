@@ -340,6 +340,46 @@ test('tampered source archive blocks before candidate build', () => {
   assert.equal(existsSync(marker), false);
 });
 
+test('source archives remain byte-identical across different wall-clock times', () => {
+  const directory = temporaryDirectory();
+  const repository = path.join(directory, 'repository');
+  const sourceDirectory = path.join(repository, 'next-src');
+  const firstArchive = path.join(directory, 'first.tar');
+  const secondArchive = path.join(directory, 'second.tar');
+  const extracted = path.join(directory, 'extracted');
+  mkdirSync(sourceDirectory, { recursive: true });
+  writeFileSync(path.join(sourceDirectory, 'version.txt'), 'approved source');
+  for (const args of [
+    ['init', repository],
+    ['-C', repository, 'config', 'user.name', 'Deploy Test'],
+    ['-C', repository, 'config', 'user.email', 'deploy-test@example.com'],
+    ['-C', repository, 'add', 'next-src/version.txt'],
+    ['-C', repository, 'commit', '-m', 'fixture'],
+  ]) {
+    const result = run('git', args);
+    assert.equal(result.status, 0, result.stderr);
+  }
+
+  const result = run('/bin/bash', ['-c', `
+    set -e
+    source "$RELEASE_LIB"
+    create_source_archive "$REPOSITORY" HEAD "$FIRST_ARCHIVE"
+    sleep 2
+    create_source_archive "$REPOSITORY" HEAD "$SECOND_ARCHIVE"
+    cmp "$FIRST_ARCHIVE" "$SECOND_ARCHIVE"
+    mkdir "$EXTRACTED"
+    tar -xf "$FIRST_ARCHIVE" -C "$EXTRACTED" --strip-components=1
+  `], { env: {
+    RELEASE_LIB: releaseLib,
+    REPOSITORY: repository,
+    FIRST_ARCHIVE: firstArchive,
+    SECOND_ARCHIVE: secondArchive,
+    EXTRACTED: extracted,
+  } });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readFileSync(path.join(extracted, 'version.txt'), 'utf8'), 'approved source');
+});
+
 for (const [mode, expectedStatus] of [['config-fail', 42], ['build-fail', 43]]) {
   test(`candidate ${mode} leaves active files unchanged and returns the original status`, () => {
     const directory = temporaryDirectory();

@@ -10,6 +10,15 @@ release_sha256() {
     fi
 }
 
+create_source_archive() {
+    local repository="$1"
+    local revision="$2"
+    local output="$3"
+
+    git -C "$repository" archive --format=tar --output="$output" \
+        "$revision" next-src
+}
+
 verify_source_archive() {
     local archive="$1"
     local expected="$2"

@@ -196,8 +196,18 @@ if (/\brsync\b|source-revision\.new/.test(deploymentScript)) {
 }
 requireMatch(
   deploymentScript,
-  /git\s+-C\s+"\$PROJECT_ROOT"\s+archive\s+--format=tar\s+--output="\$archive"\s+"\$(?:source_revision|expected_revision):next-src"/,
-  'deployment must derive uploaded source bytes from the approved Git tree',
+  /create_source_archive\s+"\$PROJECT_ROOT"\s+"\$(?:source_revision|expected_revision)"\s+"\$archive"/,
+  'deployment must create source archives through the approved helper',
+);
+requireMatch(
+  deploymentReleaseLib,
+  /git\s+-C\s+"\$repository"\s+archive\s+--format=tar\s+--output="\$output"[\s\\]*"\$revision"\s+next-src/,
+  'deployment must derive deterministic source bytes from the approved Git commit',
+);
+requireMatch(
+  deploymentScript,
+  /tar\s+-xf\s+"\$candidate_archive"\s+-C\s+"\$candidate_source"\s+--strip-components=1/,
+  'deployment must restore the archived next-src path as the candidate build root',
 );
 requireMatch(deploymentScript, /release_sha256\s+"\$archive"/, 'deployment must hash the commit-derived source archive');
 requireMatch(deploymentScript, /verify_source_archive\s+"\$candidate_archive"\s+"\$expected_checksum"/, 'deployment must verify staged source bytes before extraction');
