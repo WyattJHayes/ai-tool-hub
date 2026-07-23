@@ -363,7 +363,7 @@ for (const [pattern, message] of [
   [/npm run build/, 'CI must build the root application before deployment'],
   [/npm --prefix next-src run lint/, 'CI must lint the Next.js application'],
   [/npm --prefix next-src run build/, 'CI must build the Next.js application'],
-  [/npm --prefix next-src audit --omit=dev/, 'CI must audit Next.js production dependencies'],
+  [/node scripts\/next-audit-guard\.mjs/, 'CI must run the guarded Next.js production dependency audit'],
   [/npm --prefix server audit --omit=dev/, 'CI must audit server production dependencies'],
   [/node next-src\/tests\/api-regressions\.test\.mjs/, 'CI must run Next.js API regressions'],
   [/node \.next\/standalone\/server\.js/, 'CI must start the standalone Next.js server before API regressions'],
