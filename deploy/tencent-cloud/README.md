@@ -17,7 +17,9 @@ deployment. The existing static memorial page remains available at `/love/`.
 The environment file must contain the application's production variables. Do
 not commit or print it. Verify keys by name and presence only. The required
 names are `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
-`SUPABASE_SERVICE_ROLE_KEY`, `DEEPSEEK_API_KEY`, and `DAILY_QUOTA`;
+`SUPABASE_SERVICE_ROLE_KEY`, `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL`,
+`DEEPSEEK_MODEL`, and `DAILY_QUOTA`; `DEEPSEEK_BASE_URL` must be an absolute
+HTTP or HTTPS URL without embedded credentials or a fragment, and
 `DAILY_QUOTA` must be exactly `10`. Values are loaded only through the
 mode-0600 runtime env file and are never Docker build arguments.
 Unquoted and double-quoted tracked values containing `$` interpolation syntax

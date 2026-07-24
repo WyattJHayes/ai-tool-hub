@@ -2,6 +2,7 @@
 
 import re
 import sys
+from urllib.parse import urlsplit
 
 
 REQUIRED = (
@@ -9,6 +10,8 @@ REQUIRED = (
     "NEXT_PUBLIC_SUPABASE_ANON_KEY",
     "SUPABASE_SERVICE_ROLE_KEY",
     "DEEPSEEK_API_KEY",
+    "DEEPSEEK_BASE_URL",
+    "DEEPSEEK_MODEL",
     "DAILY_QUOTA",
 )
 OPTIONAL = (
@@ -103,6 +106,22 @@ def parse_env(path):
     return values, interpolates
 
 
+def validate_http_url(key, value):
+    try:
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme not in ("http", "https")
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.fragment
+        ):
+            raise ValueError
+        parsed.port
+    except ValueError:
+        raise EnvError(key, "invalid_http_url") from None
+
+
 def validate(path):
     try:
         values, interpolates = parse_env(path)
@@ -117,6 +136,7 @@ def validate(path):
                 raise EnvError(key, "missing")
             if not values[key].strip():
                 raise EnvError(key, "empty")
+        validate_http_url("DEEPSEEK_BASE_URL", values["DEEPSEEK_BASE_URL"])
         if values["DAILY_QUOTA"] != "10":
             raise EnvError("DAILY_QUOTA", "not_exactly_10")
     except (OSError, UnicodeError):

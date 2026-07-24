@@ -11,6 +11,7 @@ function requireMatch(content, pattern, message) {
 }
 
 const migration = read('next-src/supabase/migrations/001_initial.sql');
+const securityMigration = read('next-src/supabase/migrations/20260724000741_security_hardening.sql');
 const compose = read('server/docker-compose.yml');
 const gitignore = read('.gitignore');
 const nextConfig = read('next-src/next.config.mjs');
@@ -39,19 +40,57 @@ requireMatch(
   'rating aggregate trigger must handle DELETE through OLD.tool_id'
 );
 requireMatch(
-  migration,
-  /ALTER TABLE click_logs ENABLE ROW LEVEL SECURITY/i,
+  securityMigration,
+  /alter table public\.click_logs enable row level security/i,
   'click_logs must have row-level security enabled'
 );
 requireMatch(
-  migration,
-  /CREATE POLICY\s+"[^"]+"\s+ON click_logs\s+FOR INSERT\s+WITH CHECK\s*\(true\)/i,
-  'click_logs must have an explicit public insert policy'
+  securityMigration,
+  /revoke all on table public\.click_logs from public, anon, authenticated/i,
+  'click_logs must revoke all public and client-role privileges'
 );
 requireMatch(
-  migration,
-  /CREATE POLICY\s+"[^"]+"\s+ON click_logs\s+FOR SELECT\s+USING\s*\(true\)/i,
-  'click_logs must have an explicit public read policy'
+  securityMigration,
+  /grant all on table public\.click_logs to service_role/i,
+  'click_logs must remain available to service_role only'
+);
+requireMatch(
+  securityMigration,
+  /alter table public\.scene_tools enable row level security[\s\S]*?grant select on table public\.scene_tools to anon, authenticated[\s\S]*?create policy scene_tools_public_read[\s\S]*?for select[\s\S]*?to anon, authenticated[\s\S]*?using \(true\)/i,
+  'scene_tools must be read-only for anonymous and authenticated clients'
+);
+requireMatch(
+  securityMigration,
+  /drop policy if exists "Allow trigger to insert profiles" on public\.profiles/i,
+  'profiles must remove the permissive trigger insert policy'
+);
+requireMatch(
+  securityMigration,
+  /create policy profiles_read_own[\s\S]*?for select[\s\S]*?to authenticated[\s\S]*?auth\.uid\(\)[\s\S]*?= id/i,
+  'profiles must limit reads to the authenticated owner'
+);
+requireMatch(
+  securityMigration,
+  /create policy profiles_update_own[\s\S]*?for update[\s\S]*?to authenticated[\s\S]*?using[\s\S]*?auth\.uid\(\)[\s\S]*?= id[\s\S]*?with check[\s\S]*?auth\.uid\(\)[\s\S]*?= id/i,
+  'profiles must limit both old and new update rows to the authenticated owner'
+);
+
+for (const functionName of ['handle_new_user', 'update_tool_rating', 'update_tool_favorite_count']) {
+  requireMatch(
+    securityMigration,
+    new RegExp(`create or replace function public\\.${functionName}\\([\\s\\S]*?set search_path = ''`, 'i'),
+    `${functionName} must have an empty fixed search_path`,
+  );
+  requireMatch(
+    securityMigration,
+    new RegExp(`revoke execute on function public\\.${functionName}\\(\\) from public, anon, authenticated`, 'i'),
+    `${functionName} must not be directly executable by public client roles`,
+  );
+}
+requireMatch(
+  securityMigration,
+  /insert into public\.profiles/i,
+  'handle_new_user must schema-qualify profiles'
 );
 requireMatch(
   compose,

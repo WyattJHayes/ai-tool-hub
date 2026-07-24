@@ -36,6 +36,8 @@ function validEnv(overrides = '') {
     NEXT_PUBLIC_SUPABASE_ANON_KEY='anonymous-test-key'
     SUPABASE_SERVICE_ROLE_KEY = service-role-test-key # inline comment
     DEEPSEEK_API_KEY="deepseek-test-key"
+    DEEPSEEK_BASE_URL = https://api.deepseek.example/v1
+    DEEPSEEK_MODEL='deepseek-test-model'
     DAILY_QUOTA = '10'
     ${overrides}
   `;
@@ -197,6 +199,8 @@ test('env validator rejects quoted-empty required values', () => {
     "NEXT_PUBLIC_SUPABASE_ANON_KEY=''",
     "SUPABASE_SERVICE_ROLE_KEY='   '",
     'DEEPSEEK_API_KEY=""',
+    'DEEPSEEK_BASE_URL=""',
+    "DEEPSEEK_MODEL='   '",
   ]) {
     const key = assignment.split('=')[0];
     const lines = validEnv().split('\n').filter(line => !line.includes(`${key} =`) && !line.includes(`${key}=`));
@@ -206,8 +210,8 @@ test('env validator rejects quoted-empty required values', () => {
   }
 });
 
-test('env validator rejects duplicate required secrets', () => {
-  for (const key of ['SUPABASE_SERVICE_ROLE_KEY', 'DEEPSEEK_API_KEY']) {
+test('env validator rejects duplicate required runtime values', () => {
+  for (const key of ['SUPABASE_SERVICE_ROLE_KEY', 'DEEPSEEK_API_KEY', 'DEEPSEEK_BASE_URL', 'DEEPSEEK_MODEL']) {
     const result = validateEnv(validEnv(`${key}=second-test-value`));
     assert.notEqual(result.status, 0, key);
     assert.match(result.stderr, new RegExp(`env_${key}=duplicate`));
@@ -232,6 +236,8 @@ test('env validator rejects Compose interpolation for every required key without
     'NEXT_PUBLIC_SUPABASE_ANON_KEY',
     'SUPABASE_SERVICE_ROLE_KEY',
     'DEEPSEEK_API_KEY',
+    'DEEPSEEK_BASE_URL',
+    'DEEPSEEK_MODEL',
     'DAILY_QUOTA',
   ]) {
     for (const value of interpolationValues) {
@@ -242,6 +248,21 @@ test('env validator rejects Compose interpolation for every required key without
         assert.doesNotMatch(result.stdout + result.stderr, /MISSING|fallback-secret|test-key/);
       }
     }
+  }
+});
+
+test('env validator rejects non-HTTP DeepSeek base URLs without printing values', () => {
+  for (const value of [
+    'ftp://api.deepseek.example/v1',
+    'api.deepseek.example/v1',
+    'https:///v1',
+    'https://user:secret@api.deepseek.example/v1',
+    'https://api.deepseek.example/v1#fragment',
+  ]) {
+    const result = validateEnv(replaceEnvAssignment(validEnv(), 'DEEPSEEK_BASE_URL', `DEEPSEEK_BASE_URL=${value}`));
+    assert.notEqual(result.status, 0, value);
+    assert.match(result.stderr, /env_DEEPSEEK_BASE_URL=invalid_http_url/);
+    assert.doesNotMatch(result.stdout + result.stderr, /deepseek\.example|user:secret|test-key/);
   }
 });
 
