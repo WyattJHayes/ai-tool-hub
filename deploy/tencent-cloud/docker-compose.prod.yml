@@ -6,6 +6,8 @@ name: weihub
 x-private-runtime-env-keys:
   - SUPABASE_SERVICE_ROLE_KEY
   - DEEPSEEK_API_KEY
+  - DEEPSEEK_BASE_URL
+  - DEEPSEEK_MODEL
   - DAILY_QUOTA
   - XDDPAY_APP_ID
   - XDDPAY_SECRET
