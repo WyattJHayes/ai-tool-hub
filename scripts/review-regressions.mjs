@@ -93,6 +93,11 @@ requireMatch(
   'handle_new_user must schema-qualify profiles'
 );
 requireMatch(
+  securityMigration,
+  /insert into public\.profiles[\s\S]*?on conflict \(id\) do nothing/i,
+  'handle_new_user must preserve idempotent profile creation'
+);
+requireMatch(
   compose,
   /http:\/\/localhost:3000\/api\/v1\/health/,
   'Docker healthcheck must use /api/v1/health'
