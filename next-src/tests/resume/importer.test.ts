@@ -4,8 +4,21 @@ import {
   extractResumeFile,
   parseResumeTextLocally,
   ResumeImportError,
+  type ExtractedResumeText,
   type ResumeTextExtractors,
 } from '../../src/features/resume/importer';
+import * as importer from '../../src/features/resume/importer';
+import type { ResumeDocumentV1 } from '../../src/features/resume/types';
+
+interface ResumeImporterContract {
+  reconstructPdfPageText?: (items: Array<{ str: string; hasEOL?: boolean }>) => string;
+  parseResumeImportWithAI?: (
+    extracted: ExtractedResumeText,
+    parseWithAI: (text: string) => Promise<ResumeDocumentV1>,
+  ) => Promise<{ document: ResumeDocumentV1; method: 'ai' | 'local'; warning: string }>;
+}
+
+const importerContract = importer as ResumeImporterContract;
 
 interface FakeFile extends Pick<File, 'name' | 'size' | 'text' | 'arrayBuffer'> {}
 
@@ -102,4 +115,62 @@ TypeScript, React, Product design
   assert.deepEqual(document.experience.map(item => [item.company, item.role]), [['Acme Inc', 'Senior Engineer']]);
   assert.deepEqual(document.education.map(item => [item.school, item.major]), [['Example University', 'Computer Science']]);
   assert.deepEqual(document.skills, ['TypeScript', 'React', 'Product design']);
+});
+
+test('reconstructs PDF text with line boundaries before local parsing', () => {
+  assert.equal(typeof importerContract.reconstructPdfPageText, 'function');
+
+  const text = importerContract.reconstructPdfPageText!([
+    { str: 'Wei Jiahao', hasEOL: true },
+    { str: 'wei@example.com', hasEOL: true },
+    { str: 'Experience', hasEOL: true },
+    { str: 'Acme Inc', hasEOL: false },
+    { str: '| Senior Engineer | 2022.01 - Present', hasEOL: true },
+    { str: 'Built a resilient local editor.', hasEOL: true },
+  ]);
+
+  assert.equal(text.split('\n').length, 5);
+  const document = parseResumeTextLocally(text);
+  assert.equal(document.profile.fullName, 'Wei Jiahao');
+  assert.deepEqual(document.experience.map(item => [item.company, item.role]), [
+    ['Acme Inc', 'Senior Engineer'],
+  ]);
+});
+
+test('uses explicit AI parsing for a complete import preview', async () => {
+  assert.equal(typeof importerContract.parseResumeImportWithAI, 'function');
+  const extracted: ExtractedResumeText = {
+    fileName: 'resume.pdf',
+    kind: 'pdf',
+    text: 'locally extracted resume text',
+  };
+  const aiDocument = parseResumeTextLocally('Wei Jiahao\nwei@example.com');
+  aiDocument.summary = 'Complete structured summary';
+
+  const result = await importerContract.parseResumeImportWithAI!(extracted, async text => {
+    assert.equal(text, extracted.text);
+    return aiDocument;
+  });
+
+  assert.equal(result.method, 'ai');
+  assert.equal(result.warning, '');
+  assert.equal(result.document, aiDocument);
+});
+
+test('keeps the local import preview when AI parsing fails', async () => {
+  assert.equal(typeof importerContract.parseResumeImportWithAI, 'function');
+  const extracted: ExtractedResumeText = {
+    fileName: 'resume.txt',
+    kind: 'txt',
+    text: 'Wei Jiahao\nwei@example.com',
+  };
+
+  const result = await importerContract.parseResumeImportWithAI!(extracted, async () => {
+    throw new Error('upstream unavailable');
+  });
+
+  assert.equal(result.method, 'local');
+  assert.match(result.warning, /AI 解析失败.*本地规则/);
+  assert.equal(result.document.profile.fullName, 'Wei Jiahao');
+  assert.equal(result.document.profile.email, 'wei@example.com');
 });

@@ -1470,6 +1470,16 @@ body:has(.resume-page) > footer {
   font-size: 12px;
 }
 
+.resume-inline-warning {
+  margin: 12px 0 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  font-size: 12px;
+}
+
 .resume-import-fields {
   display: grid;
   margin: 14px 0 0;
@@ -1496,6 +1506,45 @@ body:has(.resume-page) > footer {
 
 .resume-import-fields dd {
   overflow-wrap: anywhere;
+}
+
+.resume-import-ai {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: var(--accent-soft);
+}
+
+.resume-import-ai div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.resume-import-ai strong {
+  color: var(--accent-ink);
+  font-size: 13px;
+}
+
+.resume-import-ai span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.resume-import-ai button {
+  flex: 0 0 auto;
+  gap: 6px;
+  padding: 0 14px;
+}
+
+.resume-import-ai button svg {
+  width: 15px;
+  height: 15px;
 }
 
 .resume-import-dialog__actions {

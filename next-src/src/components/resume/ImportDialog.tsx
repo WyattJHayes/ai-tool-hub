@@ -1,11 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useReducer, useRef, type ChangeEvent, type MouseEvent } from 'react';
-import { FileText, LoaderCircle, Upload, X } from 'lucide-react';
+import { FileText, LoaderCircle, Sparkles, Upload, X } from 'lucide-react';
 import {
   extractResumeFile,
+  parseResumeImportWithAI,
   parseResumeTextLocally,
 } from '@/features/resume/importer';
+import { resumeApi } from '@/features/resume/api';
 import { useResumeStore } from '@/features/resume/store';
 import {
   countPopulatedResumeFields,
@@ -16,6 +18,7 @@ import {
   type ResumeImportMode,
 } from '@/features/resume/ui';
 import type { ResumeDocumentV1 } from '@/features/resume/types';
+import { useUserStore } from '@/stores/useUserStore';
 
 interface ImportDialogProps {
   open: boolean;
@@ -27,6 +30,7 @@ interface ImportDialogProps {
 export function ImportDialog({ open, currentDocument, onClose, onImported }: ImportDialogProps) {
   const stageImport = useResumeStore(state => state.stageImport);
   const acceptStagedImport = useResumeStore(state => state.acceptStagedImport);
+  const isLoggedIn = useUserStore(state => state.isLoggedIn);
   const [state, dispatch] = useReducer(reduceImportDialogState, initialImportDialogState);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
@@ -85,7 +89,7 @@ export function ImportDialog({ open, currentDocument, onClose, onImported }: Imp
     try {
       const extracted = await extractResumeFile(file);
       const document = parseResumeTextLocally(extracted.text);
-      dispatch({ type: 'ready', preview: { extracted, document } });
+      dispatch({ type: 'ready', preview: { extracted, document, parseMethod: 'local', warning: '' } });
     } catch (reason) {
       dispatch({
         type: 'failure',
@@ -94,6 +98,24 @@ export function ImportDialog({ open, currentDocument, onClose, onImported }: Imp
     } finally {
       event.target.value = '';
     }
+  };
+
+  const handleAIParse = async () => {
+    if (!state.preview || !isLoggedIn || state.busy) return;
+    dispatch({ type: 'set-busy', busy: true });
+    const result = await parseResumeImportWithAI(
+      state.preview.extracted,
+      text => resumeApi.parseResume(text),
+    );
+    dispatch({
+      type: 'ready',
+      preview: {
+        ...state.preview,
+        document: result.document,
+        parseMethod: result.method,
+        warning: result.warning,
+      },
+    });
   };
 
   const importConfirmation = state.preview ? createResumeImportConfirmation(
@@ -165,22 +187,45 @@ export function ImportDialog({ open, currentDocument, onClose, onImported }: Imp
               <div>
                 <strong>{state.preview.extracted.fileName}</strong>
                 <span>{state.preview.extracted.kind.toUpperCase()} · {countPopulatedResumeFields(state.preview.document)} 个已识别内容字段</span>
-                <span>本地规则解析 · 需要人工核对</span>
+                <span>{state.preview.parseMethod === 'ai' ? 'AI 结构化解析 · 请人工核对' : '本地规则解析 · 需要人工核对'}</span>
               </div>
               <button type="button" onClick={() => fileInputRef.current?.click()}>重选</button>
             </div>
           )}
 
           {state.error ? <p className="resume-inline-error" role="alert">{state.error}</p> : null}
+          {state.preview?.warning ? <p className="resume-inline-warning" role="status">{state.preview.warning}</p> : null}
 
           {state.preview ? (
-            <dl className="resume-import-fields">
-              <div><dt>姓名</dt><dd>{state.preview.document.profile.fullName || '未识别'}</dd></div>
-              <div><dt>邮箱</dt><dd>{state.preview.document.profile.email || '未识别'}</dd></div>
-              <div><dt>工作经历</dt><dd>{state.preview.document.experience.length} 项</dd></div>
-              <div><dt>教育经历</dt><dd>{state.preview.document.education.length} 项</dd></div>
-              <div><dt>技能</dt><dd>{state.preview.document.skills.filter(Boolean).length} 项</dd></div>
-            </dl>
+            <>
+              <dl className="resume-import-fields">
+                <div><dt>姓名</dt><dd>{state.preview.document.profile.fullName || '未识别'}</dd></div>
+                <div><dt>邮箱</dt><dd>{state.preview.document.profile.email || '未识别'}</dd></div>
+                <div><dt>工作经历</dt><dd>{state.preview.document.experience.length} 项</dd></div>
+                <div><dt>项目经历</dt><dd>{state.preview.document.projects.length} 项</dd></div>
+                <div><dt>教育经历</dt><dd>{state.preview.document.education.length} 项</dd></div>
+                <div><dt>技能</dt><dd>{state.preview.document.skills.filter(Boolean).length} 项</dd></div>
+                <div><dt>证书与补充</dt><dd>{state.preview.document.certificates.filter(Boolean).length} 项</dd></div>
+              </dl>
+
+              {isLoggedIn && state.preview.parseMethod !== 'ai' ? (
+                <div className="resume-import-ai">
+                  <div>
+                    <strong>AI 完整解析</strong>
+                    <span>补全工作、项目、教育和技能结构 · 1 次额度</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="resume-command--accent"
+                    onClick={() => void handleAIParse()}
+                    disabled={state.busy}
+                  >
+                    {state.busy ? <LoaderCircle className="resume-spinner" aria-hidden="true" /> : <Sparkles aria-hidden="true" />}
+                    {state.busy ? '解析中' : '开始解析'}
+                  </button>
+                </div>
+              ) : null}
+            </>
           ) : null}
         </div>
 
