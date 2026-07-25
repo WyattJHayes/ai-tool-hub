@@ -124,10 +124,16 @@ test('parses a resume through the configured DeepSeek endpoint and returns only 
   const body = JSON.parse(String(init.body));
   assert.equal(body.model, 'deepseek-test');
   assert.equal(body.max_tokens, 8192);
+  assert.equal(body.temperature, 0);
+  assert.equal(body.seed, 20260725);
+  assert.deepEqual(body.thinking, { type: 'disabled' });
+  assert.equal(body.response_format, undefined);
   assert.match(body.messages[0].content, /untrusted quoted data/i);
   assert.match(body.messages[1].content, /PRIVATE_RESUME_TEXT/);
   assert.match(body.messages[1].content, /"schemaVersion"\s*:\s*1/);
   assert.match(body.messages[1].content, /"fullName"/);
+  assert.match(body.messages[1].content, /skills[\s\S]*dedicated skills[\s\S]*one list item[\s\S]*do not infer/i);
+  assert.match(body.messages[1].content, /certificates[\s\S]*awards[\s\S]*honors[\s\S]*training/i);
   assert.doesNotMatch(JSON.stringify(result), /ignoredModelField|PRIVATE_JD_TEXT/);
 });
 

@@ -11,6 +11,7 @@ import type {
 import { ResumeApiError } from './errors';
 
 const DEFAULT_TIMEOUT_MS = 60_000;
+const RESUME_PARSE_SEED = 20260725;
 
 const RESUME_SCHEMA_EXAMPLE = JSON.stringify({
   schemaVersion: 1,
@@ -27,6 +28,10 @@ const RESUME_SCHEMA_EXAMPLE = JSON.stringify({
   certificates: [],
   updatedAt: 'ISO-8601 timestamp',
 });
+
+const RESUME_EXTRACTION_RULES = `Extraction rules:
+- skills: copy only explicit entries from a dedicated skills, competencies, or professional capabilities section. Preserve each source bullet or source line as exactly one list item, preserve source order, trim whitespace, and remove exact duplicates. Do not split one source item into multiple skills and do not infer skills from experience, projects, education, or narrative text.
+- certificates: include explicit certificates, professional qualifications, awards, honors, and completed training programs. Preserve source wording and source order, remove exact duplicates, and return [] only when none are present.`;
 
 const JD_SCHEMA_EXAMPLE = JSON.stringify({
   jobTitle: '',
@@ -153,13 +158,18 @@ function requestBody(
   messages: Array<{ role: string; content: string }>,
   stream: boolean,
   maxTokens = stream ? 5000 : 2048,
+  deterministic = false,
 ) {
   return JSON.stringify({
     model: env.deepseekModel,
     messages,
     stream,
-    temperature: stream ? 0.5 : 0.1,
+    temperature: deterministic ? 0 : stream ? 0.5 : 0.1,
     max_tokens: maxTokens,
+    ...(deterministic ? {
+      seed: RESUME_PARSE_SEED,
+      thinking: { type: 'disabled' },
+    } : {}),
   });
 }
 
@@ -177,7 +187,7 @@ export function createResumeAI(dependencies: ResumeAIDependencies): ResumeAI {
   async function complete(
     messages: Array<{ role: string; content: string }>,
     signal: AbortSignal,
-    maxTokens = 2048,
+    options: { maxTokens?: number; deterministic?: boolean } = {},
   ): Promise<unknown> {
     const linked = linkedAbort(signal, timeoutMs);
     try {
@@ -187,7 +197,13 @@ export function createResumeAI(dependencies: ResumeAIDependencies): ResumeAI {
           'content-type': 'application/json',
           authorization: `Bearer ${dependencies.env.deepseekApiKey}`,
         },
-        body: requestBody(dependencies.env, messages, false, maxTokens),
+        body: requestBody(
+          dependencies.env,
+          messages,
+          false,
+          options.maxTokens,
+          options.deterministic,
+        ),
         signal: linked.signal,
       });
       if (!response.ok) throw new ResumeApiError('AI_UPSTREAM', 502);
@@ -203,8 +219,8 @@ export function createResumeAI(dependencies: ResumeAIDependencies): ResumeAI {
     async parseResume(text, signal) {
       const value = await complete([
         { role: 'system', content: systemPrompt('structured resume extraction into ResumeDocumentV1') },
-        { role: 'user', content: `${userData('Resume', text)}\nReturn this complete JSON shape using only facts from the resume:\n${RESUME_SCHEMA_EXAMPLE}` },
-      ], signal, 8192);
+        { role: 'user', content: `${userData('Resume', text)}\n${RESUME_EXTRACTION_RULES}\nReturn this complete JSON shape using only facts from the resume:\n${RESUME_SCHEMA_EXAMPLE}` },
+      ], signal, { maxTokens: 8192, deterministic: true });
       try {
         return parseResumeDocument(value);
       } catch {
