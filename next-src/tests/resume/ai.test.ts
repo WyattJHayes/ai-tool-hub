@@ -123,6 +123,7 @@ test('parses a resume through the configured DeepSeek endpoint and returns only 
   assert.equal(new Headers(init.headers).get('authorization'), 'Bearer private-api-key');
   const body = JSON.parse(String(init.body));
   assert.equal(body.model, 'deepseek-test');
+  assert.equal(body.max_tokens, 8192);
   assert.match(body.messages[0].content, /untrusted quoted data/i);
   assert.match(body.messages[1].content, /PRIVATE_RESUME_TEXT/);
   assert.match(body.messages[1].content, /"schemaVersion"\s*:\s*1/);
