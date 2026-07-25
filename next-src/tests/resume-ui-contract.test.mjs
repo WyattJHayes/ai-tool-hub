@@ -95,6 +95,19 @@ test('requires a local import preview before merge or replacement', () => {
   assert.match(ui, /getClientRects\(\)/);
 });
 
+test('offers explicit authenticated AI parsing and preserves the local fallback', () => {
+  const dialog = read('src/components/resume/ImportDialog.tsx');
+  const importer = read('src/features/resume/importer.ts');
+
+  assert.match(dialog, /parseResumeImportWithAI/);
+  assert.match(dialog, /resumeApi\.parseResume/);
+  assert.match(dialog, /useUserStore/);
+  assert.match(dialog, /AI 完整解析/);
+  assert.match(dialog, /1 次额度/);
+  assert.match(dialog, /AI 结构化解析/);
+  assert.match(`${dialog}\n${importer}`, /已回退到本地规则解析/);
+});
+
 test('exposes a post-import undo action wired to the canonical store', () => {
   const workspace = read('src/components/resume/ResumeWorkspace.tsx');
 

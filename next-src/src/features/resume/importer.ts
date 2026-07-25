@@ -13,6 +13,12 @@ export interface ExtractedResumeText {
   text: string;
 }
 
+export interface ParsedResumeImport {
+  document: ResumeDocumentV1;
+  method: 'ai' | 'local';
+  warning: string;
+}
+
 export type ResumeTextExtractor = (file: File) => Promise<string>;
 export type ResumeTextExtractors = Record<ExtractedResumeKind, ResumeTextExtractor>;
 
@@ -69,12 +75,21 @@ async function extractPdfText(file: File): Promise<string> {
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
       const page = await document.getPage(pageNumber);
       const content = await page.getTextContent();
-      pages.push(content.items.map(item => ('str' in item ? item.str : '')).join(' '));
+      pages.push(reconstructPdfPageText(content.items.filter(item => 'str' in item)));
     }
     return pages.join('\n');
   } finally {
     await loadingTask.destroy();
   }
+}
+
+export function reconstructPdfPageText(
+  items: ReadonlyArray<{ str: string; hasEOL?: boolean }>,
+): string {
+  return items
+    .map(item => `${item.str}${item.hasEOL ? '\n' : ' '}`)
+    .join('')
+    .trimEnd();
 }
 
 async function extractDocxText(file: File): Promise<string> {
@@ -121,6 +136,25 @@ export function parseResumeTextLocally(text: string): ResumeDocumentV1 {
     education: parseEducation(sectionLines(lines, EDUCATION_HEADINGS)),
     skills: parseSkills(sectionLines(lines, SKILLS_HEADINGS)),
   });
+}
+
+export async function parseResumeImportWithAI(
+  extracted: ExtractedResumeText,
+  parseWithAI: (text: string) => Promise<ResumeDocumentV1>,
+): Promise<ParsedResumeImport> {
+  try {
+    return {
+      document: await parseWithAI(extracted.text),
+      method: 'ai',
+      warning: '',
+    };
+  } catch {
+    return {
+      document: parseResumeTextLocally(extracted.text),
+      method: 'local',
+      warning: 'AI 解析失败，已回退到本地规则解析，请人工核对。',
+    };
+  }
 }
 
 function sectionLines(lines: string[], heading: RegExp): string[] {

@@ -21,6 +21,8 @@ export type ResumeSaveState = 'unsaved' | 'saving' | 'saved' | 'error';
 export interface ResumeImportPreview {
   extracted: ExtractedResumeText;
   document: ResumeDocumentV1;
+  parseMethod?: 'ai' | 'local';
+  warning?: string;
 }
 
 export interface ImportDialogState {
