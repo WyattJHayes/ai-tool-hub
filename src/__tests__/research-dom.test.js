@@ -84,6 +84,27 @@ describe('research page UI elements', () => {
     });
 });
 
+describe('research result security', () => {
+    test('sanitizes untrusted result markup before inserting it into the DOM', () => {
+        document.body.innerHTML = '<div id="researchResults"></div>';
+        mod.renderResearchResults({
+            topic: '<img src=x onerror=alert(1)>',
+            depth: 'quick',
+            report: {
+                dateStr: '<img src=x onerror=alert(1)>',
+                execSummary: '<img src=x onerror=alert(1)>',
+                keyFindings: [],
+                sections: [],
+            },
+            sources: [{ title: 'source', type: 'web', url: 'javascript:alert(1)' }],
+        });
+
+        const results = document.getElementById('researchResults');
+        expect(results.querySelector('[onerror]')).toBeNull();
+        expect(results.querySelector('a')?.getAttribute('href') || '').not.toMatch(/^javascript:/i);
+    });
+});
+
 // ── Research page event handlers ─────────────────────────
 
 describe('research page event handlers', () => {

@@ -4,6 +4,7 @@
  * Uses free public APIs: Wikipedia, DuckDuckGo Instant Answer, Open Library, etc.
  */
 import { escapeHtml, showToast } from './utils.js';
+import DOMPurify from 'dompurify';
 
 // ── Testability hook: allows tests to inject a mock fetch ──────────────────
 let _researchFetch = typeof fetch !== 'undefined' ? fetch : globalThis.fetch;
@@ -532,7 +533,7 @@ async function startResearch() {
 
 // ── Results rendering ─────────────────────────────────────────────────────
 
-function renderResearchResults(result) {
+export function renderResearchResults(result) {
     const container = document.getElementById('researchResults');
     if (!container) return;
 
@@ -571,7 +572,7 @@ function renderResearchResults(result) {
     </a>
   `).join('');
 
-    container.innerHTML = `
+    container.innerHTML = DOMPurify.sanitize(`
     <div class="research-results-panel">
       <div class="research-results-header">
         <div class="research-results-meta">
@@ -580,9 +581,9 @@ function renderResearchResults(result) {
             ${esc(topic)}
           </h2>
           <div class="research-results-info">
-            <span><i class="fas fa-calendar"></i> ${report.dateStr}</span>
+            <span><i class="fas fa-calendar"></i> ${esc(report.dateStr)}</span>
             <span>·</span>
-            <span><i class="fas fa-gauge-high"></i> ${DEPTH_LEVELS.find(d => d.id === depth)?.label || depth}</span>
+            <span><i class="fas fa-gauge-high"></i> ${esc(DEPTH_LEVELS.find(d => d.id === depth)?.label || depth)}</span>
             <span>·</span>
             <span><i class="fas fa-link"></i> ${sources.length} 个来源</span>
             </div>
@@ -656,7 +657,7 @@ function renderResearchResults(result) {
         </button>
       </div>
     </div>
-  `;
+  `);
 
     container.style.display = 'block';
 

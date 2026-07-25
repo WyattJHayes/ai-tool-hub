@@ -1,0 +1,14 @@
+name: Production source analysis
+
+queries:
+  - uses: security-extended
+
+paths:
+  - .github/workflows
+  - next-src/src
+  - js
+
+paths-ignore:
+  - '**/__tests__/**'
+  - '**/*.test.*'
+  - '**/tests/**'

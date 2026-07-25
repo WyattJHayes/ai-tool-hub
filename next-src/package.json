@@ -9,7 +9,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint src --ext .ts,.tsx",
-    "test:resume": "tsx --test tests/resume/domain.test.ts tests/resume/importer.test.ts tests/resume/pdf.test.ts tests/resume/api-client.test.ts tests/resume/ui-behavior.test.ts tests/resume/auth-recovery.test.ts tests/resume/ui-render.test.tsx tests/resume/plans.test.ts && NODE_OPTIONS=--conditions=react-server tsx --test tests/resume/quota.test.ts tests/resume/server-auth.test.ts tests/resume/ai.test.ts && node --test tests/resume-schema.test.mjs tests/resume/runtime-assets.test.mjs"
+    "test:resume": "tsx --test tests/resume/domain.test.ts tests/resume/importer.test.ts tests/resume/pdf.test.ts tests/resume/api-client.test.ts tests/resume/ui-behavior.test.ts tests/resume/auth-recovery.test.ts tests/resume/ui-render.test.tsx tests/resume/plans.test.ts tests/api-security.test.ts && NODE_OPTIONS=--conditions=react-server tsx --test tests/resume/quota.test.ts tests/resume/server-auth.test.ts tests/resume/ai.test.ts && node --test tests/resume-schema.test.mjs tests/resume/runtime-assets.test.mjs"
   },
   "dependencies": {
     "@sentry/nextjs": "^10.66.0",
@@ -28,15 +28,18 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@next/eslint-plugin-next": "16.2.11",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
-    "eslint": "^9",
-    "eslint-config-next": "16.2.11",
+    "eslint": "10.8.0",
+    "eslint-plugin-jsx-a11y-x": "0.2.0",
+    "eslint-plugin-react-hooks": "7.1.1",
     "postcss": "^8.5.10",
     "tailwindcss": "^3.4.1",
     "tsx": "^4.23.1",
-    "typescript": "^5"
+    "typescript": "^5",
+    "typescript-eslint": "8.65.0"
   },
   "overrides": {
     "postcss": "$postcss",

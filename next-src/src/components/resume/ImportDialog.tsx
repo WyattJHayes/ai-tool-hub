@@ -142,7 +142,7 @@ export function ImportDialog({ open, currentDocument, onClose, onImported }: Imp
   };
 
   return (
-    <div className="resume-dialog-backdrop" onMouseDown={handleBackdrop}>
+    <div className="resume-dialog-backdrop" role="presentation" onMouseDown={handleBackdrop}>
       <section
         ref={dialogRef}
         className="resume-import-dialog"

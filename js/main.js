@@ -285,7 +285,7 @@ function doLogout() {
     updateUserMenu(null);
     showToast('已退出登录');
 }
-function updateUserMenu(user) {
+export function updateUserMenu(user) {
     const loginItem = document.querySelector('[data-action="show-auth-modal"]');
     const logoutItem = document.querySelector('[data-action="do-logout"]');
     const userNameEl = document.getElementById('userName');
@@ -294,7 +294,11 @@ function updateUserMenu(user) {
     const userAvatarEl = document.getElementById('userAvatar');
     const userIconEl = document.getElementById('userIcon');
     if (user) {
-        if (loginItem) loginItem.innerHTML = '<i class="fas fa-user"></i> ' + user.name;
+        if (loginItem) {
+            const icon = document.createElement('i');
+            icon.className = 'fas fa-user';
+            loginItem.replaceChildren(icon, document.createTextNode(` ${user.name}`));
+        }
         if (logoutItem) logoutItem.style.display = '';
         if (userNameEl) userNameEl.textContent = user.name;
         if (menuUserNameEl) menuUserNameEl.textContent = user.name;
@@ -302,7 +306,11 @@ function updateUserMenu(user) {
         if (userAvatarEl) userAvatarEl.classList.add('hidden');
         if (userIconEl) userIconEl.classList.remove('hidden');
     } else {
-        if (loginItem) loginItem.innerHTML = '<i class="fas fa-sign-in-alt"></i> 登录 / 注册';
+        if (loginItem) {
+            const icon = document.createElement('i');
+            icon.className = 'fas fa-sign-in-alt';
+            loginItem.replaceChildren(icon, document.createTextNode(' 登录 / 注册'));
+        }
         if (logoutItem) logoutItem.style.display = 'none';
         if (userNameEl) userNameEl.textContent = '游客';
         if (menuUserNameEl) menuUserNameEl.textContent = '游客';

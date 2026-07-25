@@ -42,11 +42,7 @@ describe('shareToQQ', () => {
     });
 
     test('should open QQ share URL with current page URL', () => {
-        // jsdom sets location.href to 'about:blank' by default
-        Object.defineProperty(window, 'location', {
-            value: { href: 'https://weihub.cloud/' },
-            writable: true
-        });
+        window.history.replaceState({}, '', '/');
         
         shareToQQ();
 
@@ -69,10 +65,7 @@ describe('shareToQQ', () => {
 
 describe('copyShareLink', () => {
     beforeEach(() => {
-        Object.defineProperty(window, 'location', {
-            value: { href: 'https://weihub.cloud/tools' },
-            writable: true
-        });
+        window.history.replaceState({}, '', '/tools');
     });
 
     test('should copy current URL to clipboard on success', async () => {

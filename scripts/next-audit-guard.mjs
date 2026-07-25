@@ -9,12 +9,12 @@ export function validateAuditReport(report) {
 
   return Object.keys(report.vulnerabilities)
     .sort((left, right) => left.localeCompare(right))
-    .map(name => `${name}: production vulnerability is not allowed`);
+    .map(name => `${name}: dependency vulnerability is not allowed`);
 }
 
 function run() {
   const repositoryRoot = fileURLToPath(new URL('../', import.meta.url));
-  const result = spawnSync('npm', ['--prefix', 'next-src', 'audit', '--omit=dev', '--json'], {
+  const result = spawnSync('npm', ['--prefix', 'next-src', 'audit', '--json'], {
     cwd: repositoryRoot,
     encoding: 'utf8',
   });
@@ -40,7 +40,7 @@ function run() {
     return;
   }
 
-  console.log('Next.js production dependency audit is clean.');
+  console.log('Next.js dependency audit is clean.');
 }
 
 const invokedAsScript = process.argv[1]

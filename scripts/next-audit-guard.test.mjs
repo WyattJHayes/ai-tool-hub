@@ -40,8 +40,8 @@ test('rejects the former pinned Next.js and Sharp advisory chain', async () => {
     next: '16.2.11',
     sharp: '0.34.5',
   }), [
-    'next: production vulnerability is not allowed',
-    'sharp: production vulnerability is not allowed',
+    'next: dependency vulnerability is not allowed',
+    'sharp: dependency vulnerability is not allowed',
   ]);
 });
 
@@ -53,8 +53,8 @@ test('rejects malformed vulnerability entries without exceptions', async () => {
     next: '16.2.11',
     sharp: '0.34.5',
   }), [
-    'next: production vulnerability is not allowed',
-    'sharp: production vulnerability is not allowed',
+    'next: dependency vulnerability is not allowed',
+    'sharp: dependency vulnerability is not allowed',
   ]);
 });
 
@@ -65,6 +65,9 @@ test('accepts a clean audit without requiring temporary packages', async () => {
 
 test('CI runs the exact audit guard instead of broadly lowering the audit level', () => {
   const workflow = readFileSync(new URL('../.github/workflows/deploy.yml', import.meta.url), 'utf8');
+  const guard = readFileSync(guardUrl, 'utf8');
   assert.match(workflow, /node scripts\/next-audit-guard\.mjs/);
   assert.doesNotMatch(workflow, /audit-level=(?:high|critical)/);
+  assert.match(guard, /\['--prefix', 'next-src', 'audit', '--json'\]/);
+  assert.doesNotMatch(guard, /--omit=dev/);
 });

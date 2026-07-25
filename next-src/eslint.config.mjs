@@ -1,10 +1,15 @@
 import { defineConfig, globalIgnores } from 'eslint/config';
-import nextVitals from 'eslint-config-next/core-web-vitals';
-import nextTypescript from 'eslint-config-next/typescript';
+import nextPlugin from '@next/eslint-plugin-next';
+import jsxA11y from 'eslint-plugin-jsx-a11y-x';
+import reactHooks from 'eslint-plugin-react-hooks';
+import tseslint from 'typescript-eslint';
 
 export default defineConfig([
-  ...nextVitals,
-  ...nextTypescript,
+  tseslint.configs.base,
+  tseslint.configs.eslintRecommended,
+  nextPlugin.configs['core-web-vitals'],
+  reactHooks.configs.flat.recommended,
+  jsxA11y.configs.recommended,
   {
     rules: {
       indent: 'off',

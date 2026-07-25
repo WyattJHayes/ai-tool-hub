@@ -108,6 +108,8 @@ function createClickEvent(target) {
 // ---------------------------------------------------------------------------
 
 describe('action handlers', () => {
+    let mainModule;
+
     beforeAll(async () => {
         document.body.innerHTML = `
             <div id="app">
@@ -126,11 +128,23 @@ describe('action handlers', () => {
         `;
         window.open = jest.fn();
         window.scrollTo = jest.fn();
-        await import('../../js/main.js');
+        mainModule = await import('../../js/main.js');
     });
 
     beforeEach(() => {
         jest.clearAllMocks();
+    });
+
+    test('renders a saved user name as text instead of HTML', () => {
+        const loginItem = document.createElement('button');
+        loginItem.dataset.action = 'show-auth-modal';
+        document.body.appendChild(loginItem);
+
+        mainModule.updateUserMenu({ name: '<img src=x onerror=alert(1)>', email: 'safe@example.com' });
+
+        expect(loginItem.querySelector('img')).toBeNull();
+        expect(loginItem.textContent).toContain('<img src=x onerror=alert(1)>');
+        loginItem.remove();
     });
 
     describe('global click handler action delegation', () => {

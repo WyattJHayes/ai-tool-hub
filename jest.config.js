@@ -1,5 +1,8 @@
 export default {
     testEnvironment: 'jsdom',
+    testEnvironmentOptions: {
+        url: 'https://weihub.cloud/'
+    },
     transform: {},
     moduleNameMapper: {
         '\\.(css|less|scss|sass)$': 'identity-obj-proxy'
