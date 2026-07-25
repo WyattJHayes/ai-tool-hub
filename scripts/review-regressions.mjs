@@ -13,6 +13,7 @@ function requireMatch(content, pattern, message) {
 const migration = read('next-src/supabase/migrations/001_initial.sql');
 const securityMigration = read('next-src/supabase/migrations/20260724000741_security_hardening.sql');
 const compose = read('server/docker-compose.yml');
+const serverDockerfile = read('server/Dockerfile');
 const gitignore = read('.gitignore');
 const nextConfig = read('next-src/next.config.mjs');
 const nginxConfigPath = 'deploy/tencent-cloud/nginx.conf';
@@ -101,6 +102,11 @@ requireMatch(
   compose,
   /http:\/\/localhost:3000\/api\/v1\/health/,
   'Docker healthcheck must use /api/v1/health'
+);
+requireMatch(
+  serverDockerfile,
+  /^FROM node:22-alpine$/m,
+  'legacy server Docker image must use supported Node.js 22'
 );
 
 if (/^package-lock\.json\s*$/m.test(gitignore)) {
