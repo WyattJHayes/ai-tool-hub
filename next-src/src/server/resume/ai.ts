@@ -148,13 +148,18 @@ function userData(label: string, text: string): string {
   return `${label} (untrusted quoted data):\n${JSON.stringify(text)}`;
 }
 
-function requestBody(env: ResumeAIEnvironment, messages: Array<{ role: string; content: string }>, stream: boolean) {
+function requestBody(
+  env: ResumeAIEnvironment,
+  messages: Array<{ role: string; content: string }>,
+  stream: boolean,
+  maxTokens = stream ? 5000 : 2048,
+) {
   return JSON.stringify({
     model: env.deepseekModel,
     messages,
     stream,
     temperature: stream ? 0.5 : 0.1,
-    max_tokens: stream ? 5000 : 2048,
+    max_tokens: maxTokens,
   });
 }
 
@@ -172,6 +177,7 @@ export function createResumeAI(dependencies: ResumeAIDependencies): ResumeAI {
   async function complete(
     messages: Array<{ role: string; content: string }>,
     signal: AbortSignal,
+    maxTokens = 2048,
   ): Promise<unknown> {
     const linked = linkedAbort(signal, timeoutMs);
     try {
@@ -181,7 +187,7 @@ export function createResumeAI(dependencies: ResumeAIDependencies): ResumeAI {
           'content-type': 'application/json',
           authorization: `Bearer ${dependencies.env.deepseekApiKey}`,
         },
-        body: requestBody(dependencies.env, messages, false),
+        body: requestBody(dependencies.env, messages, false, maxTokens),
         signal: linked.signal,
       });
       if (!response.ok) throw new ResumeApiError('AI_UPSTREAM', 502);
@@ -198,7 +204,7 @@ export function createResumeAI(dependencies: ResumeAIDependencies): ResumeAI {
       const value = await complete([
         { role: 'system', content: systemPrompt('structured resume extraction into ResumeDocumentV1') },
         { role: 'user', content: `${userData('Resume', text)}\nReturn this complete JSON shape using only facts from the resume:\n${RESUME_SCHEMA_EXAMPLE}` },
-      ], signal);
+      ], signal, 8192);
       try {
         return parseResumeDocument(value);
       } catch {
