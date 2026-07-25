@@ -34,57 +34,28 @@ async function loadGuard() {
   return import(guardUrl.href);
 }
 
-test('accepts only the pinned Next.js and Sharp advisory chain', async () => {
+test('rejects the former pinned Next.js and Sharp advisory chain', async () => {
   const { validateAuditReport } = await loadGuard();
   assert.deepEqual(validateAuditReport(sharpReport(), {
     next: '16.2.11',
     sharp: '0.34.5',
-  }), []);
-});
-
-test('rejects new advisories even on an allowlisted package', async () => {
-  const { validateAuditReport } = await loadGuard();
-  assert.deepEqual(validateAuditReport(sharpReport('https://github.com/advisories/GHSA-new-advisory'), {
-    next: '16.2.11',
-    sharp: '0.34.5',
   }), [
-    'sharp: unapproved advisory GHSA-new-advisory',
-    'sharp: missing approved advisory GHSA-f88m-g3jw-g9cj',
+    'next: production vulnerability is not allowed',
+    'sharp: production vulnerability is not allowed',
   ]);
 });
 
-test('rejects an incomplete allowlisted vulnerability chain', async () => {
+test('rejects malformed vulnerability entries without exceptions', async () => {
   const { validateAuditReport } = await loadGuard();
   const report = sharpReport();
   report.vulnerabilities.sharp.via = [];
   assert.deepEqual(validateAuditReport(report, {
     next: '16.2.11',
     sharp: '0.34.5',
-  }), ['sharp: missing approved advisory GHSA-f88m-g3jw-g9cj']);
-});
-
-test('rejects package version drift while an exception is active', async () => {
-  const { validateAuditReport } = await loadGuard();
-  assert.deepEqual(validateAuditReport(sharpReport(), {
-    next: '16.2.12',
-    sharp: '0.34.5',
-  }), ['next: exception requires 16.2.11, found 16.2.12']);
-});
-
-test('rejects vulnerabilities outside the exact exception chain', async () => {
-  const { validateAuditReport } = await loadGuard();
-  const report = sharpReport();
-  report.vulnerabilities['fast-uri'] = {
-    name: 'fast-uri',
-    severity: 'high',
-    via: [{ url: 'https://github.com/advisories/GHSA-unexpected' }],
-    nodes: ['node_modules/fast-uri'],
-  };
-  assert.deepEqual(validateAuditReport(report, {
-    next: '16.2.11',
-    sharp: '0.34.5',
-    'fast-uri': '3.1.4',
-  }), ['fast-uri: package is not allowlisted']);
+  }), [
+    'next: production vulnerability is not allowed',
+    'sharp: production vulnerability is not allowed',
+  ]);
 });
 
 test('accepts a clean audit without requiring temporary packages', async () => {
