@@ -3,7 +3,43 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { tsImport } from 'tsx/esm/api';
 
-const { normalizeResumeDocument } = await tsImport('../src/features/resume/schema.ts', import.meta.url);
+const { normalizeResumeDocument, parseResumeDocument } = await tsImport('../src/features/resume/schema.ts', import.meta.url);
+
+function documentWithIds(ids) {
+  return {
+    schemaVersion: 1,
+    id: 'doc-id',
+    name: 'Resume',
+    templateId: 'precision',
+    profile: { id: 'profile-id', fullName: '', phone: '', email: '', location: '', title: '' },
+    target: '',
+    summary: '',
+    experience: [],
+    projects: [],
+    education: ids.map(id => ({ id, school: '', major: '', degree: '', startDate: '', endDate: '' })),
+    skills: [],
+    certificates: [],
+    updatedAt: '2026-07-27T00:00:00.000Z',
+  };
+}
+
+test('parseResumeDocument keeps item ids unique when a model repeats one', () => {
+  // deepseek-v4-flash returned the same literal id for every education entry.
+  const parsed = parseResumeDocument(documentWithIds(['dup', 'dup', 'dup']));
+
+  assert.equal(parsed.education.length, 3);
+  assert.equal(new Set(parsed.education.map(item => item.id)).size, 3);
+  assert.equal(parsed.education[0].id, 'dup');
+});
+
+test('parseResumeDocument does not let an item id collide with the document or profile id', () => {
+  const parsed = parseResumeDocument(documentWithIds(['doc-id', 'profile-id']));
+
+  const ids = [parsed.id, parsed.profile.id, ...parsed.education.map(item => item.id)];
+  assert.equal(parsed.id, 'doc-id');
+  assert.equal(parsed.profile.id, 'profile-id');
+  assert.equal(new Set(ids).size, ids.length);
+});
 
 function functionDefinition(sql, name) {
   const startMarker = `create or replace function ${name}(`;

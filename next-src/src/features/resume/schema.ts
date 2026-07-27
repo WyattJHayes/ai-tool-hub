@@ -177,10 +177,27 @@ function strictStringList(value: unknown): string[] {
   return value.map(strictString);
 }
 
-function strictProfile(value: unknown): ResumeProfile {
+/**
+ * Validates an id and keeps it unique within one document. Upstream models
+ * reuse a literal id across items, so a collision is replaced rather than
+ * rejected: the value is well-formed, only its uniqueness is not.
+ */
+function strictUniqueId(value: unknown, usedIds: Set<string>): string {
+  const id = strictString(value);
+  if (id && !usedIds.has(id)) {
+    usedIds.add(id);
+    return id;
+  }
+  let generated = generateId();
+  while (usedIds.has(generated)) generated = generateId();
+  usedIds.add(generated);
+  return generated;
+}
+
+function strictProfile(value: unknown, usedIds: Set<string>): ResumeProfile {
   const record = strictRecord(value);
   return {
-    id: strictString(record.id),
+    id: strictUniqueId(record.id, usedIds),
     fullName: strictString(record.fullName),
     phone: strictString(record.phone),
     email: strictString(record.email),
@@ -189,10 +206,10 @@ function strictProfile(value: unknown): ResumeProfile {
   };
 }
 
-function strictExperience(value: unknown): ResumeExperience {
+function strictExperience(value: unknown, usedIds: Set<string>): ResumeExperience {
   const record = strictRecord(value);
   return {
-    id: strictString(record.id),
+    id: strictUniqueId(record.id, usedIds),
     company: strictString(record.company),
     role: strictString(record.role),
     startDate: strictString(record.startDate),
@@ -201,10 +218,10 @@ function strictExperience(value: unknown): ResumeExperience {
   };
 }
 
-function strictProject(value: unknown): ResumeProject {
+function strictProject(value: unknown, usedIds: Set<string>): ResumeProject {
   const record = strictRecord(value);
   return {
-    id: strictString(record.id),
+    id: strictUniqueId(record.id, usedIds),
     name: strictString(record.name),
     role: strictString(record.role),
     startDate: strictString(record.startDate),
@@ -213,10 +230,10 @@ function strictProject(value: unknown): ResumeProject {
   };
 }
 
-function strictEducation(value: unknown): ResumeEducation {
+function strictEducation(value: unknown, usedIds: Set<string>): ResumeEducation {
   const record = strictRecord(value);
   return {
-    id: strictString(record.id),
+    id: strictUniqueId(record.id, usedIds),
     school: strictString(record.school),
     major: strictString(record.major),
     degree: strictString(record.degree),
@@ -236,17 +253,18 @@ export function parseResumeDocument(input: unknown): ResumeDocumentV1 {
   if (record.templateId !== 'precision' && record.templateId !== 'classic') {
     throw new ResumeSchemaError('Invalid template.');
   }
+  const usedIds = new Set<string>();
   return {
     schemaVersion: 1,
-    id: strictString(record.id),
+    id: strictUniqueId(record.id, usedIds),
     name: strictString(record.name),
     templateId: record.templateId,
-    profile: strictProfile(record.profile),
+    profile: strictProfile(record.profile, usedIds),
     target: strictString(record.target),
     summary: strictString(record.summary),
-    experience: strictList(record.experience, strictExperience),
-    projects: strictList(record.projects, strictProject),
-    education: strictList(record.education, strictEducation),
+    experience: strictList(record.experience, item => strictExperience(item, usedIds)),
+    projects: strictList(record.projects, item => strictProject(item, usedIds)),
+    education: strictList(record.education, item => strictEducation(item, usedIds)),
     skills: strictStringList(record.skills),
     certificates: strictStringList(record.certificates),
     updatedAt: strictString(record.updatedAt),
