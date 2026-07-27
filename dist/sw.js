@@ -1,6 +1,8 @@
-// Service Worker for AI Tool Hub v6.0.0
+// Service Worker for AI Tool Hub
 const CACHE_PREFIX = 'ai-tool-hub-';
-const CACHE_NAME = `${CACHE_PREFIX}v6.0.0`;
+// Rewritten from package.json at build time; sw-version.test.js fails on drift.
+const CACHE_VERSION = 'v6.0.0';
+const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 
 const PRECACHE_URLS = [
   './',

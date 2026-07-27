@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite'
 import { resolve } from 'path'
-import { copyFileSync, cpSync, existsSync } from 'fs'
+import { copyFileSync, cpSync, existsSync, readFileSync, writeFileSync } from 'fs'
 import { createRequire } from 'module'
 import { fileURLToPath } from 'url'
 const require = createRequire(import.meta.url)
@@ -29,7 +29,17 @@ function copyToolsPlugin() {
           copyFileSync(toolsData, resolve(outDir, 'tools.json'))
         }
         if (existsSync(serviceWorker)) {
-          copyFileSync(serviceWorker, resolve(outDir, 'sw.js'))
+          // Stamp the cache version from package.json so a release always
+          // invalidates the previous service worker cache.
+          const source = readFileSync(serviceWorker, 'utf8')
+          const stamped = source.replace(
+            /^const CACHE_VERSION = '[^']*';$/m,
+            `const CACHE_VERSION = 'v${pkg.version}';`
+          )
+          if (stamped === source && !source.includes(`'v${pkg.version}'`)) {
+            throw new Error('sw.js is missing a rewritable CACHE_VERSION declaration')
+          }
+          writeFileSync(resolve(outDir, 'sw.js'), stamped)
         }
         if (existsSync(manifest)) {
           copyFileSync(manifest, resolve(outDir, 'manifest.json'))
