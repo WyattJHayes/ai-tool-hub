@@ -29,12 +29,14 @@ beforeEach(() => {
 
     document.body.innerHTML = `
         <div id="app">
-            <div class="search-container">
+            <div class="hero-search-wrapper">
                 <input id="mainSearch" type="text" value="" />
                 <button id="clearSearchBtn" class="hidden"></button>
+                <div id="searchHistory"></div>
+                <div id="searchSuggestions"></div>
             </div>
-            <div id="searchHistory"></div>
-            <div id="searchSuggestions"></div>
+            <input id="stickySearchInput" type="text" value="" />
+            <button id="stickySearchClear"></button>
             <div class="advanced-filters"></div>
             <div id="toolsGrid"><div class="tool-card"></div></div>
             <div class="results-counter hidden">
@@ -161,12 +163,23 @@ describe('setupSearch keyboard events', () => {
 // ── setupSearch: click outside hides panels ───────────
 
 describe('setupSearch click outside', () => {
-    test('click outside search hides suggestions', () => {
+    test('click inside hero search wrapper keeps history open', () => {
         mod.setupSearch();
+        const history = document.getElementById('searchHistory');
+        history.classList.add('show');
+        document.getElementById('mainSearch').click();
+        expect(history.classList.contains('show')).toBe(true);
+    });
+
+    test('click outside hero search wrapper hides panels', () => {
+        mod.setupSearch();
+        const history = document.getElementById('searchHistory');
         const suggestions = document.getElementById('searchSuggestions');
+        history.classList.add('show');
         suggestions.classList.add('show');
         document.body.click();
-        // Should not throw
+        expect(history.classList.contains('show')).toBe(false);
+        expect(suggestions.classList.contains('show')).toBe(false);
     });
 });
 
@@ -180,6 +193,21 @@ describe('setupSearch input event', () => {
         input.value = 'ChatGPT';
         input.dispatchEvent(new Event('input', { bubbles: true }));
         expect(clearBtn.classList.contains('hidden')).toBe(false);
+    });
+
+    test('main and sticky search stay synchronized in both directions', () => {
+        mod.setupSearch();
+        mod.setupStickySearch();
+        const mainInput = document.getElementById('mainSearch');
+        const stickyInput = document.getElementById('stickySearchInput');
+
+        mainInput.value = 'ChatGPT';
+        mainInput.dispatchEvent(new Event('input', { bubbles: true }));
+        expect(stickyInput.value).toBe('ChatGPT');
+
+        stickyInput.value = 'Midjourney';
+        stickyInput.dispatchEvent(new Event('input', { bubbles: true }));
+        expect(mainInput.value).toBe('Midjourney');
     });
 });
 
@@ -209,6 +237,16 @@ describe('clearSearch', () => {
         mod.clearSearch();
         expect(input.value).toBe('');
         expect(document.getElementById('clearSearchBtn').classList.contains('hidden')).toBe(true);
+    });
+
+    test('clears internal search state before focus reopens history', () => {
+        mod.setupSearch();
+        const input = document.getElementById('mainSearch');
+        input.value = 'ChatGPT';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        mod.clearSearch();
+        input.dispatchEvent(new Event('focus'));
+        expect(document.getElementById('searchSuggestions').classList.contains('show')).toBe(false);
     });
 
     test('not throw when search input missing', () => {

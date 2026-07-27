@@ -2,7 +2,7 @@ import { loadTools } from './app.js';
 import { renderTools, filterCategory, loadSavedFilters, clearSearch, setupSearch, setCurrentSort, applyFiltersAndSort, toggleAdvancedFilters, clearAllFilters, toggleAdvancedFilter, setupStickySearch } from './ui.js';
 import { openTool, toggleFavorite, showToolDetail, closeToolDetail, rateTool } from './tool.js';
 import { showShareModal, closeShareModal, shareToWeChat, shareToQQ, copyShareLink, generateShareImage } from './share.js';
-import { setupKeyboardShortcuts, setupPullToRefresh, toggleTheme, showToast, loadAnnouncement, closeAnnouncement, registerServiceWorker, closeThemeModal, setTheme, loadSavedTheme } from './utils.js';
+import { setupKeyboardShortcuts, setupPullToRefresh, toggleTheme, showThemeModal, showToast, loadAnnouncement, closeAnnouncement, registerServiceWorker, closeThemeModal, setTheme, loadSavedTheme } from './utils.js';
 import state, { exportUserData, importUserData } from './state.js';
 import { initEffects } from './effects.js';
 
@@ -38,6 +38,10 @@ function changeSort(sortBy) {
 
     applyFiltersAndSort();
     showToast(`排序方式：${sortLabels[sortBy] || sortBy}`);
+}
+
+function showUnavailableFeature() {
+    showToast('该功能暂未开放');
 }
 
 function exportFavorites() {
@@ -94,6 +98,7 @@ const actionHandlers = {
     'close-announcement': () => closeAnnouncement(),
     'show-share-modal': () => showShareModal(),
     'toggle-theme': () => toggleTheme(),
+    'show-theme-modal': () => showThemeModal(),
     'scroll-to-top': () => scrollToTop(),
     'show-all-tools': () => showAllTools(),
     'close-tool-detail': () => closeToolDetail(),
@@ -110,11 +115,11 @@ const actionHandlers = {
     'copy-share-link': () => copyShareLink(),
     'generate-share-image': () => generateShareImage(),
     'share-tool': () => showShareModal(),
-    'show-research': () => showToast('研究功能即将上线'),
-    'show-prompts': () => showToast('提示词功能即将上线'),
+    'show-research': () => showUnavailableFeature(),
+    'show-prompts': () => showUnavailableFeature(),
     'toggle-user-menu': () => { const menu = document.getElementById('userMenu'); if (menu) menu.classList.toggle('show'); },
-    'show-profile': () => showToast('个人中心功能即将上线'),
-    'sync-data': () => showToast('同步功能即将上线'),
+    'show-profile': () => showUnavailableFeature(),
+    'sync-data': () => showUnavailableFeature(),
     'export-data': () => exportFavorites(),
     'show-auth-modal': () => showAuthModal(),
     'close-auth-modal': () => closeAuthModal(),
@@ -136,10 +141,10 @@ Object.assign(window, {
     closeToolDetail,
     closeShareModal,
     closeThemeModal,
-    showPromptsPage: () => showToast('提示词功能即将上线'),
+    showPromptsPage: () => showUnavailableFeature(),
     toggleUserMenu: () => actionHandlers['toggle-user-menu'](),
-    showProfile: () => showToast('个人中心功能即将上线'),
-    syncData: () => showToast('同步功能即将上线'),
+    showProfile: () => showUnavailableFeature(),
+    syncData: () => showUnavailableFeature(),
     exportData: () => exportFavorites(),
     loginWithGitHub: () => showToast('GitHub OAuth 需后端服务器支持，当前为前端演示模式')
 });
@@ -192,6 +197,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     setupPullToRefresh();
+    document.addEventListener('app:refresh', async (event) => {
+        try {
+            await loadTools();
+            applyFiltersAndSort();
+        } finally {
+            event.detail?.complete?.();
+        }
+    });
     loadAnnouncement();
     loadSavedFilters();
     registerServiceWorker();

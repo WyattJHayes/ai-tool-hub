@@ -97,7 +97,7 @@ beforeEach(() => {
             return mockCache;
         }),
         match: jest.fn(async (req) => mockCache.match(req)),
-        keys: jest.fn(async () => ['ai-tool-hub-v6.0.0', 'old-cache-v1']),
+        keys: jest.fn(async () => ['ai-tool-hub-v6.0.0', 'ai-tool-hub-v5.9.0', 'unrelated-cache']),
         delete: jest.fn(async (name) => name !== 'ai-tool-hub-v6.0.0')
     };
 
@@ -196,7 +196,7 @@ describe('install event', () => {
         const promise = capturedWaitUntil;
         await promise;
 
-        expect(global.caches.open).toHaveBeenCalledWith('ai-tool-hub-v6.4.1');
+        expect(global.caches.open).toHaveBeenCalledWith('ai-tool-hub-v6.0.0');
         expect(mockCache.addAll).toHaveBeenCalledWith(['./', './index.html']);
         expect(skipWaitingCalled).toBe(true);
     });
@@ -227,7 +227,8 @@ describe('activate event', () => {
         await capturedWaitUntil;
 
         expect(global.caches.keys).toHaveBeenCalled();
-        expect(global.caches.delete).toHaveBeenCalledWith('old-cache-v1');
+        expect(global.caches.delete).toHaveBeenCalledWith('ai-tool-hub-v5.9.0');
+        expect(global.caches.delete).not.toHaveBeenCalledWith('unrelated-cache');
         expect(claimCalled).toBe(true);
     });
 

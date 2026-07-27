@@ -1,5 +1,6 @@
-// Service Worker for AI Tool Hub v6.4.1
-const CACHE_NAME = 'ai-tool-hub-v6.4.1';
+// Service Worker for AI Tool Hub v6.0.0
+const CACHE_PREFIX = 'ai-tool-hub-';
+const CACHE_NAME = `${CACHE_PREFIX}v6.0.0`;
 
 const PRECACHE_URLS = [
   './',
@@ -24,7 +25,11 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((names) =>
-      Promise.all(names.filter(n => n !== CACHE_NAME).map(n => caches.delete(n)))
+      Promise.all(
+        names
+          .filter(name => name.startsWith(CACHE_PREFIX) && name !== CACHE_NAME)
+          .map(name => caches.delete(name))
+      )
     ).then(() => self.clients.claim())
   );
 });

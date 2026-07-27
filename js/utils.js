@@ -70,7 +70,11 @@ function setupKeyboardShortcuts(callbacks = {}) {
  * Setup pull-to-refresh gesture for mobile devices
  * Triggers page reload when user pulls down at the top of the page
  */
+let pullToRefreshInitialized = false;
+
 function setupPullToRefresh() {
+    if (pullToRefreshInitialized) return;
+    pullToRefreshInitialized = true;
     let startY = 0;
     let refreshing = false;
     
@@ -93,8 +97,14 @@ function setupPullToRefresh() {
             refreshing = true;
             showToast('正在刷新数据...');
             setTimeout(() => {
-                document.dispatchEvent(new CustomEvent('app:refresh'));
-                refreshing = false;
+                document.dispatchEvent(new CustomEvent('app:refresh', {
+                    detail: {
+                        complete() {
+                            refreshing = false;
+                            pullRefresh.classList.remove('visible');
+                        }
+                    }
+                }));
             }, 500);
         }
     });
@@ -103,7 +113,8 @@ function setupPullToRefresh() {
 /**
  * Theme configuration with all available themes
  */
-let isDarkMode = localStorage.getItem('ai-tool-hub-dark-mode') === 'true';
+const savedDarkMode = localStorage.getItem('ai-tool-hub-dark-mode');
+let isDarkMode = savedDarkMode !== 'false';
 
 // Apply theme class immediately to prevent flash
 if (isDarkMode) {
@@ -128,15 +139,41 @@ function toggleTheme() {
     showToast(isDarkMode ? '已切换到深色模式' : '已切换到浅色模式');
 }
 
+let themeModalTrigger = null;
+
+function handleThemeModalKeydown(event) {
+    const modal = document.getElementById('themeModal');
+    if (!modal?.classList.contains('active')) return;
+    if (event.key === 'Escape') {
+        event.preventDefault();
+        closeThemeModal();
+        return;
+    }
+    if (event.key !== 'Tab') return;
+    const focusable = [...modal.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])')];
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+    }
+}
+
 /**
  * Show the theme selector modal
  */
 function showThemeModal() {
     const modal = document.getElementById('themeModal');
-    if (modal) {
-        modal.classList.add('active');
-        updateThemeSelectionUI();
-    }
+    if (!modal) return;
+    themeModalTrigger = document.activeElement;
+    modal.classList.add('active');
+    updateThemeSelectionUI();
+    document.addEventListener('keydown', handleThemeModalKeydown);
+    modal.querySelector('.modal-close-btn, button')?.focus();
 }
 
 /**
@@ -146,8 +183,11 @@ function showThemeModal() {
 function closeThemeModal(event) {
     const modal = document.getElementById('themeModal');
     if (!modal) return;
-    if (!event || event.target === modal || event.target.closest('.modal-close-btn')) {
+    if (!event || event.target === modal || event.target?.closest?.('.modal-close-btn')) {
         modal.classList.remove('active');
+        document.removeEventListener('keydown', handleThemeModalKeydown);
+        themeModalTrigger?.focus?.();
+        themeModalTrigger = null;
     }
 }
 
@@ -205,33 +245,9 @@ function updateThemeSelectionUI() {
  * Load saved theme on page initialization
  */
 function loadSavedTheme() {
-    // Check localStorage first, then system preference
     const savedDark = localStorage.getItem('ai-tool-hub-dark-mode');
-    if (savedDark !== null) {
-        if (savedDark === 'true') {
-            document.documentElement.classList.add('dark');
-            isDarkMode = true;
-        } else {
-            document.documentElement.classList.remove('dark');
-            isDarkMode = false;
-        }
-    } else {
-        // Follow system preference (guard for test environments)
-        if (typeof window.matchMedia === 'function') {
-            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-            if (prefersDark) {
-                document.documentElement.classList.add('dark');
-                isDarkMode = true;
-            } else {
-                document.documentElement.classList.remove('dark');
-                isDarkMode = false;
-            }
-        } else {
-            // No matchMedia available (e.g. test environments) — default light
-            document.documentElement.classList.remove('dark');
-            isDarkMode = false;
-        }
-    }
+    isDarkMode = savedDark !== 'false';
+    document.documentElement.classList.toggle('dark', isDarkMode);
     updateThemeIcon();
 }
 

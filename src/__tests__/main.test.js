@@ -55,6 +55,7 @@ const mockUtils = {
     setupKeyboardShortcuts: jest.fn(),
     setupPullToRefresh: jest.fn(),
     toggleTheme: jest.fn(),
+    showThemeModal: jest.fn(),
     showToast: jest.fn(),
     loadAnnouncement: jest.fn(),
     closeAnnouncement: jest.fn(),
@@ -247,6 +248,15 @@ describe('action handlers', () => {
             document.body.removeChild(el);
         });
 
+        test('should open the theme selection modal', () => {
+            const el = document.createElement('button');
+            el.dataset.action = 'show-theme-modal';
+            document.body.appendChild(el);
+            el.dispatchEvent(createClickEvent(el));
+            expect(mockUtils.showThemeModal).toHaveBeenCalled();
+            document.body.removeChild(el);
+        });
+
         test('should call scrollToTop', () => {
             const el = document.createElement('button');
             el.dataset.action = 'scroll-to-top';
@@ -404,6 +414,16 @@ describe('action handlers', () => {
             expect(mockUtils.registerServiceWorker).toHaveBeenCalled();
         });
 
+        test('should reload data and complete pull-to-refresh', async () => {
+            const complete = jest.fn();
+            document.dispatchEvent(new CustomEvent('app:refresh', { detail: { complete } }));
+            await Promise.resolve();
+            await Promise.resolve();
+            expect(mockApp.loadTools).toHaveBeenCalled();
+            expect(mockUi.applyFiltersAndSort).toHaveBeenCalled();
+            expect(complete).toHaveBeenCalled();
+        });
+
         test('should show toast on window error', () => {
             window.dispatchEvent(new Event('error'));
             expect(mockUtils.showToast).toHaveBeenCalledWith('出现错误，请刷新页面重试');
@@ -424,7 +444,7 @@ describe('action handlers', () => {
     describe('window global functions', () => {
         test('showPromptsPage', () => {
             window.showPromptsPage();
-            expect(mockUtils.showToast).toHaveBeenCalledWith('提示词功能即将上线');
+            expect(mockUtils.showToast).toHaveBeenCalledWith('该功能暂未开放');
         });
 
         test('toggleUserMenu', () => {
@@ -438,12 +458,12 @@ describe('action handlers', () => {
 
         test('showProfile', () => {
             window.showProfile();
-            expect(mockUtils.showToast).toHaveBeenCalledWith('个人中心功能即将上线');
+            expect(mockUtils.showToast).toHaveBeenCalledWith('该功能暂未开放');
         });
 
         test('syncData', () => {
             window.syncData();
-            expect(mockUtils.showToast).toHaveBeenCalledWith('同步功能即将上线');
+            expect(mockUtils.showToast).toHaveBeenCalledWith('该功能暂未开放');
         });
 
         test('exportData', () => {

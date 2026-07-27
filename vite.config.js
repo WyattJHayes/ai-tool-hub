@@ -2,8 +2,11 @@ import { defineConfig } from 'vite'
 import { resolve } from 'path'
 import { copyFileSync, cpSync, existsSync } from 'fs'
 import { createRequire } from 'module'
+import { fileURLToPath } from 'url'
 const require = createRequire(import.meta.url)
 const pkg = require('./package.json')
+const rootDir = fileURLToPath(new URL('.', import.meta.url))
+const outDir = resolve(rootDir, 'dist')
 
 // Plugin to copy tools directory and tools.json to dist
 function copyToolsPlugin() {
@@ -11,27 +14,34 @@ function copyToolsPlugin() {
     name: 'copy-tools',
     closeBundle() {
       try {
-        if (existsSync('tools')) {
-          cpSync('tools', 'dist/tools', { recursive: true, force: true })
+        const toolsDir = resolve(rootDir, 'tools')
+        const toolsData = resolve(rootDir, 'tools.json')
+        const serviceWorker = resolve(rootDir, 'sw.js')
+        const manifest = resolve(rootDir, 'manifest.json')
+        const favicon = resolve(rootDir, 'favicon.svg')
+        const sitemap = resolve(rootDir, 'sitemap.xml')
+        const robots = resolve(rootDir, 'robots.txt')
+
+        if (existsSync(toolsDir)) {
+          cpSync(toolsDir, resolve(outDir, 'tools'), { recursive: true, force: true })
         }
-        if (existsSync('tools.json')) {
-          cpSync('tools.json', 'dist/tools.json', { force: true })
+        if (existsSync(toolsData)) {
+          copyFileSync(toolsData, resolve(outDir, 'tools.json'))
         }
-        if (existsSync('sw.js')) {
-          copyFileSync('sw.js', 'dist/sw.js')
+        if (existsSync(serviceWorker)) {
+          copyFileSync(serviceWorker, resolve(outDir, 'sw.js'))
         }
-        if (existsSync('manifest.json')) {
-          copyFileSync('manifest.json', 'dist/manifest.json')
+        if (existsSync(manifest)) {
+          copyFileSync(manifest, resolve(outDir, 'manifest.json'))
         }
-        if (existsSync('favicon.svg')) {
-          copyFileSync('favicon.svg', 'dist/favicon.svg')
-          copyFileSync('favicon.svg', 'dist/assets/favicon.svg')
+        if (existsSync(favicon)) {
+          copyFileSync(favicon, resolve(outDir, 'favicon.svg'))
         }
-        if (existsSync('sitemap.xml')) {
-          copyFileSync('sitemap.xml', 'dist/sitemap.xml')
+        if (existsSync(sitemap)) {
+          copyFileSync(sitemap, resolve(outDir, 'sitemap.xml'))
         }
-        if (existsSync('robots.txt')) {
-          copyFileSync('robots.txt', 'dist/robots.txt')
+        if (existsSync(robots)) {
+          copyFileSync(robots, resolve(outDir, 'robots.txt'))
         }
         console.log('✓ Files copied to dist/')
       } catch (err) {
@@ -43,16 +53,27 @@ function copyToolsPlugin() {
 }
 
 export default defineConfig(({ mode }) => ({
-  root: '.',
+  root: rootDir,
   base: './',
   build: {
-    outDir: 'dist',
-    emptyOutDir: true,
+    outDir,
+    emptyOutDir: false,
     rollupOptions: {
       input: {
-        main: resolve(__dirname, 'index.html')
+        main: resolve(rootDir, 'index.html')
       },
       output: {
+        entryFileNames: 'assets/main.js',
+        chunkFileNames: 'assets/[name].js',
+        assetFileNames(assetInfo) {
+          if (assetInfo.name === 'manifest.json' || assetInfo.name === 'favicon.svg') {
+            return '[name][extname]'
+          }
+          if (assetInfo.name?.endsWith('.css')) {
+            return 'assets/main.css'
+          }
+          return 'assets/[name][extname]'
+        }
       }
     },
     minify: 'terser',

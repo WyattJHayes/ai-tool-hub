@@ -28,8 +28,10 @@ describe('utils: theme modal and icon updates', () => {
         jest.useFakeTimers();
         localStorage.clear();
         document.body.innerHTML = `
+            <button id="themeTrigger">主题</button>
             <div id="themeModal">
-                <div class="theme-option active" data-theme-value="light">浅色</div>
+                <button class="modal-close-btn">关闭</button>
+                <button class="theme-option active" data-theme-value="light">浅色</button>
                 <div class="theme-option" data-theme-value="dark">深色</div>
                 <div class="theme-option" 
                 <div class="theme-option" 
@@ -50,6 +52,16 @@ describe('utils: theme modal and icon updates', () => {
     test('showThemeModal adds active class', () => {
         showThemeModal();
         expect(document.getElementById('themeModal').classList.contains('active')).toBe(true);
+    });
+
+    test('showThemeModal moves focus and Escape restores trigger focus', () => {
+        const trigger = document.getElementById('themeTrigger');
+        trigger.focus();
+        showThemeModal();
+        expect(document.activeElement.classList.contains('modal-close-btn')).toBe(true);
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        expect(document.getElementById('themeModal').classList.contains('active')).toBe(false);
+        expect(document.activeElement).toBe(trigger);
     });
 
     test('showThemeModal no-ops when modal missing', () => {
@@ -133,16 +145,16 @@ describe('utils: theme modal and icon updates', () => {
         expect(document.documentElement.classList.contains('dark')).toBe(true);
     });
 
-    test('loadSavedTheme defaults to default theme', () => {
+    test('loadSavedTheme defaults to dark theme', () => {
         localStorage.removeItem('ai-tool-hub-dark-mode');
         loadSavedTheme();
-        // No matchMedia in test env, so no dark class added by default
-        expect(document.documentElement.classList.contains('dark')).toBe(false);
+        expect(document.documentElement.classList.contains('dark')).toBe(true);
     });
 
-    test('loadSavedTheme handles invalid saved theme', () => {
+    test('loadSavedTheme treats invalid saved theme as dark', () => {
         localStorage.setItem('ai-tool-hub-dark-mode', 'bogus');
-        expect(() => loadSavedTheme()).not.toThrow();
+        loadSavedTheme();
+        expect(document.documentElement.classList.contains('dark')).toBe(true);
     });
 
     test('updateThemeSelectionUI highlights active theme', () => {

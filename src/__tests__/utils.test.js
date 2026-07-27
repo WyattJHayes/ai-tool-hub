@@ -516,14 +516,21 @@ describe('setTheme / loadSavedTheme', () => {
         expect(document.documentElement.classList.contains('dark')).toBe(true);
     });
 
-    test('loadSavedTheme should default to light', () => {
+    test('loadSavedTheme should default to dark', () => {
         loadSavedTheme();
-        expect(typeof loadSavedTheme).toBe('function');
+        expect(document.documentElement.classList.contains('dark')).toBe(true);
     });
 
-    test('loadSavedTheme should handle bogus storage', () => {
+    test('loadSavedTheme should preserve an explicit light preference', () => {
+        localStorage.setItem('ai-tool-hub-dark-mode', 'false');
+        loadSavedTheme();
+        expect(document.documentElement.classList.contains('dark')).toBe(false);
+    });
+
+    test('loadSavedTheme should treat invalid storage as dark', () => {
         localStorage.setItem('ai-tool-hub-dark-mode', 'bogus');
-        expect(() => loadSavedTheme()).not.toThrow();
+        loadSavedTheme();
+        expect(document.documentElement.classList.contains('dark')).toBe(true);
     });
 });
 
@@ -618,6 +625,21 @@ describe('setupPullToRefresh', () => {
         expect(spy).toHaveBeenCalledWith('touchstart', expect.any(Function), { passive: true });
         expect(spy).toHaveBeenCalledWith('touchmove', expect.any(Function), { passive: true });
         expect(spy).toHaveBeenCalledWith('touchend', expect.any(Function));
+    });
+
+    test('should dispatch refresh event with completion callback', () => {
+        jest.useFakeTimers();
+        document.body.innerHTML = '<div id="pullRefresh" class="visible"></div>';
+        const refreshHandler = jest.fn(event => event.detail.complete());
+        document.addEventListener('app:refresh', refreshHandler, { once: true });
+        setupPullToRefresh();
+
+        document.dispatchEvent(new TouchEvent('touchend'));
+        jest.advanceTimersByTime(500);
+
+        expect(refreshHandler).toHaveBeenCalledTimes(1);
+        expect(document.getElementById('pullRefresh').classList.contains('visible')).toBe(false);
+        jest.useRealTimers();
     });
 
     test('should not throw without element', () => {

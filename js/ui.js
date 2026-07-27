@@ -2,6 +2,8 @@
 import state, { addToSearchHistory } from './state.js';
 import { escapeHtml, escapeAttr, SEARCH_DEBOUNCE_TIME, showToast } from './utils.js';
 
+let currentSearchTerm = '';
+
 /**
  * Filter/Sort functions
  */
@@ -173,12 +175,17 @@ function showSearchHistory() {
 /**
  * Setup search functionality with debounced input handling (v4.4.0 Enhanced)
  */
+function syncStickySearchValue(value) {
+    const stickyInput = document.getElementById('stickySearchInput');
+    if (stickyInput && stickyInput.value !== value) stickyInput.value = value;
+}
+
 function setupSearch() {
     const searchInput = document.getElementById('mainSearch');
     if (!searchInput) return;
 
     let searchDebounceTimeout = null;
-    let currentSearchTerm = '';
+    currentSearchTerm = searchInput.value.trim().toLowerCase();
 
     // Reuse existing #searchSuggestions from HTML, or create one if missing
     let suggestionsContainer = document.getElementById('searchSuggestions');
@@ -220,6 +227,7 @@ function setupSearch() {
             e.stopPropagation();
             searchInput.value = '';
             currentSearchTerm = '';
+            syncStickySearchValue('');
             clearSearchBtn.classList.add('hidden');
             hideSearchSuggestions(suggestionsContainer);
             if (searchHistoryContainer) searchHistoryContainer.classList.remove('show');
@@ -232,6 +240,7 @@ function setupSearch() {
     searchInput.addEventListener('input', (e) => {
         const term = e.target.value.trim().toLowerCase();
         currentSearchTerm = term;
+        syncStickySearchValue(e.target.value);
         const clearSearchBtn = document.getElementById('clearSearchBtn');
         if (clearSearchBtn) clearSearchBtn.classList.toggle('hidden', !term);
 
@@ -286,6 +295,7 @@ function setupSearch() {
                 if (searchHistoryContainer) searchHistoryContainer.classList.remove('show');
                 searchInput.value = searchText;
                 currentSearchTerm = searchText.toLowerCase();
+                syncStickySearchValue(searchText);
                 addToSearchHistory(currentSearchTerm);
                 lastRecordedSearch = currentSearchTerm;
 
@@ -323,6 +333,7 @@ function setupSearch() {
             if (searchInput && document.activeElement === searchInput) {
                 searchInput.value = '';
                 currentSearchTerm = '';
+                syncStickySearchValue('');
                 searchInput.blur();
                 hideSearchSuggestions(suggestionsContainer);
                 if (searchHistoryContainer) searchHistoryContainer.classList.remove('show');
@@ -367,11 +378,13 @@ function setupSearch() {
         });
     }
 
-    // Hide suggestions and history when clicking outside
+    // Hide suggestions and history when clicking outside the actual search wrapper
+    const searchWrapper = searchInput.closest('.hero-search-wrapper, .search-container');
     document.addEventListener('click', (e) => {
-        if (!e.target.closest('.search-container') &&
-            !e.target.closest('#searchSuggestions') &&
-            !e.target.closest('#searchHistory')) {
+        const clickedInsideSearch = searchWrapper?.contains(e.target)
+            || suggestionsContainer.contains(e.target)
+            || searchHistoryContainer?.contains(e.target);
+        if (!clickedInsideSearch) {
             hideSearchSuggestions(suggestionsContainer);
             if (searchHistoryContainer) searchHistoryContainer.classList.remove('show');
         }
@@ -500,6 +513,9 @@ function setSearch(term) {
     const searchInput = document.getElementById('mainSearch');
     if (!searchInput) return;
     searchInput.value = term;
+    currentSearchTerm = term.trim().toLowerCase();
+    const stickyInput = document.getElementById('stickySearchInput');
+    if (stickyInput) stickyInput.value = term;
     const searchHistoryEl = document.getElementById('searchHistory');
     if (searchHistoryEl) searchHistoryEl.classList.remove('show');
     const suggestionsEl = document.getElementById('searchSuggestions');
@@ -518,6 +534,9 @@ function clearSearch() {
     const searchInput = document.getElementById('mainSearch');
     if (!searchInput) return;
     searchInput.value = '';
+    currentSearchTerm = '';
+    const stickyInput = document.getElementById('stickySearchInput');
+    if (stickyInput) stickyInput.value = '';
     const clearSearchBtn = document.getElementById('clearSearchBtn');
     if (clearSearchBtn) clearSearchBtn.classList.add('hidden');
     const searchHistoryEl = document.getElementById('searchHistory');
@@ -604,36 +623,41 @@ function updateBreadcrumb(category) {
  * Sync sticky search with main search (v6.3)
  */
 function setupStickySearch() {
-    var mainInput = document.getElementById('mainSearch');
-    var stickyInput = document.getElementById('stickySearchInput');
+    const mainInput = document.getElementById('mainSearch');
+    const stickyInput = document.getElementById('stickySearchInput');
     if (!mainInput || !stickyInput) return;
-    
-    stickyInput.addEventListener('input', function() {
-        mainInput.value = this.value;
-        var event = new Event('input', { bubbles: true });
-        mainInput.dispatchEvent(event);
+
+    const syncFromMain = () => {
+        if (stickyInput.value !== mainInput.value) stickyInput.value = mainInput.value;
+    };
+
+    stickyInput.value = mainInput.value;
+    mainInput.addEventListener('input', syncFromMain);
+    stickyInput.addEventListener('input', () => {
+        if (mainInput.value === stickyInput.value) return;
+        mainInput.value = stickyInput.value;
+        mainInput.dispatchEvent(new Event('input', { bubbles: true }));
     });
-    
-    var clearBtn = document.getElementById('stickySearchClear');
+
+    const clearBtn = document.getElementById('stickySearchClear');
     if (clearBtn) {
-        clearBtn.addEventListener('click', function() {
+        clearBtn.addEventListener('click', () => {
             stickyInput.value = '';
             mainInput.value = '';
-            var event = new Event('input', { bubbles: true });
-            mainInput.dispatchEvent(event);
-            mainInput.focus();
+            mainInput.dispatchEvent(new Event('input', { bubbles: true }));
+            stickyInput.focus();
         });
     }
-    
+
     // Show sticky search on scroll past hero
-    var heroSection = document.getElementById('heroSection');
+    const heroSection = document.getElementById('heroSection');
     if (!heroSection) return;
-    var stickyBar = document.getElementById('stickySearch');
+    const stickyBar = document.getElementById('stickySearch');
     if (!stickyBar) return;
-    
-    window.addEventListener('scroll', function() {
-        var heroBottom = heroSection.offsetTop + heroSection.offsetHeight;
-        var shouldShow = window.scrollY > heroBottom - 80;
+
+    window.addEventListener('scroll', () => {
+        const heroBottom = heroSection.offsetTop + heroSection.offsetHeight;
+        const shouldShow = window.scrollY > heroBottom - 80;
         stickyBar.style.display = shouldShow ? 'block' : 'none';
         if (shouldShow && document.activeElement === mainInput) {
             stickyInput.focus();
