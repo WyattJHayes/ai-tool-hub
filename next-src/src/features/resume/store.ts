@@ -433,6 +433,7 @@ export const useResumeStore = create<ResumeStore>()(persist(
         undoStack: pushUndo(state.undoStack, state.document),
         changeUndoStack: pushChangeUndo(state.changeUndoStack, state.changes),
         stagedImport: null,
+        changes: [],
       };
     }),
 

@@ -151,7 +151,7 @@ export function normalizeResumeDocument(input: unknown): ResumeDocumentV1 {
       if (typeof version === 'number' && version > CURRENT_SCHEMA_VERSION) {
         throw new ResumeSchemaError(`Unsupported resume schema version: ${version}`);
       }
-      return createEmptyResume();
+      throw new ResumeSchemaError(`Unrecognized resume schema version: ${String(version)}`);
   }
 }
 
@@ -255,7 +255,7 @@ export function parseResumeDocument(input: unknown): ResumeDocumentV1 {
 
 export function parseJDAnalysis(input: unknown): JDAnalysis {
   const record = strictRecord(input);
-  if (!['easy', 'medium', 'hard'].includes(String(record.matchDifficulty))) {
+  if (typeof record.matchDifficulty !== 'string' || !['easy', 'medium', 'hard'].includes(record.matchDifficulty)) {
     throw new ResumeSchemaError('Invalid match difficulty.');
   }
   return {
@@ -274,7 +274,7 @@ export function parseJDAnalysis(input: unknown): JDAnalysis {
 
 export function parseAIOptimizationResult(input: unknown): AIOptimizationResult {
   const record = strictRecord(input);
-  if (!['light', 'medium', 'deep'].includes(String(record.level))) {
+  if (typeof record.level !== 'string' || !['light', 'medium', 'deep'].includes(record.level)) {
     throw new ResumeSchemaError('Invalid optimization level.');
   }
   const result: AIOptimizationResult = {

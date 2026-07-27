@@ -165,10 +165,14 @@ export function AIPanel({
       if ((action.kind === 'analyze-jd' || (action.kind === 'optimize' && action.level !== 'light')) && !sourceJobDescription.trim()) {
         throw new Error('JD_REQUIRED');
       }
+      const serializedDocument = JSON.stringify(submission.document);
+      if (serializedDocument.length > 50_000) {
+        throw new Error('DOCUMENT_TOO_LARGE');
+      }
       setState('reserving');
       setProgress('正在预留 1 次额度');
       if (action.kind === 'parse') {
-        stageCandidate(submission, await resumeApi.parseResume(JSON.stringify(submission.document), controller.signal));
+        stageCandidate(submission, await resumeApi.parseResume(serializedDocument, controller.signal));
       } else if (action.kind === 'analyze-jd') {
         setAnalysis(await resumeApi.analyzeJobDescription(sourceJobDescription, controller.signal));
         setState('idle');
@@ -176,7 +180,7 @@ export function AIPanel({
       } else {
         const result = await resumeApi.streamOptimize(
           action.level,
-          JSON.stringify(submission.document),
+          serializedDocument,
           sourceJobDescription,
           {
             onProgress: value => {
@@ -195,6 +199,8 @@ export function AIPanel({
     } catch (reason) {
       if (reason instanceof Error && reason.message === 'JD_REQUIRED') {
         setError('中度和深度优化需要先填写职位描述。');
+      } else if (reason instanceof Error && reason.message === 'DOCUMENT_TOO_LARGE') {
+        setError('简历内容过多，序列化后超过 50,000 字符限制，请精简内容后重试。');
       } else if (reason instanceof ClientResumeApiError && reason.code === 'AUTH_REQUIRED') {
         setState('idle');
         onRequireAuthentication(action);

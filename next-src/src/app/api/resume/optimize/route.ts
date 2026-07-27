@@ -80,7 +80,7 @@ export function createOptimizeRoute(dependencies: OptimizeRouteDependencies = pr
       }
       if (!body || typeof body !== 'object') throw new ResumeApiError('REQUEST_INVALID', 400);
       const input = body as { level?: unknown; resumeText?: unknown; jdText?: unknown };
-      if (!['light', 'medium', 'deep'].includes(String(input.level))) {
+      if (typeof input.level !== 'string' || !['light', 'medium', 'deep'].includes(input.level)) {
         throw new ResumeApiError('REQUEST_INVALID', 400);
       }
       if (typeof input.resumeText !== 'string' || !input.resumeText.trim() || input.resumeText.length > MAX_RESUME_LENGTH) {

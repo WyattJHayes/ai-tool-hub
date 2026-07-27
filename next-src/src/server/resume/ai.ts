@@ -101,7 +101,9 @@ function extractAssistantContent(value: unknown): string {
   if (!Array.isArray(choices) || !choices[0] || typeof choices[0] !== 'object') {
     throw new ResumeApiError('AI_INVALID_RESPONSE', 502);
   }
-  const message = (choices[0] as { message?: unknown }).message;
+  const choice = choices[0] as { message?: unknown; finish_reason?: unknown };
+  if (choice.finish_reason === 'length') throw new ResumeApiError('AI_INVALID_RESPONSE', 502);
+  const message = choice.message;
   if (!message || typeof message !== 'object' || typeof (message as { content?: unknown }).content !== 'string') {
     throw new ResumeApiError('AI_INVALID_RESPONSE', 502);
   }
@@ -157,7 +159,7 @@ function requestBody(
   env: ResumeAIEnvironment,
   messages: Array<{ role: string; content: string }>,
   stream: boolean,
-  maxTokens = stream ? 5000 : 2048,
+  maxTokens = stream ? 16000 : 2048,
   deterministic = false,
 ) {
   return JSON.stringify({
@@ -281,8 +283,12 @@ export function createResumeAI(dependencies: ResumeAIDependencies): ResumeAI {
             return null;
           }
           try {
-            const parsed = JSON.parse(data) as { choices?: Array<{ delta?: { content?: unknown } }> };
-            const token = parsed.choices?.[0]?.delta?.content;
+            const parsed = JSON.parse(data) as {
+              choices?: Array<{ delta?: { content?: unknown }; finish_reason?: unknown }>;
+            };
+            const choice = parsed.choices?.[0];
+            if (choice?.finish_reason === 'length') throw new ResumeApiError('AI_INVALID_RESPONSE', 502);
+            const token = choice?.delta?.content;
             if (token === undefined || token === null) return null;
             if (typeof token !== 'string') throw new Error('invalid token');
             return token;

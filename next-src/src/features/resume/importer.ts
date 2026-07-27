@@ -78,6 +78,15 @@ async function extractPdfText(file: File): Promise<string> {
       pages.push(reconstructPdfPageText(content.items.filter(item => 'str' in item)));
     }
     return pages.join('\n');
+  } catch (error) {
+    const name = error instanceof Error ? error.name : '';
+    if (name === 'PasswordException') {
+      throw new ResumeImportError('该 PDF 已加密，请移除密码保护后重试');
+    }
+    if (name === 'InvalidPDFException' || name === 'UnknownErrorException') {
+      throw new ResumeImportError('PDF 文件损坏，无法读取，请换一个文件');
+    }
+    throw error;
   } finally {
     await loadingTask.destroy();
   }
