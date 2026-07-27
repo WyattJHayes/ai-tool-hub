@@ -10,6 +10,7 @@ const DEFAULT_MESSAGES: Record<string, string> = {
   QUOTA_ACCOUNT_INVALID: 'The resume quota account is unavailable.',
   QUOTA_UNAVAILABLE: 'The resume quota service is unavailable.',
   REQUEST_INVALID: 'The request is invalid.',
+  RATE_LIMITED: 'Too many resume requests. Please retry shortly.',
   AI_UPSTREAM: 'The AI service is unavailable.',
   AI_TIMEOUT: 'The AI request timed out.',
   AI_INVALID_RESPONSE: 'The AI service returned an invalid response.',
@@ -29,12 +30,20 @@ export interface ResumeErrorBody {
 export class ResumeApiError extends Error {
   readonly code: string;
   readonly status: number;
+  /** Seconds until the caller may retry; only set for RATE_LIMITED. */
+  readonly retryAfterSeconds?: number;
 
-  constructor(code: string, status: number, message = DEFAULT_MESSAGES[code] ?? 'The request could not be completed.') {
+  constructor(
+    code: string,
+    status: number,
+    message = DEFAULT_MESSAGES[code] ?? 'The request could not be completed.',
+    retryAfterSeconds?: number,
+  ) {
     super(message);
     this.name = 'ResumeApiError';
     this.code = code;
     this.status = status;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
@@ -46,4 +55,11 @@ export function toResumeErrorBody(error: ResumeApiError, requestId: string): Res
       requestId,
     },
   };
+}
+
+/** Response headers that accompany an error, such as Retry-After on throttling. */
+export function toResumeErrorHeaders(error: ResumeApiError): Record<string, string> {
+  return error.retryAfterSeconds === undefined
+    ? {}
+    : { 'Retry-After': String(error.retryAfterSeconds) };
 }

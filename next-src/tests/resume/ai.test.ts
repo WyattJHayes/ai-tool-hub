@@ -209,6 +209,7 @@ interface RouteHarness {
   reservations: ReserveQuotaInput[];
   settlements: Array<[string, 'consumed' | 'refunded']>;
   compensations: string[];
+  rateLimitChecks: number;
   logs: unknown[][];
 }
 
@@ -218,6 +219,7 @@ function routeHarness() {
     reservations: [],
     settlements: [],
     compensations: [],
+    rateLimitChecks: 0,
     logs: [],
   };
   const dependencies = {
@@ -236,6 +238,9 @@ function routeHarness() {
     compensate: async (ledgerId: string) => {
       state.compensations.push(ledgerId);
       return {};
+    },
+    enforceRateLimit: () => {
+      state.rateLimitChecks += 1;
     },
     logger: {
       info: (...args: unknown[]) => state.logs.push(args),
@@ -724,6 +729,7 @@ test('quota route requires verified authentication and returns only an allowlist
   const route = createQuotaRoute({
     authenticate: async () => ({ id: 'verified-user', email: null }),
     getQuota: async () => ({ plan: 'free', remaining: 7, total: 10, resetAt: '2026-07-23T16:00:00.000Z', private: PRIVATE_RESUME }),
+    enforceRateLimit: () => undefined,
     logger: { info() {}, warn() {}, error() {} },
   });
   const response = await route(new Request('https://app.example.com/api/resume/quota', {

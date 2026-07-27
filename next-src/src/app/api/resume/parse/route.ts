@@ -1,7 +1,8 @@
 import { parseResumeDocument } from '@/features/resume/schema';
 import type { ResumeDocumentV1 } from '@/features/resume/types';
 import { parseResume } from '@/server/resume/ai';
-import { ResumeApiError, toResumeErrorBody } from '@/server/resume/errors';
+import { ResumeApiError, toResumeErrorBody, toResumeErrorHeaders } from '@/server/resume/errors';
+import { enforceResumeRateLimit } from '@/server/resume/rateLimit';
 import {
   compensateQuota,
   reserveQuota,
@@ -26,6 +27,7 @@ export interface ParseRouteDependencies {
   settle(ledgerId: string, outcome: 'consumed' | 'refunded'): Promise<unknown>;
   compensate(ledgerId: string): Promise<unknown>;
   parseResume(text: string, signal: AbortSignal): Promise<ResumeDocumentV1>;
+  enforceRateLimit(action: 'parse', userId: string): void;
   logger: RouteLogger;
 }
 
@@ -35,6 +37,7 @@ const productionDependencies: ParseRouteDependencies = {
   settle: settleQuota,
   compensate: compensateQuota,
   parseResume,
+  enforceRateLimit: enforceResumeRateLimit,
   logger: console,
 };
 
@@ -51,7 +54,10 @@ function apiError(error: unknown): ResumeApiError {
 
 function errorResponse(error: unknown, id: string): Response {
   const normalized = apiError(error);
-  return Response.json(toResumeErrorBody(normalized, id), { status: normalized.status });
+  return Response.json(toResumeErrorBody(normalized, id), {
+    status: normalized.status,
+    headers: toResumeErrorHeaders(normalized),
+  });
 }
 
 function idempotencyKey(request: Request): string {
@@ -68,6 +74,7 @@ export function createParseRoute(dependencies: ParseRouteDependencies = producti
 
     try {
       const user = await dependencies.authenticate(request);
+      dependencies.enforceRateLimit('parse', user.id);
       let body: unknown;
       try {
         body = await request.json();

@@ -1,7 +1,8 @@
 import { parseAIOptimizationResult } from '@/features/resume/schema';
 import type { AIStreamEvent, OptimizationLevel } from '@/features/resume/types';
 import { streamResumeOptimization } from '@/server/resume/ai';
-import { ResumeApiError, toResumeErrorBody } from '@/server/resume/errors';
+import { ResumeApiError, toResumeErrorBody, toResumeErrorHeaders } from '@/server/resume/errors';
+import { enforceResumeRateLimit } from '@/server/resume/rateLimit';
 import {
   compensateQuota,
   reserveQuota,
@@ -33,6 +34,7 @@ export interface OptimizeRouteDependencies {
     jdText: string,
     signal: AbortSignal,
   ): AsyncGenerator<AIStreamEvent>;
+  enforceRateLimit(action: 'optimize', userId: string): void;
   logger: RouteLogger;
 }
 
@@ -42,6 +44,7 @@ const productionDependencies: OptimizeRouteDependencies = {
   settle: settleQuota,
   compensate: compensateQuota,
   streamResumeOptimization,
+  enforceRateLimit: enforceResumeRateLimit,
   logger: console,
 };
 
@@ -73,6 +76,7 @@ export function createOptimizeRoute(dependencies: OptimizeRouteDependencies = pr
     let body: unknown;
     try {
       user = await dependencies.authenticate(request);
+      dependencies.enforceRateLimit('optimize', user.id);
       try {
         body = await request.json();
       } catch {
@@ -218,7 +222,10 @@ export function createOptimizeRoute(dependencies: OptimizeRouteDependencies = pr
     } catch (error) {
       const normalized = normalizedError(error);
       dependencies.logger.error({ action: 'optimize', requestId: id, code: normalized.code });
-      return Response.json(toResumeErrorBody(normalized, id), { status: normalized.status });
+      return Response.json(toResumeErrorBody(normalized, id), {
+        status: normalized.status,
+        headers: toResumeErrorHeaders(normalized),
+      });
     }
   };
 }

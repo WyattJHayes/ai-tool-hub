@@ -85,6 +85,7 @@ function aiErrorMessage(reason: unknown): string {
     if (reason.code === 'QUOTA_EXHAUSTED') return '当前额度不足，请查看配额。';
     if (reason.code === 'REQUEST_CANCELLED') return '本次 AI 操作已取消，当前简历未改变。';
     if (reason.code === 'STREAM_INCOMPLETE') return 'AI 输出未完成，未生成可应用的修改。';
+    if (reason.code === 'RATE_LIMITED') return '请求过于频繁，请稍后再试。当前简历未改变。';
   }
   return 'AI 操作未完成，当前简历未改变。';
 }

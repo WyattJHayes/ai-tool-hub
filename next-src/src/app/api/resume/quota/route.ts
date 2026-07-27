@@ -1,5 +1,6 @@
 import { getServerEnv } from '@/server/env';
-import { ResumeApiError, toResumeErrorBody } from '@/server/resume/errors';
+import { ResumeApiError, toResumeErrorBody, toResumeErrorHeaders } from '@/server/resume/errors';
+import { enforceResumeRateLimit } from '@/server/resume/rateLimit';
 import { getSupabaseAdminClient } from '@/server/supabase-admin';
 import { requireSupabaseUser, type SupabaseUserIdentity } from '@/server/supabase-admin';
 import type { ResumeQuotaSummary } from '@/features/resume/types';
@@ -13,6 +14,7 @@ interface RouteLogger {
 export interface QuotaRouteDependencies {
   authenticate(request: Request): Promise<SupabaseUserIdentity>;
   getQuota(userId: string): Promise<unknown>;
+  enforceRateLimit(action: 'quota', userId: string): void;
   logger: RouteLogger;
 }
 
@@ -78,6 +80,7 @@ async function productionGetQuota(userId: string): Promise<ResumeQuotaSummary> {
 const productionDependencies: QuotaRouteDependencies = {
   authenticate: requireSupabaseUser,
   getQuota: productionGetQuota,
+  enforceRateLimit: enforceResumeRateLimit,
   logger: console,
 };
 
@@ -104,11 +107,15 @@ export function createQuotaRoute(dependencies: QuotaRouteDependencies = producti
     const id = requestId(request);
     try {
       const user = await dependencies.authenticate(request);
+      dependencies.enforceRateLimit('quota', user.id);
       return Response.json(quotaProjection(await dependencies.getQuota(user.id)));
     } catch (error) {
       const normalized = error instanceof ResumeApiError ? error : new ResumeApiError('INTERNAL_ERROR', 500);
       dependencies.logger.error({ action: 'quota', requestId: id, code: normalized.code });
-      return Response.json(toResumeErrorBody(normalized, id), { status: normalized.status });
+      return Response.json(toResumeErrorBody(normalized, id), {
+        status: normalized.status,
+        headers: toResumeErrorHeaders(normalized),
+      });
     }
   };
 }

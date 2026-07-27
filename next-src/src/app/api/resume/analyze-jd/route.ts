@@ -1,7 +1,8 @@
 import { parseJDAnalysis } from '@/features/resume/schema';
 import type { JDAnalysis } from '@/features/resume/types';
 import { analyzeJobDescription } from '@/server/resume/ai';
-import { ResumeApiError, toResumeErrorBody } from '@/server/resume/errors';
+import { ResumeApiError, toResumeErrorBody, toResumeErrorHeaders } from '@/server/resume/errors';
+import { enforceResumeRateLimit } from '@/server/resume/rateLimit';
 import {
   compensateQuota,
   reserveQuota,
@@ -26,6 +27,7 @@ export interface AnalyzeJdRouteDependencies {
   settle(ledgerId: string, outcome: 'consumed' | 'refunded'): Promise<unknown>;
   compensate(ledgerId: string): Promise<unknown>;
   analyzeJobDescription(jdText: string, signal: AbortSignal): Promise<JDAnalysis>;
+  enforceRateLimit(action: 'analyze-jd', userId: string): void;
   logger: RouteLogger;
 }
 
@@ -35,6 +37,7 @@ const productionDependencies: AnalyzeJdRouteDependencies = {
   settle: settleQuota,
   compensate: compensateQuota,
   analyzeJobDescription,
+  enforceRateLimit: enforceResumeRateLimit,
   logger: console,
 };
 
@@ -63,6 +66,7 @@ export function createAnalyzeJdRoute(dependencies: AnalyzeJdRouteDependencies = 
 
     try {
       const user = await dependencies.authenticate(request);
+      dependencies.enforceRateLimit('analyze-jd', user.id);
       let body: unknown;
       try {
         body = await request.json();
@@ -99,7 +103,10 @@ export function createAnalyzeJdRoute(dependencies: AnalyzeJdRouteDependencies = 
       }
       const normalized = normalizedError(error);
       dependencies.logger.error({ action: 'analyze-jd', requestId: id, code: normalized.code });
-      return Response.json(toResumeErrorBody(normalized, id), { status: normalized.status });
+      return Response.json(toResumeErrorBody(normalized, id), {
+        status: normalized.status,
+        headers: toResumeErrorHeaders(normalized),
+      });
     }
   };
 }
