@@ -35,7 +35,7 @@
   "author": "a895411690",
   "license": "MIT",
   "dependencies": {
-    "dompurify": "3.4.12",
+    "dompurify": "3.4.13",
     "html2canvas": "^1.4.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
