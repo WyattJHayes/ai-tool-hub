@@ -166,8 +166,9 @@ export function AIPanel({
       if ((action.kind === 'analyze-jd' || (action.kind === 'optimize' && action.level !== 'light')) && !sourceJobDescription.trim()) {
         throw new Error('JD_REQUIRED');
       }
-      const serializedDocument = JSON.stringify(submission.document);
-      if (serializedDocument.length > 50_000) {
+      const needsDocument = action.kind === 'parse' || action.kind === 'optimize';
+      const serializedDocument = needsDocument ? JSON.stringify(submission.document) : '';
+      if (needsDocument && serializedDocument.length > 50_000) {
         throw new Error('DOCUMENT_TOO_LARGE');
       }
       setState('reserving');

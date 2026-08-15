@@ -211,6 +211,8 @@ test('ships the complete AI validation, stream, and canonical diff review workfl
   assert.match(panel, /拒绝/);
   assert.match(panel, /AbortController/);
   assert.match(panel, /documentRef\.current/);
+  assert.match(panel, /needsDocument\s*=\s*action\.kind === 'parse' \|\| action\.kind === 'optimize'/);
+  assert.match(panel, /if \(needsDocument && serializedDocument\.length > 50_000\)/);
   assert.match(panel, /actionsDisabled\s*=\s*busy\s*\|\|\s*state\s*===\s*'review'/);
   assert.match(panel, /disabled=\{actionsDisabled/);
 });

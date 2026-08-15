@@ -97,11 +97,21 @@ function setupPullToRefresh() {
             refreshing = true;
             showToast('正在刷新数据...');
             setTimeout(() => {
+                // Safety net: if a listener never calls complete(), a pending
+                // (as opposed to rejected) refresh would disable the gesture.
+                let finished = false;
+                const finish = () => {
+                    if (finished) return;
+                    finished = true;
+                    refreshing = false;
+                    pullRefresh.classList.remove('visible');
+                };
+                const fallback = setTimeout(finish, 15_000);
                 document.dispatchEvent(new CustomEvent('app:refresh', {
                     detail: {
                         complete() {
-                            refreshing = false;
-                            pullRefresh.classList.remove('visible');
+                            clearTimeout(fallback);
+                            finish();
                         }
                     }
                 }));

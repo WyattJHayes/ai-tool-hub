@@ -11,6 +11,7 @@ import type {
 const CURRENT_SCHEMA_VERSION = 1;
 const MAX_STRING_LENGTH = 10_000;
 const MAX_ITEMS_PER_SECTION = 100;
+const MAX_ID_LENGTH = 128;
 
 type IdFactory = () => string;
 type UnknownRecord = Record<string, unknown>;
@@ -37,7 +38,7 @@ function stringValue(value: unknown, fallback = ''): string {
 }
 
 function uniqueId(value: unknown, usedIds: Set<string>, makeId: IdFactory): string {
-  const candidate = stringValue(value).slice(0, 128);
+  const candidate = stringValue(value).slice(0, MAX_ID_LENGTH);
   if (candidate && !usedIds.has(candidate)) {
     usedIds.add(candidate);
     return candidate;
@@ -180,10 +181,11 @@ function strictStringList(value: unknown): string[] {
 /**
  * Validates an id and keeps it unique within one document. Upstream models
  * reuse a literal id across items, so a collision is replaced rather than
- * rejected: the value is well-formed, only its uniqueness is not.
+ * rejected: the value is well-formed, only its uniqueness is not. Length is
+ * capped like the normalize path so both validators bound ids identically.
  */
 function strictUniqueId(value: unknown, usedIds: Set<string>): string {
-  const id = strictString(value);
+  const id = strictString(value).slice(0, MAX_ID_LENGTH);
   if (id && !usedIds.has(id)) {
     usedIds.add(id);
     return id;

@@ -8,15 +8,33 @@ const pkg = require('./package.json')
 const rootDir = fileURLToPath(new URL('.', import.meta.url))
 const outDir = resolve(rootDir, 'dist')
 
+// Stamp the cache version from package.json so a release always
+// invalidates the previous service worker cache. A missing declaration
+// must fail the build, so this runs outside the copy error handling.
+function stampServiceWorkerVersion(serviceWorkerPath, outputPath) {
+  const source = readFileSync(serviceWorkerPath, 'utf8')
+  const declaration = /^const CACHE_VERSION = '[^']*';$/m
+  if (!declaration.test(source)) {
+    throw new Error('sw.js is missing a rewritable CACHE_VERSION declaration')
+  }
+  writeFileSync(outputPath, source.replace(
+    declaration,
+    `const CACHE_VERSION = 'v${pkg.version}';`
+  ))
+}
+
 // Plugin to copy tools directory and tools.json to dist
 function copyToolsPlugin() {
   return {
     name: 'copy-tools',
     closeBundle() {
+      const serviceWorker = resolve(rootDir, 'sw.js')
+      if (existsSync(serviceWorker)) {
+        stampServiceWorkerVersion(serviceWorker, resolve(outDir, 'sw.js'))
+      }
       try {
         const toolsDir = resolve(rootDir, 'tools')
         const toolsData = resolve(rootDir, 'tools.json')
-        const serviceWorker = resolve(rootDir, 'sw.js')
         const manifest = resolve(rootDir, 'manifest.json')
         const favicon = resolve(rootDir, 'favicon.svg')
         const sitemap = resolve(rootDir, 'sitemap.xml')
@@ -27,19 +45,6 @@ function copyToolsPlugin() {
         }
         if (existsSync(toolsData)) {
           copyFileSync(toolsData, resolve(outDir, 'tools.json'))
-        }
-        if (existsSync(serviceWorker)) {
-          // Stamp the cache version from package.json so a release always
-          // invalidates the previous service worker cache.
-          const source = readFileSync(serviceWorker, 'utf8')
-          const stamped = source.replace(
-            /^const CACHE_VERSION = '[^']*';$/m,
-            `const CACHE_VERSION = 'v${pkg.version}';`
-          )
-          if (stamped === source && !source.includes(`'v${pkg.version}'`)) {
-            throw new Error('sw.js is missing a rewritable CACHE_VERSION declaration')
-          }
-          writeFileSync(resolve(outDir, 'sw.js'), stamped)
         }
         if (existsSync(manifest)) {
           copyFileSync(manifest, resolve(outDir, 'manifest.json'))

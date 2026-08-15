@@ -41,6 +41,15 @@ test('parseResumeDocument does not let an item id collide with the document or p
   assert.equal(new Set(ids).size, ids.length);
 });
 
+test('parseResumeDocument caps item ids at the shared 128-character limit', () => {
+  const longId = 'x'.repeat(200);
+  const parsed = parseResumeDocument(documentWithIds([longId, longId]));
+
+  assert.equal(parsed.education[0].id, 'x'.repeat(128));
+  // Same prefix after truncation must still dedupe to a generated id.
+  assert.equal(new Set(parsed.education.map(item => item.id)).size, 2);
+});
+
 function functionDefinition(sql, name) {
   const startMarker = `create or replace function ${name}(`;
   const start = sql.toLowerCase().indexOf(startMarker);

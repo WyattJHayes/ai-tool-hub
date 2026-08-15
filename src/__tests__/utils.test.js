@@ -642,6 +642,23 @@ describe('setupPullToRefresh', () => {
         jest.useRealTimers();
     });
 
+    test('should self-recover when the refresh listener never calls complete', () => {
+        jest.useFakeTimers();
+        document.body.innerHTML = '<div id="pullRefresh" class="visible"></div>';
+        document.addEventListener('app:refresh', () => {
+            // Listener that never settles the gesture via detail.complete().
+        }, { once: true });
+        setupPullToRefresh();
+
+        document.dispatchEvent(new TouchEvent('touchend'));
+        jest.advanceTimersByTime(500);
+        expect(document.getElementById('pullRefresh').classList.contains('visible')).toBe(true);
+
+        jest.advanceTimersByTime(15_000);
+        expect(document.getElementById('pullRefresh').classList.contains('visible')).toBe(false);
+        jest.useRealTimers();
+    });
+
     test('should not throw without element', () => {
         document.body.innerHTML = '';
         expect(() => setupPullToRefresh()).not.toThrow();
