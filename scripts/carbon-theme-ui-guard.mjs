@@ -340,14 +340,17 @@ async function assertScenarioIdentity(page, scenario, label) {
 async function setTheme(page, theme) {
   // cycle clicks until data-theme reaches the target
   for (let attempts = 0; attempts < THEME_CYCLE.length; attempts++) {
-    if ((await readTheme(page)) === theme) break;
+    const before = await readTheme(page);
+    if (before === theme) break;
     await themeButton(page).click();
-    await page.waitForFunction((expected) => {
+    // Wait for the state to CHANGE (the next click may not reach the target
+    // in a three-mode cycle), then re-check on the next iteration.
+    await page.waitForFunction((prev) => {
       const attr = document.documentElement.getAttribute('data-theme');
       const dark = document.documentElement.classList.contains('dark');
       const current = attr ?? (dark ? 'dark' : 'light');
-      return current === expected;
-    }, theme);
+      return current !== prev;
+    }, before);
   }
   if ((await readTheme(page)) !== theme) throw new Error(`could not reach theme ${theme}`);
   const actual = await page.evaluate((key) => {
