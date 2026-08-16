@@ -1,6 +1,8 @@
 import { withSentryConfig } from '@sentry/nextjs';
 
 /** @type {import('next').NextConfig} */
+const isDev = process.env.NODE_ENV === 'development';
+
 const nextConfig = {
   output: 'standalone',
   turbopack: {
@@ -29,11 +31,15 @@ const nextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://browser.sentry-cdn.com",
+              // 'unsafe-eval' is only required by Next.js dev tooling; keep it
+              // out of production builds to harden the script surface.
+              `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ''} https://browser.sentry-cdn.com`,
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob: https:",
               "font-src 'self' data:",
-              "connect-src 'self' https://sentry.io https://*.sentry.io https://api.openai.com https://*.supabase.co wss://*.supabase.co",
+              // The app talks to DeepSeek server-side only; there is no
+              // browser-facing OpenAI call, so that origin stays unlisted.
+              "connect-src 'self' https://sentry.io https://*.sentry.io https://*.supabase.co wss://*.supabase.co",
               "frame-src 'none'",
               "object-src 'none'",
             ].join('; '),
