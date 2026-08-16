@@ -31,6 +31,12 @@ export function createSettlementCoordinator(
       if (compensationAttempt) return compensationAttempt;
       const attempt = queue.then(async () => {
         if (terminalOutcome === 'refunded') return 'refunded' as const;
+        // NOTE: a consumed ledger is still compensable here BY DESIGN — the
+        // JSON routes (parse / analyze-jd) rely on refunding a consumption
+        // whose response was never delivered, and the SQL layer supports it
+        // (resume_billing.sql: "compensate-consumed"). Guards against
+        // refunding content that was already streamed belong to the caller
+        // that knows whether delivery happened (see optimize route).
         await (performCompensation ?? (() => perform('refunded')))();
         terminalOutcome = 'refunded';
         return 'refunded' as const;

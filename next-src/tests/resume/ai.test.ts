@@ -578,7 +578,10 @@ test('compensates cancellation before waiting for an abort-insensitive upstream 
   }
 });
 
-test('cancellation racing a deferred failed consume compensates once and never delivers done', async () => {
+test('cancellation racing a deferred failed consume refunds once via settle and never delivers done', async () => {
+  // The consume commit FAILS (never reaches the ledger), so the reservation
+  // must still be refunded — the route does it with settle('refunded'),
+  // which also short-circuits harmlessly if the consume had committed.
   const { state, dependencies } = routeHarness();
   const attempts: Array<'consumed' | 'refunded'> = [];
   const completed: Array<'consumed' | 'refunded'> = [];
@@ -621,16 +624,23 @@ test('cancellation racing a deferred failed consume compensates once and never d
     await cancelling;
     assert.equal(read.done, true);
     assert.equal(read.value, undefined);
-    assert.deepEqual(attempts, ['consumed']);
-    assert.deepEqual(completed, []);
-    assert.deepEqual(state.compensations, ['ledger-1']);
+    // One aborted consume attempt, then a single settle('refunded') refund.
+    // The compensate RPC is reserved for lost-RPC-response commits (see the
+    // "lost RPC response" test above).
+    assert.deepEqual(attempts, ['consumed', 'refunded']);
+    assert.deepEqual(completed, ['refunded']);
+    assert.deepEqual(state.compensations, []);
   } finally {
     if (!consumeSignal?.aborted) rejectConsume(new ResumeApiError('QUOTA_UNAVAILABLE', 503));
     await cancelling;
   }
 });
 
-test('compensates once when a deferred consume commits after cancellation and never delivers done', async () => {
+test('keeps a deferred consume committed when cancellation lands after the payload was produced [VULN-2]', async () => {
+  // [VULN-2] The done event means the full payload was already produced and,
+  // in production, streamed to the client via token events. Cancelling inside
+  // the settle('consumed') round-trip window must NOT refund the ledger: the
+  // route settles 'refunded', which no-ops on the consumed terminal state.
   const { dependencies } = routeHarness();
   const settlementAttempts: Array<'consumed' | 'refunded'> = [];
   const settlementCompletions: Array<'consumed' | 'refunded'> = [];
@@ -683,9 +693,12 @@ test('compensates once when a deferred consume commits after cancellation and ne
   assert.match(errorText, /event: error[\s\S]*AI_CANCELLED/);
   assert.doesNotMatch(errorText, /event: done/);
   assert.equal((await reader.read()).done, true);
+  // Exactly one settlement attempt: the consumed commit. The cancellation's
+  // settle('refunded') short-circuits on the consumed terminal state and the
+  // compensate RPC is never called.
   assert.deepEqual(settlementAttempts, ['consumed']);
   assert.deepEqual(settlementCompletions, ['consumed']);
-  assert.deepEqual(compensations, ['ledger-1']);
+  assert.deepEqual(compensations, []);
 });
 
 test('request abort promptly compensates and terminates despite an abort-insensitive upstream generator', async () => {

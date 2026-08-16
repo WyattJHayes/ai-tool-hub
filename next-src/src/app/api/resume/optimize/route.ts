@@ -155,7 +155,11 @@ export function createOptimizeRoute(dependencies: OptimizeRouteDependencies = pr
         return termination;
       };
       const abortFromRequest = () => {
-        void terminate(new ResumeApiError('AI_CANCELLED', 499), true, true);
+        // [VULN-2] Once the done event was processed the full payload has
+        // already been streamed to the client, so a cancellation must NOT
+        // refund the reservation — settle('refunded') no-ops on a consumed
+        // ledger and keeps it consumed. Before that, cancellation refunds.
+        void terminate(new ResumeApiError('AI_CANCELLED', 499), true, !resultReady);
       };
 
       const pump = async () => {
@@ -204,7 +208,8 @@ export function createOptimizeRoute(dependencies: OptimizeRouteDependencies = pr
         },
         async cancel() {
           consumerCancelled = true;
-          await terminate(new ResumeApiError('AI_CANCELLED', 499), false, true);
+          // [VULN-2] same delivery guard as abortFromRequest above.
+          await terminate(new ResumeApiError('AI_CANCELLED', 499), false, !resultReady);
         },
       });
 
