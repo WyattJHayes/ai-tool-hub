@@ -72,3 +72,7 @@ dogfood-output/
 
 # Trae IDE
 .trae/
+
+# AI harness local artifacts
+.superpowers/
+outputs/
