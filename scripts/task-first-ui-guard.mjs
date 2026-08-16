@@ -101,20 +101,27 @@ async function assertControlRowGeometry(page, label) {
 }
 
 async function assertThemeToggle(page, label) {
-  const initiallyDark = await page.locator('html.dark').count() === 1;
-  const toggleName = initiallyDark ? '切换到亮色主题' : '切换到暗色主题';
-  const restoreName = initiallyDark ? '切换到暗色主题' : '切换到亮色主题';
+  const readTheme = async () => {
+    const attr = await page.locator('html').getAttribute('data-theme');
+    return attr ?? (await page.locator('html.dark').count() === 1 ? 'dark' : 'light');
+  };
+  const initialTheme = await readTheme();
 
-  await page.getByRole('button', { name: toggleName }).click();
-  const toggledDark = await page.locator('html.dark').count() === 1;
-  if (toggledDark === initiallyDark) {
+  // The toggle cycles dark -> light -> cyberpunk -> dark.
+  const toggleButton = page.getByRole('button', { name: /切换到(?:亮色|暗色|赛博朋克)主题/ });
+
+  await toggleButton.click();
+  const afterFirst = await readTheme();
+  if (afterFirst === initialTheme) {
     fail(`${label}: theme did not change`);
     return;
   }
 
-  await page.getByRole('button', { name: restoreName }).click();
-  const restoredDark = await page.locator('html.dark').count() === 1;
-  if (restoredDark !== initiallyDark) fail(`${label}: theme was not restored`);
+  // Two more clicks complete the cycle and restore the starting theme.
+  await toggleButton.click();
+  await toggleButton.click();
+  const restoredTheme = await readTheme();
+  if (restoredTheme !== initialTheme) fail(`${label}: theme was not restored`);
 }
 
 async function runFlow(page) {
