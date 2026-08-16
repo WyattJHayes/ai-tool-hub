@@ -166,6 +166,8 @@ npm run build
 npm start
 ```
 
+> **⚠️ 单实例部署假设**：应用内限流（`src/server/resume/rateLimit.ts`）以及旧版后端（`server/src/middleware/rateLimit.js`、登录锁定 `server/src/routes/auth.js`）的计数状态均保存在**进程内存**中，重启即清零、多实例间不共享。当前生产按单容器部署；若横向扩容，需将这些状态迁移到 Redis 等共享存储，否则限流/登录锁定在多实例间会失效。
+
 ---
 
 ## 📖 页面路由
