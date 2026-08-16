@@ -15,11 +15,13 @@ name: Supabase DB Push
 # Usage:
 #   1. Run workflow with dry_run=true (default): prints `migration list` and
 #      the pending diff WITHOUT applying anything.
-#   2. Review the log. If it lists already-applied migrations (this project
-#      adopted the CLI mid-stream: 001/002/20260724000741 were applied by
-#      hand, no migration history exists remotely), first re-run with
-#      repair_history=true to mark them applied, then dry-run again.
-#   3. Run with dry_run=false to apply only what is genuinely pending.
+#   2. Review the log. This repo adopted the CLI mid-stream (001/002/
+#      20260724 were applied by hand; the remote also carries versions
+#      20260630134529 / 20260723124839 / 20260724004724 that predate this
+#      repo's migration directory). First run with repair_history=true to
+#      reconcile both sides, then dry-run again to confirm only genuinely
+#      pending migrations remain.
+#   3. Run with dry_run=false to apply.
 
 on:
   workflow_dispatch:
@@ -68,13 +70,17 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
 
-      - name: Repair pre-existing migration history (mid-stream adoption)
+      - name: Repair migration history (mid-stream adoption)
         if: ${{ inputs.repair_history }}
         run: |
-          supabase migration repair --status applied 20260724000741 || true
-          # versions below exist as bare filenames; repair accepts each version
-          supabase migration repair --status applied 001 || true
-          supabase migration repair --status applied 002 || true
+          # The production database was built partly outside this repo's
+          # migration directory. Mark the hand-applied versions as applied
+          # and the remote-only versions as reverted (acknowledged, not
+          # managed locally) so db push can proceed safely.
+          supabase migration repair --status applied \
+            001 002 20260724000741
+          supabase migration repair --status reverted \
+            20260630134529 20260723124839 20260724004724
           supabase migration list
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
