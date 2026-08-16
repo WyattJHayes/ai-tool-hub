@@ -214,3 +214,62 @@ test('rejects a malformed successful reservation response without exposing it', 
     },
   );
 });
+
+// ---------------------------------------------------------------------------
+// [CR-2] abandoned-reservation sweeper
+// ---------------------------------------------------------------------------
+
+test('sweeper compensates every abandoned ledger and skips failing ones', async () => {
+  const compensated: string[] = [];
+  const sweeper = {
+    async listAbandonedReservationIds(olderThanMs: number) {
+      assert.ok(olderThanMs > 0, 'grace window must be positive');
+      return ['ledger-ok-1', 'ledger-fails', 'ledger-ok-2'];
+    },
+    async compensateReservation(ledgerId: string) {
+      if (ledgerId === 'ledger-fails') throw new Error('already settled');
+      compensated.push(ledgerId);
+    },
+  };
+
+  const { sweepAbandonedReservations } = await import('../../src/server/resume/quota');
+
+  const count = await sweepAbandonedReservations(sweeper, 60_000);
+
+  assert.equal(count, 2);
+  assert.deepEqual(compensated, ['ledger-ok-1', 'ledger-ok-2']);
+});
+
+test('sweeper tolerates a failing listing query by refunding nothing', async () => {
+  const sweeper = {
+    async listAbandonedReservationIds() {
+      throw new Error('postgrest unavailable');
+    },
+    async compensateReservation() {
+      throw new Error('must not be called');
+    },
+  };
+
+  const { sweepAbandonedReservations } = await import('../../src/server/resume/quota');
+
+  const count = await sweepAbandonedReservations(sweeper);
+
+  assert.equal(count, 0);
+});
+
+test('sweeper ignores rows without a string id', async () => {
+  const seen: string[] = [];
+  const sweeper = {
+    async listAbandonedReservationIds() {
+      return ['ledger-1'] as string[];
+    },
+    async compensateReservation(ledgerId: string) {
+      seen.push(ledgerId);
+    },
+  };
+
+  const { sweepAbandonedReservations } = await import('../../src/server/resume/quota');
+  await sweepAbandonedReservations(sweeper, 1_000);
+
+  assert.deepEqual(seen, ['ledger-1']);
+});

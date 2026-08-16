@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { getSupabaseAdminClient } from '../supabase-admin';
+import { getSupabaseAdminClient, getSupabaseAdminQueryClient } from '../supabase-admin';
 import { ResumeApiError } from './errors';
 
 export { ResumeApiError, toResumeErrorBody } from './errors';
@@ -109,6 +109,10 @@ export async function reserveQuota(
   const input = isRpcClient(clientOrInput) ? injectedInput : clientOrInput;
   if (!input) throw new ResumeApiError('QUOTA_INVALID_REQUEST', 400);
 
+  // Production path only (no injected client): opportunistically refund
+  // reservations abandoned by a crashed process so quota is not stuck.
+  if (!isRpcClient(clientOrInput)) ensureAbandonedReservationSweep();
+
   let result: ResumeRpcResult;
   try {
     result = await client.rpc('reserve_resume_quota', {
@@ -180,8 +184,8 @@ export async function settleQuota(
   return result.data;
 }
 
-export function compensateQuota(ledgerId: string): Promise<unknown>;
-export function compensateQuota(client: ResumeRpcClient, ledgerId: string): Promise<unknown>;
+export async function compensateQuota(ledgerId: string): Promise<unknown>;
+export async function compensateQuota(client: ResumeRpcClient, ledgerId: string): Promise<unknown>;
 export async function compensateQuota(
   clientOrLedgerId: ResumeRpcClient | string,
   injectedLedgerId?: string,
@@ -203,4 +207,79 @@ export async function compensateQuota(
     throw new ResumeApiError('QUOTA_UNAVAILABLE', 503);
   }
   return result.data;
+}
+
+// ---------------------------------------------------------------------------
+// Abandoned-reservation sweeper [CR-2]
+//
+// A reservation whose process crashed before settling stays 'reserved' forever
+// with its quota deducted. The sweeper refunds such ledgers after a grace
+// window. It is triggered (throttled) from the production reserve path, so no
+// timers run in tests or in processes that never reserve.
+// ---------------------------------------------------------------------------
+
+const ABANDONED_AFTER_MS = 10 * 60 * 1000;
+const SWEEP_INTERVAL_MS = 10 * 60 * 1000;
+const SWEEP_BATCH_LIMIT = 100;
+
+export interface ReservationSweeper {
+  listAbandonedReservationIds(olderThanMs: number): Promise<string[]>;
+  compensateReservation(ledgerId: string): Promise<unknown>;
+}
+
+function defaultSweeper(): ReservationSweeper {
+  return {
+    async listAbandonedReservationIds(olderThanMs) {
+      const cutoff = new Date(Date.now() - olderThanMs).toISOString();
+      const query = getSupabaseAdminQueryClient();
+      const { data, error } = await query
+        .from('resume_usage_ledger')
+        .select('id')
+        .eq('status', 'reserved')
+        .lt('created_at', cutoff)
+        .limit(SWEEP_BATCH_LIMIT);
+      if (error || !Array.isArray(data)) return [];
+      return data
+        .map((row) => (row && typeof (row as { id?: unknown }).id === 'string'
+          ? (row as { id: string }).id
+          : ''))
+        .filter((id) => id.length > 0);
+    },
+    compensateReservation(ledgerId) {
+      return compensateQuota(ledgerId);
+    },
+  };
+}
+
+/** Refunds every abandoned 'reserved' ledger older than the grace window. */
+export async function sweepAbandonedReservations(
+  sweeper: ReservationSweeper = defaultSweeper(),
+  olderThanMs: number = ABANDONED_AFTER_MS,
+): Promise<number> {
+  let ids: string[] = [];
+  try {
+    ids = await sweeper.listAbandonedReservationIds(olderThanMs);
+  } catch {
+    return 0;
+  }
+  let compensated = 0;
+  for (const id of ids) {
+    try {
+      await sweeper.compensateReservation(id);
+      compensated += 1;
+    } catch {
+      // A ledger that fails compensation (e.g. already settled by a late
+      // process) is retried on the next sweep; keep going.
+    }
+  }
+  return compensated;
+}
+
+let lastSweepAt = 0;
+
+/** Fire-and-forget, throttled to one attempt per sweep interval. */
+export function ensureAbandonedReservationSweep(now: number = Date.now()): void {
+  if (now - lastSweepAt < SWEEP_INTERVAL_MS) return;
+  lastSweepAt = now;
+  void sweepAbandonedReservations().catch(() => undefined);
 }

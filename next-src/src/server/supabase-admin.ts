@@ -81,6 +81,7 @@ export interface SupabaseAdminQueryResult {
 export interface SupabaseAdminQueryBuilder extends PromiseLike<SupabaseAdminQueryResult> {
   select(columns: string): SupabaseAdminQueryBuilder;
   eq(column: string, value: unknown): SupabaseAdminQueryBuilder;
+  lt(column: string, value: unknown): SupabaseAdminQueryBuilder;
   order(column: string, options?: { ascending?: boolean }): SupabaseAdminQueryBuilder;
   limit(count: number): SupabaseAdminQueryBuilder;
   maybeSingle(): Promise<{ data: Record<string, unknown> | null; error: unknown | null }>;

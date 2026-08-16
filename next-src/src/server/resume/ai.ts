@@ -234,7 +234,7 @@ export function createResumeAI(dependencies: ResumeAIDependencies): ResumeAI {
       const value = await complete([
         { role: 'system', content: systemPrompt('job-description analysis') },
         { role: 'user', content: `${userData('Job description', jdText)}\nReturn this complete JSON shape:\n${JD_SCHEMA_EXAMPLE}` },
-      ], signal);
+      ], signal, { maxTokens: 4096 });
       try {
         return parseJDAnalysis(value);
       } catch {

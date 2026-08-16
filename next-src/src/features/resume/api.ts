@@ -24,6 +24,34 @@ export class ClientResumeApiError extends Error {
 
 export { ClientResumeApiError as ResumeApiError };
 
+/**
+ * Maps server error codes (server/resume/errors.ts) back to their HTTP
+ * statuses so SSE-borne errors carry the same status a JSON response for
+ * that code would have had, instead of a blanket 502.
+ */
+const ERROR_CODE_STATUS: Record<string, number> = {
+  AUTH_REQUIRED: 401,
+  AUTH_INVALID: 401,
+  QUOTA_EXHAUSTED: 429,
+  QUOTA_INVALID_REQUEST: 400,
+  QUOTA_RESERVATION_NOT_FOUND: 404,
+  QUOTA_ALREADY_SETTLED: 409,
+  QUOTA_ACCOUNT_INVALID: 409,
+  QUOTA_UNAVAILABLE: 503,
+  REQUEST_INVALID: 400,
+  RATE_LIMITED: 429,
+  AI_UPSTREAM: 502,
+  AI_TIMEOUT: 504,
+  AI_INVALID_RESPONSE: 502,
+  AI_CANCELLED: 499,
+  STREAM_INCOMPLETE: 502,
+  INTERNAL_ERROR: 500,
+};
+
+function statusForCode(code: string): number {
+  return ERROR_CODE_STATUS[code] ?? 502;
+}
+
 export interface ResumeApiClientDependencies {
   fetch: typeof fetch;
   getSession(): Promise<{ accessToken: string | null }>;
@@ -271,7 +299,7 @@ export function createResumeApiClient(dependencies: ResumeApiClientDependencies 
         } else if (eventName === 'error') {
           const envelope = stableEnvelope(value);
           streamError = envelope
-            ? new ClientResumeApiError(envelope.code, 502, envelope.message, envelope.requestId)
+            ? new ClientResumeApiError(envelope.code, statusForCode(envelope.code), envelope.message, envelope.requestId)
             : new ClientResumeApiError('RESPONSE_INVALID', 502, 'The server returned an invalid response.');
         }
       };
