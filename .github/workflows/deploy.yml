@@ -226,13 +226,31 @@ jobs:
           done
           UI_GUARD_URL=http://127.0.0.1:4173/ node scripts/ui-layout-guard.mjs
 
+  db-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Apply migrations and run SQL contracts
+        working-directory: next-src
+        run: |
+          supabase start
+          npm run test:db
+
   build-and-deploy:
     if: github.event_name != 'pull_request'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    needs: [test]
+    needs: [test, db-contracts]
     steps:
       - name: Checkout
         uses: actions/checkout@v5
