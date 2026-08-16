@@ -923,11 +923,11 @@ test('task-first guard toggles away from and restores the current theme in both 
   const keyboardPath = section('async function assertKeyboardAndTheme', 'async function assertCompareLimit');
   const responsivePath = section('async function assertResponsiveGeometry', 'async function main');
 
-  assert.match(helper, /const initiallyDark = await page\.locator\('html\.dark'\)\.count\(\) === 1/);
-  assert.match(helper, /initiallyDark \? '切换到亮色主题' : '切换到暗色主题'/);
-  assert.match(helper, /initiallyDark \? '切换到暗色主题' : '切换到亮色主题'/);
-  assert.match(helper, /if \(toggledDark === initiallyDark\) \{\s*fail\(`\$\{label\}: theme did not change`\);\s*return;\s*\}/);
-  assert.match(helper, /restoredDark !== initiallyDark/);
+  assert.match(helper, /const readTheme = async \(\) =>/);
+  assert.match(helper, /getAttribute\('data-theme'\)/);
+  assert.match(helper, /切换到\(\?:亮色\|暗色\|赛博朋克\)主题/);
+  assert.match(helper, /if \(afterFirst === initialTheme\) \{\s*fail\(`\$\{label\}: theme did not change`\);\s*return;\s*\}/);
+  assert.match(helper, /restoredTheme !== initialTheme/);
   assert.match(keyboardPath, /await assertThemeToggle\(page,/);
   assert.match(responsivePath, /await assertThemeToggle\(page,/);
   assert.equal((guard.match(/await assertThemeToggle\(page,/g) || []).length, 2);
