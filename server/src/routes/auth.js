@@ -12,16 +12,17 @@ const PASSWORD_MIN = 8;
 const PASSWORD_STRENGTH_REGEX = /^(?=.*[A-Za-z])(?=.*\d)/;
 
 const loginAttempts = new Map();
-const MAX_LOGIN_ATTEMPTS = 5;
+const MAX_LOGIN_ATTEMPTS = 5;          // per (ip, email) pair — brute-force guard
+const IP_MAX_ATTEMPTS = 20;            // per ip across emails — rotation guard
 const LOCKOUT_DURATION = 15 * 60 * 1000;
 const MAX_LOCKOUT_ENTRIES = 5000;
 
 setInterval(() => {
     const now = Date.now();
     let cleaned = 0;
-    for (const [email, attempts] of loginAttempts) {
+    for (const [key, attempts] of loginAttempts) {
         if (now - attempts.lastAttempt > LOCKOUT_DURATION) {
-            loginAttempts.delete(email);
+            loginAttempts.delete(key);
             cleaned++;
         }
     }
@@ -39,33 +40,85 @@ setInterval(() => {
     }
 }, 5 * 60 * 1000);
 
-function checkLoginLock(email) {
-    const attempts = loginAttempts.get(email);
-    if (!attempts) return { locked: false, remaining: MAX_LOGIN_ATTEMPTS };
-    
-    if (attempts.count >= MAX_LOGIN_ATTEMPTS) {
-        const elapsed = Date.now() - attempts.lastAttempt;
+// The brute-force budget is scoped to the (ip, email) PAIR, never the email
+// alone — otherwise an attacker could lock a victim out with 5 wrong
+// passwords from any IP. A separate per-IP budget stops email rotation.
+function pairKey(email, ip) {
+    return `p:${ip}:${email}`;
+}
+
+function checkLoginLock(email, ip) {
+    const pairAttempts = loginAttempts.get(pairKey(email, ip));
+    if (pairAttempts && pairAttempts.count >= MAX_LOGIN_ATTEMPTS) {
+        const elapsed = Date.now() - pairAttempts.lastAttempt;
         if (elapsed < LOCKOUT_DURATION) {
             return { locked: true, remainingMs: LOCKOUT_DURATION - elapsed };
         }
-        loginAttempts.delete(email);
+        loginAttempts.delete(pairKey(email, ip));
     }
-    return { locked: false, remaining: MAX_LOGIN_ATTEMPTS - (attempts?.count || 0) };
+    const ipAttempts = loginAttempts.get(`i:${ip}`);
+    if (ipAttempts && ipAttempts.count >= IP_MAX_ATTEMPTS) {
+        const elapsed = Date.now() - ipAttempts.lastAttempt;
+        if (elapsed < LOCKOUT_DURATION) {
+            return { locked: true, remainingMs: LOCKOUT_DURATION - elapsed };
+        }
+        loginAttempts.delete(`i:${ip}`);
+    }
+    return { locked: false, remaining: MAX_LOGIN_ATTEMPTS - (pairAttempts?.count || 0) };
 }
 
-function recordFailedAttempt(email) {
-    const attempts = loginAttempts.get(email) || { count: 0, lastAttempt: 0 };
-    attempts.count++;
-    attempts.lastAttempt = Date.now();
-    loginAttempts.set(email, attempts);
+function recordFailedAttempt(email, ip) {
+    for (const key of [pairKey(email, ip), `i:${ip}`]) {
+        const attempts = loginAttempts.get(key) || { count: 0, lastAttempt: 0 };
+        attempts.count++;
+        attempts.lastAttempt = Date.now();
+        loginAttempts.set(key, attempts);
+    }
 }
 
-function clearFailedAttempts(email) {
-    loginAttempts.delete(email);
+function clearFailedAttempts(email, ip) {
+    loginAttempts.delete(pairKey(email, ip));
+    // The per-IP budget survives a single success so email rotation from one
+    // client still exhausts; it only clears when it was never exhausted.
 }
+
+const registerAttempts = new Map();
+const REGISTER_MAX_ATTEMPTS = 10;
+const REGISTER_WINDOW_MS = 10 * 60 * 1000;
+const MAX_REGISTER_ENTRIES = 5000;
+
+setInterval(() => {
+    const now = Date.now();
+    for (const [ip, entry] of registerAttempts) {
+        if (now - entry.windowStart > REGISTER_WINDOW_MS) registerAttempts.delete(ip);
+    }
+    if (registerAttempts.size > MAX_REGISTER_ENTRIES) {
+        const entries = [...registerAttempts.entries()].sort((a, b) => a[1].windowStart - b[1].windowStart);
+        for (let i = 0; i < registerAttempts.size - MAX_REGISTER_ENTRIES; i++) {
+            registerAttempts.delete(entries[i][0]);
+        }
+    }
+}, 5 * 60 * 1000).unref?.();
 
 router.post('/register', async (req, res) => {
     try {
+        // [VULN-5] A 409 on existing emails lets attackers enumerate accounts.
+        // A per-IP budget on this endpoint keeps bulk probing expensive
+        // without touching the normal single-signup flow.
+        const ip = req.ip;
+        const entry = registerAttempts.get(ip) || { count: 0, windowStart: 0 };
+        const now = Date.now();
+        if (now - entry.windowStart > REGISTER_WINDOW_MS) {
+            entry.count = 0;
+            entry.windowStart = now;
+        }
+        if (entry.count >= REGISTER_MAX_ATTEMPTS) {
+            logger.warn(`Register rate limit exceeded: ip=${ip}`);
+            return res.status(429).json({ error: '注册请求过于频繁，请稍后再试' });
+        }
+        entry.count++;
+        registerAttempts.set(ip, entry);
+
         const { email, password } = req.body;
 
         if (!email || !password) {
@@ -121,10 +174,10 @@ router.post('/login', async (req, res) => {
             return res.status(400).json({ error: '邮箱和密码不能为空' });
         }
 
-        const lockStatus = checkLoginLock(email);
+        const lockStatus = checkLoginLock(email, req.ip);
         if (lockStatus.locked) {
             const remainingMin = Math.ceil(lockStatus.remainingMs / 60000);
-            logger.warn(`Account locked: ${maskEmail(email)}`);
+            logger.warn(`Account locked: ${maskEmail(email)}, ip=${req.ip}`);
             return res.status(429).json({ 
                 error: `登录尝试过多，请${remainingMin}分钟后再试` 
             });
@@ -132,16 +185,16 @@ router.post('/login', async (req, res) => {
 
         const user = await quotaService.verifyPassword(email, password);
         if (!user) {
-            recordFailedAttempt(email);
-            const remaining = MAX_LOGIN_ATTEMPTS - (loginAttempts.get(email)?.count || 0);
-            logger.warn(`Failed login attempt for: ${maskEmail(email)}, remaining: ${remaining}`);
+            recordFailedAttempt(email, req.ip);
+            const remaining = MAX_LOGIN_ATTEMPTS - (loginAttempts.get(pairKey(email, req.ip))?.count || 0);
+            logger.warn(`Failed login attempt for: ${maskEmail(email)}, ip=${req.ip}, remaining: ${remaining}`);
             return res.status(401).json({ 
                 error: '邮箱或密码不正确',
-                remainingAttempts: remaining
+                remainingAttempts: Math.max(0, remaining)
             });
         }
 
-        clearFailedAttempts(email);
+        clearFailedAttempts(email, req.ip);
 
         const token = generateToken({ id: user.id, email: user.email });
         const quota = quotaService.checkQuota(user.id);

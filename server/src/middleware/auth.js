@@ -23,7 +23,10 @@ export function authMiddleware(req, res, next) {
     try {
         decoded = jwt.verify(token, config.JWT_SECRET, {
             issuer: config.JWT_ISSUER,
-            audience: config.JWT_AUDIENCE
+            audience: config.JWT_AUDIENCE,
+            // The issuer only ever signs HS256; pin it so no other HMAC
+            // variant (or algorithm-confusion vector) is accepted.
+            algorithms: ['HS256']
         });
     } catch (err) {
         if (err.name === 'TokenExpiredError') {
