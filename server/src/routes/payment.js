@@ -155,7 +155,7 @@ router.get('/orders', authMiddleware, (req, res) => {
 
 // ===== 支付宝异步通知回调 =====
 
-router.post('/notify/alipay', express.raw({ type: '*/*' }), (req, res) => {
+router.post('/notify/alipay', express.raw({ type: '*/*', limit: '100kb' }), (req, res) => {
     try {
         const params = new URLSearchParams(req.body.toString());
         const sign = params.get('sign');
@@ -199,7 +199,7 @@ router.post('/notify/alipay', express.raw({ type: '*/*' }), (req, res) => {
 
 // ===== 微信支付异步通知回调 =====
 
-router.post('/notify/wechat', express.raw({ type: '*/*' }), (req, res) => {
+router.post('/notify/wechat', express.raw({ type: '*/*', limit: '100kb' }), (req, res) => {
     try {
         // 微信通知为 XML 格式
         const xml = req.body.toString();
@@ -284,6 +284,16 @@ function createAlipayOrder(order) {
     };
 }
 
+// WeChat expects Beijing time (UTC+8) in yyyyMMddHHmmss.
+function formatWechatTime(iso) {
+    const date = new Date(iso);
+    const beijing = new Date(date.getTime() + 8 * 60 * 60 * 1000);
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${beijing.getUTCFullYear()}${pad(beijing.getUTCMonth() + 1)}${pad(beijing.getUTCDate())}${pad(beijing.getUTCHours())}${pad(beijing.getUTCMinutes())}${pad(beijing.getUTCSeconds())}`;
+}
+
+// NOTE: builds WeChat Native-pay parameters only; it does NOT call the WeChat
+// unified-order API. /order currently returns 501 for wechat until that call is implemented.
 function createWechatOrder(order) {
     if (!config.WECHAT_MCH_ID) {
         throw new Error('Wechat Pay not configured');
@@ -304,7 +314,7 @@ function createWechatOrder(order) {
         notify_url: config.WECHAT_NOTIFY_URL,
         trade_type: 'NATIVE',
         product_id: order.plan,
-        time_expire: order.expiredAt.replace(/\.\d{3}Z/, '').replace(/[-:T]/g, '').substring(0, 14),
+        time_expire: formatWechatTime(order.expiredAt),
     };
 
     params.sign = signWechatParams(params);
