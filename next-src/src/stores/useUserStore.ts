@@ -16,9 +16,12 @@ interface UserStore {
   theme: 'dark' | 'light';
   isLoggedIn: boolean;
   pendingMigration: boolean;
+  /** Tool id whose latest favorite sync failed; UI shows an inline notice. */
+  favoriteSyncError: number | null;
 
   toggleFavorite: (toolId: number) => void;
   isFavorite: (toolId: number) => boolean;
+  clearFavoriteSyncError: (toolId?: number) => void;
   setRating: (toolId: number, score: number, tags?: string[], comment?: string) => Promise<RatingAggregate | null>;
   getRating: (toolId: number) => number;
   toggleTheme: () => void;
@@ -26,6 +29,12 @@ interface UserStore {
   logout: () => void;
   migrateFromLocalStorage: () => void;
 }
+
+/** The durable slice of UserStore that survives to localStorage. */
+type PersistedUserState = Pick<
+  UserStore,
+  'favorites' | 'ratings' | 'theme' | 'isLoggedIn'
+>;
 
 export const useUserStore = create<UserStore>()(
   persist(
@@ -35,6 +44,7 @@ export const useUserStore = create<UserStore>()(
       theme: DEFAULT_THEME,
       isLoggedIn: false,
       pendingMigration: false,
+      favoriteSyncError: null,
 
       toggleFavorite: (toolId) => {
         const { favorites, isLoggedIn } = get();
@@ -42,15 +52,28 @@ export const useUserStore = create<UserStore>()(
         const updated = isAdding
           ? [...favorites, toolId]
           : favorites.filter(id => id !== toolId);
-        set({ favorites: updated });
+        set({ favorites: updated, favoriteSyncError: null });
 
-        // Fire-and-forget API call
+        // Optimistic update: roll back and surface an error if the server
+        // rejects the change, so the star the user saw never lies silently.
         if (isLoggedIn) {
-          toggleFavoriteAPI(toolId, isAdding ? 'add' : 'remove').catch(() => {});
+          toggleFavoriteAPI(toolId, isAdding ? 'add' : 'remove').catch(() => {
+            const current = get().favorites;
+            const rolledBack = isAdding
+              ? current.filter(id => id !== toolId)
+              : current.includes(toolId) ? current : [...current, toolId];
+            set({ favorites: rolledBack, favoriteSyncError: toolId });
+          });
         }
       },
 
       isFavorite: (toolId) => get().favorites.includes(toolId),
+
+      clearFavoriteSyncError: (toolId) => {
+        const current = get().favoriteSyncError;
+        if (current === null) return;
+        if (toolId === undefined || current === toolId) set({ favoriteSyncError: null });
+      },
 
       setRating: async (toolId, score, tags, comment) => {
         const result = await submitRating(toolId, score, tags, comment);
@@ -93,8 +116,18 @@ export const useUserStore = create<UserStore>()(
     }),
     {
       name: THEME_STORAGE_KEY,
-      storage: createThemeStorage<UserStore>(() => window.localStorage),
+      // Typed as the partialized shape so the storage contract matches what
+      // actually gets persisted after partialize strips transient flags.
+      storage: createThemeStorage<PersistedUserState>(() => window.localStorage),
       version: THEME_STORAGE_VERSION,
+      // Persist only durable user data; transient flags (sync errors,
+      // migration prompt) must not survive a reload.
+      partialize: (state) => ({
+        favorites: state.favorites,
+        ratings: state.ratings,
+        theme: state.theme,
+        isLoggedIn: state.isLoggedIn,
+      }),
       // D-06: Add localStorage capacity monitoring
       onRehydrateStorage: () => {
         return (state) => {

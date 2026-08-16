@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowRight, ExternalLink, Heart } from 'lucide-react';
+import { AlertCircle, ArrowRight, ExternalLink, Heart } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 import type { Tool } from '@/types/tool';
@@ -32,6 +32,9 @@ interface ToolCardProps {
 export function ToolCard({ tool }: ToolCardProps) {
   const toggleFavorite = useUserStore((state) => state.toggleFavorite);
   const isFavorite = useUserStore((state) => state.isFavorite(tool.id));
+  const favoriteSyncError = useUserStore((state) => state.favoriteSyncError);
+  const clearFavoriteSyncError = useUserStore((state) => state.clearFavoriteSyncError);
+  const favoriteFailed = favoriteSyncError === tool.id;
   const { selectedTools, addTool, removeTool, isSelected } = useCompareStore();
   const [compareAnnouncement, setCompareAnnouncement] = useState('');
   const compareSelected = isSelected(tool.id);
@@ -113,9 +116,22 @@ export function ToolCard({ tool }: ToolCardProps) {
           查看详情 <ArrowRight className="h-3.5 w-3.5" />
         </Link>
         <div className="flex items-center gap-1">
+          {favoriteFailed ? (
+            <span
+              role="status"
+              className="flex items-center gap-1 text-xs text-[var(--signal-ink)]"
+              title="收藏未同步到服务器，状态已还原"
+            >
+              <AlertCircle className="h-3.5 w-3.5" aria-hidden="true" />
+              未同步
+            </span>
+          ) : null}
           <button
             type="button"
-            onClick={() => toggleFavorite(tool.id)}
+            onClick={() => {
+              clearFavoriteSyncError(tool.id);
+              toggleFavorite(tool.id);
+            }}
             className="flex h-11 w-11 items-center justify-center rounded-md text-[var(--muted)] transition-colors hover:bg-[var(--surface-hover)]"
             aria-label={isFavorite ? `取消收藏 ${tool.name}` : `收藏 ${tool.name}`}
             title={isFavorite ? '取消收藏' : '收藏'}
