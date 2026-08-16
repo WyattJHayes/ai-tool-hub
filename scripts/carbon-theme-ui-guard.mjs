@@ -95,6 +95,29 @@ async function requireCount(locator, expected, label) {
   if (count !== expected) throw new Error(`${label}: found ${count}, expected ${expected}`);
 }
 
+// ---------------------------------------------------------------------------
+// Three-mode theme helpers (dark -> light -> cyberpunk -> dark).
+// The toggle button's accessible name always announces the NEXT state, e.g.
+// in light mode it reads "切换到赛博朋克主题". All interactions below go
+// through these helpers so the cycle semantics live in exactly one place.
+// ---------------------------------------------------------------------------
+const THEME_CYCLE = ['dark', 'light', 'cyberpunk'];
+
+async function readTheme(page) {
+  const attr = await page.locator('html').getAttribute('data-theme');
+  return attr ?? (await page.locator('html.dark').count() > 0 ? 'dark' : 'light');
+}
+
+function nextThemeLabel(currentTheme) {
+  const next = THEME_CYCLE[(THEME_CYCLE.indexOf(currentTheme) + 1) % THEME_CYCLE.length];
+  const label = next === 'dark' ? '暗色' : next === 'light' ? '亮色' : '赛博朋克';
+  return `切换到${label}主题`;
+}
+
+function themeButton(page) {
+  return page.getByRole('button', { name: /切换到(?:亮色|暗色|赛博朋克)主题/ });
+}
+
 async function assertAuthAvailability(dialog, label) {
   const riskState = dialog.getByText('云同步服务当前不可用，仍可继续使用本地收藏和评分。', { exact: true });
   const submit = dialog.getByRole('button', { name: '登录', exact: true });
@@ -239,11 +262,11 @@ async function assertInitialTheme(browser) {
       }));
       const expectedDark = entry.expected === 'dark';
       const expectedColor = entry.expected === 'dark' ? '#080B0E' : '#F3F6F8';
-      const expectedAction = entry.expected === 'dark' ? '切换到亮色主题' : '切换到暗色主题';
+      const expectedAction = nextThemeLabel(entry.expected);
       if (actual.dark !== expectedDark || actual.colorScheme !== entry.expected || actual.themeColor !== expectedColor) {
         throw new Error(`${entry.name}: initial theme is ${JSON.stringify(actual)}, expected ${entry.expected}`);
       }
-      await requireCount(page.getByRole('button', { name: expectedAction, exact: true }), 1, `${entry.name}: theme toggle action`);
+      await requireCount(themeButton(page), 1, `${entry.name}: theme toggle action`);
     } finally {
       await context.close();
     }
@@ -315,10 +338,18 @@ async function assertScenarioIdentity(page, scenario, label) {
 }
 
 async function setTheme(page, theme) {
-  const dark = await page.locator('html.dark').count() > 0;
-  if (theme === 'dark' && !dark) await page.getByRole('button', { name: '切换到暗色主题' }).click();
-  if (theme === 'light' && dark) await page.getByRole('button', { name: '切换到亮色主题' }).click();
-  await page.waitForFunction((expected) => document.documentElement.classList.contains('dark') === expected, theme === 'dark');
+  // cycle clicks until data-theme reaches the target
+  for (let attempts = 0; attempts < THEME_CYCLE.length; attempts++) {
+    if ((await readTheme(page)) === theme) break;
+    await themeButton(page).click();
+    await page.waitForFunction((expected) => {
+      const attr = document.documentElement.getAttribute('data-theme');
+      const dark = document.documentElement.classList.contains('dark');
+      const current = attr ?? (dark ? 'dark' : 'light');
+      return current === expected;
+    }, theme);
+  }
+  if ((await readTheme(page)) !== theme) throw new Error(`could not reach theme ${theme}`);
   const actual = await page.evaluate((key) => {
     const stored = localStorage.getItem(key);
     return {
@@ -326,7 +357,7 @@ async function setTheme(page, theme) {
       version: stored ? JSON.parse(stored).version : null,
     };
   }, THEME_STORAGE_KEY);
-  const expectedColor = theme === 'dark' ? '#080B0E' : '#F3F6F8';
+  const expectedColor = theme === 'light' ? '#F3F6F8' : theme === 'cyberpunk' ? '#06060B' : '#080B0E';
   if (actual.themeColor !== expectedColor || actual.version !== THEME_STORAGE_VERSION) {
     throw new Error(`theme persistence/metadata is ${JSON.stringify(actual)}, expected ${theme}/${THEME_STORAGE_VERSION}`);
   }
@@ -584,7 +615,7 @@ async function assertOutline(target, expectedColor, label) {
 async function assertFocusColors(page, scenario, theme, label) {
   const normalTarget = scenario.name === 'auth'
     ? page.getByRole('dialog', { name: '登录' }).getByRole('button', { name: '关闭登录窗口' })
-    : page.getByRole('button', { name: theme === 'dark' ? '切换到亮色主题' : '切换到暗色主题' });
+    : themeButton(page);
   await focusByKeyboard(page, normalTarget, `${label} normal`);
   await assertOutline(normalTarget, themes[theme].focus, `${label} normal focus`);
 
@@ -802,7 +833,7 @@ async function assertFixedSurfaceGeometry(page, scenario, label) {
 }
 
 async function assertResponsiveGeometry(page, scenario, theme, label) {
-  const themeTarget = page.getByRole('button', { name: theme === 'dark' ? '切换到亮色主题' : '切换到暗色主题' });
+  const themeTarget = themeButton(page);
   await assertTargetSize(themeTarget, `${label} theme target`);
 
   if (scenario.name === 'home') {
@@ -909,14 +940,14 @@ async function assertThemeLayoutInvariant(page, scenario, label) {
   await prepareScreenshot(page);
   await assertHomeHover(page, scenario, 'light', `${label} light layout`);
   const before = await measureLayout(page, scenario);
-  await page.getByRole('button', { name: '切换到暗色主题' }).click();
+  await setTheme(page, 'dark');
   await page.waitForFunction(() => document.documentElement.classList.contains('dark'));
   await page.waitForTimeout(180);
   await assertHomeHover(page, scenario, 'dark', `${label} dark layout`);
   const dark = await measureLayout(page, scenario);
   compareLayouts(before, dark, `${label} light/dark layout`);
 
-  await page.getByRole('button', { name: '切换到亮色主题' }).click();
+  await setTheme(page, 'light');
   await page.waitForFunction(() => !document.documentElement.classList.contains('dark'));
   await page.waitForTimeout(180);
   await assertHomeHover(page, scenario, 'light', `${label} restored layout`);
