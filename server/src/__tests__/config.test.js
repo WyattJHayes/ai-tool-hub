@@ -92,4 +92,35 @@ describe('config module', () => {
 
         warnSpy.mockRestore();
     });
+
+    test('DAILY_QUOTA falls back to 10 for invalid values', async () => {
+        process.env.JWT_SECRET = 'test-secret';
+        process.env.DAILY_QUOTA = 'not-a-number';
+        const config = (await import('../config.js')).default;
+        expect(config.DAILY_QUOTA).toBe(10);
+    });
+
+    test('DAILY_QUOTA treats zero and negative as invalid', async () => {
+        process.env.JWT_SECRET = 'test-secret';
+        process.env.DAILY_QUOTA = '0';
+        const config = (await import('../config.js')).default;
+        expect(config.DAILY_QUOTA).toBe(10);
+    });
+
+    test('validateConfig warns on an invalid DAILY_QUOTA', async () => {
+        process.env.JWT_SECRET = 'test-secret';
+        process.env.DAILY_QUOTA = 'abc';
+        const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        const mod = await import('../config.js');
+        mod.validateConfig();
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('DAILY_QUOTA'));
+        warnSpy.mockRestore();
+    });
+
+    test('PASSWORD_PEPPER falls back to JWT_SECRET, not a hardcoded value', async () => {
+        process.env.JWT_SECRET = 'test-secret';
+        delete process.env.PASSWORD_PEPPER;
+        const config = (await import('../config.js')).default;
+        expect(config.PASSWORD_PEPPER).toBe('test-secret');
+    });
 });

@@ -1,17 +1,23 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+function parseDailyQuota(raw) {
+    if (raw === undefined || raw === '') return 10;
+    const parsed = Number(raw);
+    return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 10;
+}
+
 const config = {
     PORT: parseInt(process.env.PORT, 10) || 3000,
     JWT_SECRET: process.env.JWT_SECRET,
     JWT_EXPIRES_IN: '7d',
     JWT_ISSUER: process.env.JWT_ISSUER || 'ai-tool-hub',
     JWT_AUDIENCE: process.env.JWT_AUDIENCE || 'ai-tool-hub-users',
-    PASSWORD_PEPPER: process.env.PASSWORD_PEPPER || process.env.JWT_SECRET || 'change-me-in-production',
+    PASSWORD_PEPPER: process.env.PASSWORD_PEPPER || process.env.JWT_SECRET || '',
     DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY || '',
     DEEPSEEK_BASE_URL: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1',
     DEEPSEEK_MODEL: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
-    DAILY_QUOTA: parseInt(process.env.DAILY_QUOTA, 10) || 10,
+    DAILY_QUOTA: parseDailyQuota(process.env.DAILY_QUOTA),
 
     // ===== 会员体系 =====
     MEMBERSHIP_PLANS: {
@@ -60,6 +66,19 @@ export function validateConfig() {
 
     if (!config.JWT_SECRET) {
         errors.push('[FATAL] JWT_SECRET must be set in environment variables!');
+    }
+
+    if (!config.PASSWORD_PEPPER) {
+        errors.push('[FATAL] PASSWORD_PEPPER (or JWT_SECRET) must be set!');
+    }
+
+    if (
+        process.env.DAILY_QUOTA !== undefined
+        && process.env.DAILY_QUOTA !== ''
+        && config.DAILY_QUOTA === 10
+        && Number(process.env.DAILY_QUOTA) !== 10
+    ) {
+        warnings.push(`[CONFIG WARNING] Invalid DAILY_QUOTA "${process.env.DAILY_QUOTA}" — using default 10.`);
     }
 
     if (!config.DEEPSEEK_API_KEY) {
