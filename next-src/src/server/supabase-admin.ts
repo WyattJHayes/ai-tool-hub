@@ -72,3 +72,27 @@ export async function requireSupabaseUser(
     throw new ResumeApiError('AUTH_INVALID', 401);
   }
 }
+
+export interface SupabaseAdminQueryResult {
+  data: unknown | null;
+  error: unknown | null;
+}
+
+export interface SupabaseAdminQueryBuilder extends PromiseLike<SupabaseAdminQueryResult> {
+  select(columns: string): SupabaseAdminQueryBuilder;
+  eq(column: string, value: unknown): SupabaseAdminQueryBuilder;
+  order(column: string, options?: { ascending?: boolean }): SupabaseAdminQueryBuilder;
+  limit(count: number): SupabaseAdminQueryBuilder;
+  maybeSingle(): Promise<{ data: Record<string, unknown> | null; error: unknown | null }>;
+  upsert(values: Record<string, unknown>, options?: { onConflict?: string }): Promise<SupabaseAdminQueryResult>;
+  delete(): SupabaseAdminQueryBuilder;
+  match(criteria: Record<string, unknown>): Promise<SupabaseAdminQueryResult>;
+}
+
+export interface SupabaseAdminQueryClient {
+  from(table: string): SupabaseAdminQueryBuilder;
+}
+
+export function getSupabaseAdminQueryClient(): SupabaseAdminQueryClient {
+  return getSupabaseAdminClient() as unknown as SupabaseAdminQueryClient;
+}

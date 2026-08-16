@@ -9,9 +9,10 @@ export function getSession() {
   return supabase.auth.getSession();
 }
 
-export function getUser(): User | null {
+export async function getUser(): Promise<User | null> {
   if (!supabase) return null;
-  return supabase.auth.getUser().then(r => r.data.user).catch(() => null) as unknown as User | null;
+  const { data } = await supabase.auth.getUser();
+  return data.user ?? null;
 }
 
 export function onAuthStateChange(callback: (user: User | null) => void) {

@@ -1,4 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import {
+  getSupabaseAdminQueryClient,
+  requireSupabaseUser,
+  ResumeApiError,
+} from '@/server/supabase-admin';
 
 // Fallback: in-memory favorites (for demo/no-auth mode)
 const userFavorites = new Map<string, Set<number>>();
@@ -14,28 +19,28 @@ function validateMutation(toolId: unknown, action: unknown): string | null {
   return null;
 }
 
+function authErrorResponse(error: unknown): NextResponse {
+  if (error instanceof ResumeApiError) {
+    return NextResponse.json({ error: error.message }, { status: error.status });
+  }
+  return NextResponse.json({ error: 'Authentication service unavailable' }, { status: 503 });
+}
+
 export async function GET(req: NextRequest) {
-  // Try to get user from Supabase JWT
-  const authHeader = req.headers.get('authorization');
-  if (authHeader?.startsWith('Bearer ')) {
+  // Authenticated path: service-role client with explicit user scoping.
+  if (req.headers.get('authorization')?.startsWith('Bearer ')) {
     try {
-      const { createClient } = await import('@supabase/supabase-js');
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      );
-      const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.slice(7));
-      if (authError || !user) return NextResponse.json({ error: 'Invalid authentication' }, { status: 401 });
-      if (user) {
-        const { data, error } = await supabase
-          .from('favorites')
-          .select('tool_id')
-          .eq('user_id', user.id);
-        if (error) return NextResponse.json({ error: 'Failed to load favorites' }, { status: 502 });
-        return NextResponse.json({ favorites: (data || []).map((r: { tool_id: string }) => Number(r.tool_id)) });
-      }
-    } catch {
-      return NextResponse.json({ error: 'Authentication service unavailable' }, { status: 503 });
+      const user = await requireSupabaseUser(req);
+      const admin = getSupabaseAdminQueryClient();
+      const { data, error } = await admin
+        .from('favorites')
+        .select('tool_id')
+        .eq('user_id', user.id);
+      if (error) return NextResponse.json({ error: 'Failed to load favorites' }, { status: 502 });
+      const rows = (data as { tool_id: string }[] | null) || [];
+      return NextResponse.json({ favorites: rows.map((row) => Number(row.tool_id)) });
+    } catch (error) {
+      return authErrorResponse(error);
     }
   }
 
@@ -51,36 +56,32 @@ export async function POST(req: NextRequest) {
     const validationError = validateMutation(tool_id, action);
     if (validationError) return NextResponse.json({ error: validationError }, { status: 400 });
 
-    // Try Supabase
-    const authHeader = req.headers.get('authorization');
-    if (authHeader?.startsWith('Bearer ')) {
+    // Authenticated path: service-role client with explicit user scoping.
+    if (req.headers.get('authorization')?.startsWith('Bearer ')) {
       try {
-        const { createClient } = await import('@supabase/supabase-js');
-        const supabase = createClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-        );
-        const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.slice(7));
-        if (authError || !user) return NextResponse.json({ error: 'Invalid authentication' }, { status: 401 });
-        if (user) {
-          let writeError;
-          if (action === 'add') {
-            ({ error: writeError } = await supabase.from('favorites').upsert({
-              user_id: user.id, tool_id: tool_id,
-            }, { onConflict: 'user_id,tool_id' }));
-          } else if (action === 'remove') {
-            ({ error: writeError } = await supabase.from('favorites').delete().match({
-              user_id: user.id, tool_id: tool_id,
-            }));
-          }
-          if (writeError) return NextResponse.json({ error: 'Failed to update favorites' }, { status: 502 });
-          // Return updated list
-          const { data, error } = await supabase.from('favorites').select('tool_id').eq('user_id', user.id);
-          if (error) return NextResponse.json({ error: 'Failed to load favorites' }, { status: 502 });
-          return NextResponse.json({ ok: true, favorites: (data || []).map((r: { tool_id: string }) => Number(r.tool_id)) });
+        const user = await requireSupabaseUser(req);
+        const admin = getSupabaseAdminQueryClient();
+
+        let writeError: unknown;
+        if (action === 'add') {
+          ({ error: writeError } = await admin.from('favorites').upsert({
+            user_id: user.id,
+            tool_id: tool_id,
+          }, { onConflict: 'user_id,tool_id' }));
+        } else if (action === 'remove') {
+          ({ error: writeError } = await admin.from('favorites').delete().match({
+            user_id: user.id,
+            tool_id: tool_id,
+          }));
         }
-      } catch {
-        return NextResponse.json({ error: 'Authentication service unavailable' }, { status: 503 });
+        if (writeError) return NextResponse.json({ error: 'Failed to update favorites' }, { status: 502 });
+
+        const { data, error } = await admin.from('favorites').select('tool_id').eq('user_id', user.id);
+        if (error) return NextResponse.json({ error: 'Failed to load favorites' }, { status: 502 });
+        const rows = (data as { tool_id: string }[] | null) || [];
+        return NextResponse.json({ ok: true, favorites: rows.map((row) => Number(row.tool_id)) });
+      } catch (error) {
+        return authErrorResponse(error);
       }
     }
 
@@ -92,8 +93,8 @@ export async function POST(req: NextRequest) {
     }
     if (!userFavorites.has(sessionId)) userFavorites.set(sessionId, new Set());
     const favs = userFavorites.get(sessionId)!;
-    if (action === 'add') favs.add(tool_id);
-    else if (action === 'remove') favs.delete(tool_id);
+    if (action === 'add') favs.add(tool_id as number);
+    else if (action === 'remove') favs.delete(tool_id as number);
     return NextResponse.json({ ok: true, favorites: Array.from(favs) });
   } catch {
     return NextResponse.json({ error: 'Invalid request' }, { status: 400 });

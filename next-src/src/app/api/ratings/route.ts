@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isRatingAggregate } from '@/lib/ratings';
+import {
+  getSupabaseAdminQueryClient,
+  requireSupabaseUser,
+  ResumeApiError,
+} from '@/server/supabase-admin';
 
 // In-memory fallback
 type Review = { score: number; tags: string[]; comment: string };
@@ -48,44 +53,45 @@ export async function POST(req: NextRequest) {
     if (!Number.isInteger(tool_id) || tool_id <= 0 || !Number.isInteger(score) || score < 1 || score > 5) {
       return NextResponse.json({ error: 'tool_id and score (1-5) required' }, { status: 400 });
     }
+    if (typeof comment !== 'string' || comment.length > 200) {
+      return NextResponse.json({ error: 'comment must be a string (max 200)' }, { status: 400 });
+    }
+    if (!Array.isArray(tags) || tags.length > 10 || tags.some((t) => typeof t !== 'string' || t.length > 20)) {
+      return NextResponse.json({ error: 'tags must be a string array (max 10)' }, { status: 400 });
+    }
 
-    // Try Supabase
-    const authHeader = req.headers.get('authorization');
-    if (authHeader?.startsWith('Bearer ')) {
+    // Try Supabase (authenticated path: service-role client with explicit user scoping)
+    if (req.headers.get('authorization')?.startsWith('Bearer ')) {
       try {
-        const { createClient } = await import('@supabase/supabase-js');
-        const supabase = createClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-        );
-        const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.slice(7));
-        if (authError || !user) return NextResponse.json({ error: 'Invalid authentication' }, { status: 401 });
-        if (user) {
-          const { error: writeError } = await supabase.from('ratings').upsert({
-            user_id: user.id,
-            tool_id: tool_id,
-            score,
-            tags: tags || [],
-            comment: comment || '',
-          }, { onConflict: 'user_id,tool_id' });
-          if (writeError) return NextResponse.json({ error: 'Failed to save rating' }, { status: 502 });
+        const user = await requireSupabaseUser(req);
+        const admin = getSupabaseAdminQueryClient();
+        const { error: writeError } = await admin.from('ratings').upsert({
+          user_id: user.id,
+          tool_id: tool_id,
+          score,
+          tags,
+          comment,
+        }, { onConflict: 'user_id,tool_id' });
+        if (writeError) return NextResponse.json({ error: 'Failed to save rating' }, { status: 502 });
 
-          // Fetch updated aggregate
-          const { data: tool, error: aggregateError } = await supabase
-            .from('tools')
-            .select('avg_rating, rating_count')
-            .eq('id', tool_id)
-            .maybeSingle();
-          const aggregate = {
-            avg_rating: Number(tool?.avg_rating),
-            rating_count: Number(tool?.rating_count),
-          };
-          if (aggregateError || aggregate.rating_count === 0 || !isRatingAggregate(aggregate)) {
-            return NextResponse.json({ error: 'Failed to load rating aggregate' }, { status: 502 });
-          }
-          return NextResponse.json({ ok: true, ...aggregate });
+        // Fetch updated aggregate
+        const { data: tool, error: aggregateError } = await admin
+          .from('tools')
+          .select('avg_rating, rating_count')
+          .eq('id', tool_id)
+          .maybeSingle();
+        const aggregate = {
+          avg_rating: Number(tool?.avg_rating),
+          rating_count: Number(tool?.rating_count),
+        };
+        if (aggregateError || aggregate.rating_count === 0 || !isRatingAggregate(aggregate)) {
+          return NextResponse.json({ error: 'Failed to load rating aggregate' }, { status: 502 });
         }
-      } catch {
+        return NextResponse.json({ ok: true, ...aggregate });
+      } catch (error) {
+        if (error instanceof ResumeApiError) {
+          return NextResponse.json({ error: error.message }, { status: error.status });
+        }
         return NextResponse.json({ error: 'Authentication service unavailable' }, { status: 503 });
       }
     }
@@ -95,7 +101,7 @@ export async function POST(req: NextRequest) {
     if (!sessionId) return NextResponse.json({ error: 'x-session-id required' }, { status: 400 });
     if (!toolRatings.has(tool_id)) toolRatings.set(tool_id, new Map());
     const data = toolRatings.get(tool_id)!;
-    data.set(sessionId, { score, tags: Array.isArray(tags) ? tags.slice(0, 10) : [], comment: typeof comment === 'string' ? comment.slice(0, 50) : '' });
+    data.set(sessionId, { score, tags, comment });
     const reviews = Array.from(data.values());
     const avg = Number((reviews.reduce((sum, review) => sum + review.score, 0) / reviews.length).toFixed(2));
     return NextResponse.json({ ok: true, avg_rating: avg, rating_count: reviews.length });
