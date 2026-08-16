@@ -89,8 +89,10 @@ export async function GET(req: NextRequest) {
   const category = url.searchParams.get('category') || undefined;
   const price = url.searchParams.get('price') || undefined;
   const origin = url.searchParams.get('origin') || undefined;
-  const page = Number(url.searchParams.get('page') || '1');
-  const limit = Number(url.searchParams.get('limit') || '20');
+  const pageRaw = Number(url.searchParams.get('page') || '1');
+  const page = Number.isFinite(pageRaw) && pageRaw >= 1 ? Math.floor(pageRaw) : 1;
+  const limitRaw = Number(url.searchParams.get('limit') || '20');
+  const limit = Number.isFinite(limitRaw) ? Math.min(100, Math.max(1, Math.floor(limitRaw))) : 20;
 
   const results = searchTools(query, category, price, origin);
   const total = results.length;
