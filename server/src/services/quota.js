@@ -80,17 +80,22 @@ class QuotaService {
     _enqueueWrite() {
         const dataPath = this.dataPath;
         const serialized = JSON.stringify(this.data, null, 2);
-        this._writeQueue = this._writeQueue.then(async () => {
-            const tmpPath = dataPath + '.tmp';
-            await fsp.writeFile(tmpPath, serialized, 'utf8');
-            await fsp.rename(tmpPath, dataPath);
-        });
-        this._writeQueue.catch(err => {
-            // ENOENT is benign (temp dir cleaned up before async write).
-            if (err.code !== 'ENOENT') {
-                console.error('[QuotaService] Write error:', err);
-            }
-        });
+        // Assign the recovered chain back to _writeQueue: if the catch were
+        // attached to the derived promise only (without re-assigning), the
+        // first write failure would leave the queue rejected forever and
+        // silently skip every later write.
+        this._writeQueue = this._writeQueue
+            .then(async () => {
+                const tmpPath = dataPath + '.tmp';
+                await fsp.writeFile(tmpPath, serialized, 'utf8');
+                await fsp.rename(tmpPath, dataPath);
+            })
+            .catch(err => {
+                // ENOENT is benign (temp dir cleaned up before async write).
+                if (err.code !== 'ENOENT') {
+                    console.error('[QuotaService] Write error:', err);
+                }
+            });
     }
 
     _generateUserId() {
