@@ -3,12 +3,13 @@
  */
 import { jest } from '@jest/globals';
 
-let sanitize, sanitizeObject;
+let sanitize, sanitizeObject, maskEmail;
 
 beforeAll(async () => {
     const sanitizer = await import('../utils/sanitizer.js');
     sanitize = sanitizer.sanitize;
     sanitizeObject = sanitizer.sanitizeObject;
+    maskEmail = sanitizer.maskEmail;
 });
 
 // ---------------------------------------------------------------------------
@@ -154,5 +155,22 @@ describe('sanitizeObject', () => {
 
     test('should handle arrays', () => {
         expect(sanitizeObject([1, 2, 3])).toEqual([1, 2, 3]);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// maskEmail
+// ---------------------------------------------------------------------------
+
+describe('maskEmail', () => {
+    test('masks the local part of an email', () => {
+        expect(maskEmail('alice@example.com')).toBe('a***@example.com');
+    });
+
+    test('returns *** for non-string or invalid input', () => {
+        expect(maskEmail('')).toBe('***');
+        expect(maskEmail(null)).toBe('***');
+        expect(maskEmail(42)).toBe('***');
+        expect(maskEmail('no-at-sign')).toBe('***');
     });
 });

@@ -3,6 +3,7 @@ import { generateToken, authMiddleware } from '../middleware/auth.js';
 import { quotaService } from '../services/quota.js';
 import config from '../config.js';
 import logger from '../utils/logger.js';
+import { maskEmail } from '../utils/sanitizer.js';
 
 const router = Router();
 
@@ -61,13 +62,6 @@ function recordFailedAttempt(email) {
 
 function clearFailedAttempts(email) {
     loginAttempts.delete(email);
-}
-
-function maskEmail(email) {
-    if (!email || typeof email !== 'string') return '***';
-    const [local, domain] = email.split('@');
-    if (!domain) return '***';
-    return local[0] + '***@' + domain;
 }
 
 router.post('/register', async (req, res) => {

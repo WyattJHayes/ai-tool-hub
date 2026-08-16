@@ -29,6 +29,13 @@ export function sanitize(text) {
     return result;
 }
 
+export function maskEmail(email) {
+    if (!email || typeof email !== 'string') return '***';
+    const [local, domain] = email.split('@');
+    if (!domain) return '***';
+    return local[0] + '***@' + domain;
+}
+
 export function sanitizeObject(obj) {
     if (typeof obj !== 'object' || obj === null) {
         return obj;
