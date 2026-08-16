@@ -224,6 +224,19 @@ describe('_buildMessages', () => {
         expect(msgs[1].content).not.toContain('hack');
         expect(msgs[1].content).toContain('[CODE_BLOCK_REMOVED]');
     });
+
+    test('should wrap resume and JD as quoted untrusted data', () => {
+        const promptConfig = {
+            system: 'You are an expert.',
+            user: 'Please optimize:',
+            temperature: 0.5,
+            maxTokens: 2048
+        };
+        const msgs = svc._buildMessages(promptConfig, 'My resume', 'Senior Dev JD');
+        expect(msgs[1].content).toContain('不可信引用数据');
+        expect(msgs[1].content).toContain(JSON.stringify('My resume'));
+        expect(msgs[1].content).toContain(JSON.stringify('Senior Dev JD'));
+    });
 });
 
 // ---------------------------------------------------------------------------
