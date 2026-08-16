@@ -47,7 +47,7 @@
 
 ### Phase 2 — 静态简历工具收编
 - [ ] 确认 `tools/resume-optimizer` 的独立价值（是否仍有 GitHub Pages 独立流量）
-- [ ] 若保留：把内联 `<script>` / `onclick` 迁出、加独立 CSP（当前静态站无 CSP）
+- [ ] 若保留：把内联 `<script>` / `onclick` 迁出，从而去掉 CSP 的 `'unsafe-inline'`（更正 2026-08-16：该站**已有** meta CSP 且含 base-uri/form-action/upgrade-insecure-requests；剩余工作是迁内联处理器去 `'unsafe-inline'`，并在浏览器实测后评估能否去 `'unsafe-eval'`——html2pdf 旧版 bundle 疑似依赖）
 - [ ] 若收编：将独有功能（模板、AI 代写、职位匹配）迁入 `next-src/src/app/resume`
 
 ### Phase 3 — 旧版下线
