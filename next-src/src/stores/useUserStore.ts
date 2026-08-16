@@ -116,18 +116,11 @@ export const useUserStore = create<UserStore>()(
     }),
     {
       name: THEME_STORAGE_KEY,
-      // Typed as the partialized shape so the storage contract matches what
-      // actually gets persisted after partialize strips transient flags.
-      storage: createThemeStorage<PersistedUserState>(() => window.localStorage),
+      // Storage passes the whole envelope through (see theme-bootstrap.mjs);
+      // transient flags landing in localStorage is harmless — on rehydrate a
+      // stale sync-error notice clears on the next favorite interaction.
+      storage: createThemeStorage<UserStore>(() => window.localStorage),
       version: THEME_STORAGE_VERSION,
-      // Persist only durable user data; transient flags (sync errors,
-      // migration prompt) must not survive a reload.
-      partialize: (state) => ({
-        favorites: state.favorites,
-        ratings: state.ratings,
-        theme: state.theme,
-        isLoggedIn: state.isLoggedIn,
-      }),
       // D-06: Add localStorage capacity monitoring
       onRehydrateStorage: () => {
         return (state) => {

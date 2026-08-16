@@ -11,7 +11,7 @@ export default function Error({ error, reset }: ErrorPageProps) {
   // Route-segment errors: keep the shell (Navbar/Footer) and offer retry.
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center gap-5 px-6 py-16 text-center">
-      <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--signal-soft)]">
+      <div className="flex h-16 w-16 items-center justify-center rounded-md bg-[var(--signal-soft)]">
         <AlertTriangle className="h-8 w-8 text-[var(--signal-ink)]" aria-hidden="true" />
       </div>
       <div className="space-y-2">
