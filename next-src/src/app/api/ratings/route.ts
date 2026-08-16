@@ -5,16 +5,13 @@ import {
   requireSupabaseUser,
   ResumeApiError,
 } from '@/server/supabase-admin';
-
-// In-memory fallback
-type Review = { score: number; tags: string[]; comment: string };
-const toolRatings = new Map<number, Map<string, Review>>();
+import { getToolReviews, storeAnonymousReview, type Review } from './fallback-store';
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const toolId = Number(url.searchParams.get('tool_id'));
   if (!toolId) return NextResponse.json({ error: 'tool_id required' }, { status: 400 });
-  const anonymousReviews = Array.from(toolRatings.get(toolId)?.values() || []);
+  const anonymousReviews: Review[] = getToolReviews(toolId);
 
   // Try Supabase for aggregate data
   try {
@@ -99,10 +96,8 @@ export async function POST(req: NextRequest) {
     // Fallback: in-memory
     const sessionId = req.headers.get('x-session-id');
     if (!sessionId) return NextResponse.json({ error: 'x-session-id required' }, { status: 400 });
-    if (!toolRatings.has(tool_id)) toolRatings.set(tool_id, new Map());
-    const data = toolRatings.get(tool_id)!;
-    data.set(sessionId, { score, tags, comment });
-    const reviews = Array.from(data.values());
+    storeAnonymousReview(tool_id, sessionId, { score, tags, comment });
+    const reviews = getToolReviews(tool_id);
     const avg = Number((reviews.reduce((sum, review) => sum + review.score, 0) / reviews.length).toFixed(2));
     return NextResponse.json({ ok: true, avg_rating: avg, rating_count: reviews.length });
   } catch {
