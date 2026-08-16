@@ -50,12 +50,16 @@ export async function POST(req: NextRequest) {
     if (!Number.isInteger(tool_id) || tool_id <= 0 || !Number.isInteger(score) || score < 1 || score > 5) {
       return NextResponse.json({ error: 'tool_id and score (1-5) required' }, { status: 400 });
     }
-    if (typeof comment !== 'string' || comment.length > 200) {
+    // comment/tags are OPTIONAL in the public contract (DB defaults to ''/[]);
+    // validate only when present, then normalize for storage.
+    if (comment !== undefined && (typeof comment !== 'string' || comment.length > 200)) {
       return NextResponse.json({ error: 'comment must be a string (max 200)' }, { status: 400 });
     }
-    if (!Array.isArray(tags) || tags.length > 10 || tags.some((t) => typeof t !== 'string' || t.length > 20)) {
+    if (tags !== undefined && (!Array.isArray(tags) || tags.length > 10 || tags.some((t) => typeof t !== 'string' || t.length > 20))) {
       return NextResponse.json({ error: 'tags must be a string array (max 10)' }, { status: 400 });
     }
+    const normalizedComment = comment ?? '';
+    const normalizedTags = tags ?? [];
 
     // Try Supabase (authenticated path: service-role client with explicit user scoping)
     if (req.headers.get('authorization')?.startsWith('Bearer ')) {
@@ -66,8 +70,8 @@ export async function POST(req: NextRequest) {
           user_id: user.id,
           tool_id: tool_id,
           score,
-          tags,
-          comment,
+          tags: normalizedTags,
+          comment: normalizedComment,
         }, { onConflict: 'user_id,tool_id' });
         if (writeError) return NextResponse.json({ error: 'Failed to save rating' }, { status: 502 });
 
@@ -96,7 +100,7 @@ export async function POST(req: NextRequest) {
     // Fallback: in-memory
     const sessionId = req.headers.get('x-session-id');
     if (!sessionId) return NextResponse.json({ error: 'x-session-id required' }, { status: 400 });
-    storeAnonymousReview(tool_id, sessionId, { score, tags, comment });
+    storeAnonymousReview(tool_id, sessionId, { score, tags: normalizedTags, comment: normalizedComment });
     const reviews = getToolReviews(tool_id);
     const avg = Number((reviews.reduce((sum, review) => sum + review.score, 0) / reviews.length).toFixed(2));
     return NextResponse.json({ ok: true, avg_rating: avg, rating_count: reviews.length });

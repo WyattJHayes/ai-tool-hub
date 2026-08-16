@@ -55,7 +55,7 @@ begin
   where schemaname = 'public'
     and tablename in ('tools', 'categories', 'scenes')
     and cmd in ('INSERT', 'UPDATE', 'DELETE')
-    and (roles && array['anon', 'authenticated']);
+    and (roles && array['anon', 'authenticated']::name[]);
 
   if v_offenders is not null then
     raise exception 'VULN-1: anon/authenticated hold write policies on content tables: %', v_offenders;
@@ -83,7 +83,7 @@ begin
     where schemaname = 'public'
       and tablename = t.tablename
       and cmd = 'SELECT'
-      and roles && array['anon']
+      and roles && array['anon']::name[]
   );
 
   if v_missing is not null then
