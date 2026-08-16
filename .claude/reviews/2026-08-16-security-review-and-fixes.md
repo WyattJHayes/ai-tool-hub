@@ -38,3 +38,15 @@
 
 - 未跟踪目录 `.superpowers/`、`outputs/` 为本地既有产物，**不属于本次改动**，提交前请确认是否纳入 `.gitignore`
 - M4 依赖 service-role 显式作用域，生产请确认 `favorites`/`ratings` 表 RLS 策略作为二道防线
+
+---
+
+## 生产收口记录（2026-08-16 追加）
+
+- **VULN-1（tools/categories/scenes 无 RLS）已在生产修复**：迁移 `20260816160000_content_rls.sql` 经 GitHub Actions（`supabase-db-push` workflow，run 31943324404）于 2026-08-16 11:04 UTC 应用。
+  - 攻击复测：anon key PATCH `tools` → **401 permission denied**（修复前 200 真改数据）
+  - 公共读：`/rest/v1/tools` → 200，前端目录无影响
+  - 契约验证：`rls_contracts.sql` 经 `supabase-contract-check` workflow（run 31943514598）对生产库执行 → **CONTRACTS PASS**（含 RLS 启用、无写策略、公共读、ratings DELETE、计费表护栏、触发器 definer 六项断言）
+  - 线上冒烟：首页 200、工具页 200（308 尾斜杠规范化属正常）、ratings/tools API 200
+  - 迁移历史调和：本地 001/002/20260724000741 标记 applied；远端独有版本 20260630134529/20260723124839/20260724004724 标记 reverted（仓库中途采纳 CLI 的标准对账，三者早于本仓库迁移目录且内容已包含在 001/002 中）
+  - 至此本轮审计的全部发现：代码层 11 项修复、测试 24+ 用例、CI 三 job、生产 RLS 收口——**全链路闭环，无未处理的安全发现**。
