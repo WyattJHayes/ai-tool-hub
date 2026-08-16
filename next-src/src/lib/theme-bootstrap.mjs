@@ -2,6 +2,8 @@ export const DEFAULT_THEME = 'dark';
 export const THEME_STORAGE_KEY = 'ai-tool-hub-user';
 export const THEME_STORAGE_VERSION = 0;
 
+export const THEMES = ['dark', 'light', 'cyberpunk'];
+
 export function createSafeStorage(storageSource) {
   const storage = () => {
     try {
@@ -45,7 +47,7 @@ export function parseStoredThemeEnvelope(raw) {
     const parsed = raw ? JSON.parse(raw) : null;
     const theme = parsed?.state?.theme;
     return parsed?.version === THEME_STORAGE_VERSION
-      && (theme === 'light' || theme === 'dark')
+      && (theme === 'light' || theme === 'dark' || theme === 'cyberpunk')
       ? parsed
       : null;
   } catch {
@@ -72,13 +74,17 @@ export function createThemeStorage(storageSource) {
   };
 }
 
+// Inlined in synchronizeTheme (not a module ref): this function is serialized
+// verbatim into the pre-paint bootstrap script, so it must be self-contained.
 export function synchronizeTheme(theme, documentRef = typeof document === 'undefined' ? null : document) {
   if (!documentRef) return;
+  const themeColorMeta = { dark: '#080B0E', light: '#F3F6F8', cyberpunk: '#06060B' };
   const isDark = theme === 'dark';
-  const color = isDark ? '#080B0E' : '#F3F6F8';
+  const color = themeColorMeta[theme] ?? themeColorMeta.dark;
   const root = documentRef.documentElement;
   root.classList.toggle('dark', isDark);
-  root.style.colorScheme = theme;
+  root.setAttribute('data-theme', theme);
+  root.style.colorScheme = theme === 'cyberpunk' ? 'dark' : theme;
   documentRef.querySelectorAll?.('meta[name="theme-color"]').forEach((meta) => {
     meta.content = color;
   });

@@ -36,10 +36,10 @@ export default function Home() {
 
   return (
     <main data-console-home className="min-h-screen bg-[var(--page)] text-[var(--ink)]">
-      <section data-instrument-section="primary">
+      <section data-instrument-section="primary" className="cyber-hero">
         <div className="mx-auto max-w-[1160px] px-4 py-9 sm:px-0 sm:pb-0 sm:pt-12">
           <div className="max-w-3xl">
-            <h1 className="text-3xl font-semibold leading-tight sm:text-4xl">按任务找到合适的 AI 工具</h1>
+            <h1 className="cyber-hero-title text-3xl font-semibold leading-tight sm:text-4xl">按任务找到合适的 AI 工具</h1>
             <p className="mt-3 text-[var(--muted)]">先确定任务，再比较能力、价格和使用条件</p>
             <div className="mt-6"><SearchBar /></div>
           </div>

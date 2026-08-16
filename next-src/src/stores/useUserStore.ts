@@ -13,7 +13,7 @@ import {
 interface UserStore {
   favorites: number[];
   ratings: Record<number, number>;
-  theme: 'dark' | 'light';
+  theme: 'dark' | 'light' | 'cyberpunk';
   isLoggedIn: boolean;
   pendingMigration: boolean;
   /** Tool id whose latest favorite sync failed; UI shows an inline notice. */
@@ -91,9 +91,11 @@ export const useUserStore = create<UserStore>()(
       getRating: (toolId) => get().ratings[toolId] ?? 0,
 
       toggleTheme: () => {
-        const newTheme = get().theme === 'dark' ? 'light' : 'dark';
-        set({ theme: newTheme });
-        synchronizeTheme(newTheme);
+        const order = ['dark', 'light', 'cyberpunk'] as const;
+        const current = get().theme;
+        const next = order[(order.indexOf(current) + 1) % order.length];
+        set({ theme: next });
+        synchronizeTheme(next);
       },
 
       login: () => {

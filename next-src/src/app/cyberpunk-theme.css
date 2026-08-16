@@ -1,0 +1,73 @@
+/* ==========================================================================
+   Cyberpunk theme — purple/cyan neon with a yellow signal accent.
+   Effect budget (enforced by contract tests): neon glow and gradients are
+   background/Hero/CTA only; body text stays neutral for WCAG AAA contrast.
+   This file is the contract-exempt zone for gradients/glow: every rule MUST
+   be scoped under [data-theme='cyberpunk'] so other themes stay clean.
+   ========================================================================== */
+
+[data-theme='cyberpunk'] {
+  color-scheme: dark;
+  --page: #06060b;
+  --surface: #111120;
+  --surface-subtle: #15151f;
+  --surface-hover: #1a1a2e;
+  --ink: #e2e8f0;
+  --muted: #94a3b8;
+  --muted-subtle: #7f8ea3;
+  --line: rgba(139, 92, 246, 0.18);
+  --line-strong: rgba(139, 92, 246, 0.35);
+  --accent: #8b5cf6;
+  --accent-hover: #a78bfa;
+  --accent-soft: rgba(139, 92, 246, 0.12);
+  --accent-ink: #c4b5fd;
+  --accent-2: #06b6d4;
+  --accent-2-hover: #22d3ee;
+  --on-accent: #06060b;
+  --signal: #fcee0a;
+  --signal-ink: #fcee0a;
+  --signal-soft: rgba(252, 238, 10, 0.08);
+  --tool-surface: #0a0a16;
+  --glow-purple: 0 0 20px rgba(139, 92, 246, 0.3);
+  --glow-cyan: 0 0 20px rgba(6, 182, 212, 0.3);
+}
+
+/* Grid backdrop — page background layer only. */
+[data-theme='cyberpunk'] body {
+  background-image:
+    linear-gradient(rgba(139, 92, 246, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(139, 92, 246, 0.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+}
+
+[data-theme='cyberpunk'] .cyber-glow-accent {
+  box-shadow: var(--glow-purple);
+}
+
+[data-theme='cyberpunk'] .cyber-glow-cyan {
+  box-shadow: var(--glow-cyan);
+}
+
+/* Neon hover lift: border tint + soft glow, no transform motion. */
+[data-theme='cyberpunk'] .cyber-card-lift {
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+[data-theme='cyberpunk'] .cyber-card-lift:hover {
+  border-color: rgba(139, 92, 246, 0.55);
+  box-shadow: 0 0 24px rgba(139, 92, 246, 0.18);
+}
+
+/* Hero: the one place a neon gradient text treatment is allowed. */
+[data-theme='cyberpunk'] .cyber-hero-title {
+  background-image: linear-gradient(135deg, #c4b5fd, #67e8f9);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-theme='cyberpunk'] .cyber-card-lift {
+    transition: none;
+  }
+}

@@ -1,6 +1,6 @@
 'use client';
 
-import { LayoutGrid, Moon, Share2, Sun, User } from 'lucide-react';
+import { LayoutGrid, Moon, Share2, Sparkles, Sun, User } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -13,9 +13,18 @@ const navItems = [
   { href: '/resume/', label: '简历优化' },
 ];
 
+const themeMeta = {
+  dark: { icon: Moon, label: '切换到亮色主题', next: '暗色' },
+  light: { icon: Sparkles, label: '切换到赛博朋克主题', next: '亮色' },
+  cyberpunk: { icon: Sun, label: '切换到暗色主题', next: '赛博朋克' },
+} as const;
+
 export default function Navbar() {
   const pathname = usePathname();
   const toggleTheme = useUserStore((state) => state.toggleTheme);
+  const theme = useUserStore((state) => state.theme);
+  const meta = themeMeta[theme] ?? themeMeta.dark;
+  const ThemeIcon = meta.icon;
 
   const handleShare = async () => {
     if (navigator.share) {
@@ -67,12 +76,10 @@ export default function Navbar() {
             type="button"
             onClick={toggleTheme}
             className="flex h-11 w-11 items-center justify-center rounded-md text-[var(--muted)] transition-colors duration-150 hover:bg-[var(--surface-subtle)] hover:text-[var(--ink)]"
-            title="切换主题"
+            title={`当前：${meta.next}，点击切换主题`}
           >
-            <Moon className="h-[18px] w-[18px] dark:hidden" aria-hidden="true" />
-            <Sun className="hidden h-[18px] w-[18px] dark:block" aria-hidden="true" />
-            <span className="sr-only dark:hidden">切换到暗色主题</span>
-            <span className="sr-only hidden dark:inline">切换到亮色主题</span>
+            <ThemeIcon className="h-[18px] w-[18px]" aria-hidden="true" />
+            <span className="sr-only">{meta.label}</span>
           </button>
           <button
             type="button"

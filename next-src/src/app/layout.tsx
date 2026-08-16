@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import localFont from 'next/font/local';
 import './globals.css';
+import './cyberpunk-theme.css';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import { AuthProvider } from '@/components/auth/AuthProvider';
 import Navbar from '@/components/layout/Navbar';
