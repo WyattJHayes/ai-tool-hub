@@ -1,8 +1,12 @@
-# 生产 Supabase 执行 003_content_rls.sql 操作指南
+# 生产 Supabase 执行 20260816160000_content_rls.sql 操作指南
 
 > 目的：关闭 VULN-1（公开 anon key 可经 PostgREST 改写 `tools.website_url` 等核心数据）。
 > 全部代码、CI、契约测试已就绪，这是唯一的运维动作。
 > 预计耗时：**staging 5 分钟 + 生产 5 分钟 + 验证 3 分钟**。
+>
+> **推荐路径**：已配置 GitHub Secrets 的话，直接用 Actions → "Supabase DB Push"
+> workflow（先 dry-run 看差异，再真跑），见 `.github/workflows/supabase-db-push.yml`。
+> 本指南适用于手动执行路径。
 
 ---
 
@@ -23,7 +27,7 @@ Supabase Dashboard → **Database → Backups**，点击最新备份行的 **Dow
 1. Dashboard → **SQL Editor** → **New query**
 2. 打开本地文件，**完整复制**内容：
    ```
-   next-src/supabase/migrations/003_content_rls.sql
+   next-src/supabase/migrations/20260816160000_content_rls.sql
    ```
 3. 粘贴进编辑器，点 **Run**
 4. 预期输出：`Success. No rows returned`（DDL 语句的正常返回）

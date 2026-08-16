@@ -137,3 +137,29 @@ begin
   end if;
 end;
 $$;
+
+-- ---------------------------------------------------------------------------
+-- [VULN-1d] Counter triggers must run as SECURITY DEFINER.
+--
+-- update_tool_rating / update_tool_favorite_count UPDATE public.tools, which
+-- RLS now restricts to service-role reads only. As INVOKER they would fail
+-- for authenticated users inserting ratings directly (policy-allowed path)
+-- and roll back the whole insert. The definer property is asserted so a
+-- migration redefining these functions as invoker cannot land silently.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  v_offenders text;
+begin
+  select string_agg(p.proname, ', ') into v_offenders
+  from pg_catalog.pg_proc p
+  join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public'
+    and p.proname in ('update_tool_rating', 'update_tool_favorite_count')
+    and not p.prosecdef;
+
+  if v_offenders is not null then
+    raise exception 'VULN-1: counter triggers must be security definer, invoker found: %', v_offenders;
+  end if;
+end;
+$$;
