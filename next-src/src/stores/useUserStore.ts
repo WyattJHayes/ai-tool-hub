@@ -96,12 +96,14 @@ export const useUserStore = create<UserStore>()(
 
       toggleTheme: () => {
         const { theme, baseTheme } = get();
-        // Two-state dark/light toggle. From cyberpunk, the click returns to
-        // the remembered regular theme (the label already announces it).
+        // The button always does exactly what its label says. From cyberpunk
+        // the label announces the regular theme opposite to baseTheme (e.g.
+        // entered from dark -> "切换到亮色主题"), so the click leaves
+        // cyberpunk and lands on that announced theme.
         const next = theme === 'cyberpunk'
-          ? baseTheme
+          ? (baseTheme === 'dark' ? 'light' : 'dark')
           : theme === 'dark' ? 'light' : 'dark';
-        set({ theme: next });
+        set({ theme: next, baseTheme: next });
         synchronizeTheme(next);
       },
 
