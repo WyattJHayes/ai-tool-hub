@@ -14,17 +14,22 @@ const navItems = [
 ];
 
 const themeMeta = {
-  dark: { icon: Moon, label: '切换到亮色主题', next: '暗色' },
-  light: { icon: Sparkles, label: '切换到赛博朋克主题', next: '亮色' },
-  cyberpunk: { icon: Sun, label: '切换到暗色主题', next: '赛博朋克' },
+  dark: { icon: Moon, label: '切换到亮色主题' },
+  light: { icon: Sun, label: '切换到暗色主题' },
 } as const;
 
 export default function Navbar() {
   const pathname = usePathname();
   const toggleTheme = useUserStore((state) => state.toggleTheme);
+  const toggleCyberpunk = useUserStore((state) => state.toggleCyberpunk);
   const theme = useUserStore((state) => state.theme);
-  const meta = themeMeta[theme] ?? themeMeta.dark;
-  const ThemeIcon = meta.icon;
+  const baseTheme = useUserStore((state) => state.baseTheme);
+  const isCyberpunk = theme === 'cyberpunk';
+  // From cyberpunk, the light/dark button returns to the remembered theme,
+  // so its label announces that target (same two-state vocabulary).
+  const regularMeta = themeMeta[isCyberpunk ? baseTheme : theme] ?? themeMeta.dark;
+  const ThemeIcon = regularMeta.icon;
+  const cyberpunkLabel = isCyberpunk ? '退出赛博朋克主题' : '切换到赛博朋克主题';
 
   const handleShare = async () => {
     if (navigator.share) {
@@ -76,10 +81,25 @@ export default function Navbar() {
             type="button"
             onClick={toggleTheme}
             className="flex h-11 w-11 items-center justify-center rounded-md text-[var(--muted)] transition-colors duration-150 hover:bg-[var(--surface-subtle)] hover:text-[var(--ink)]"
-            title={`当前：${meta.next}，点击切换主题`}
+            title={regularMeta.label}
           >
             <ThemeIcon className="h-[18px] w-[18px]" aria-hidden="true" />
-            <span className="sr-only">{meta.label}</span>
+            <span className="sr-only">{regularMeta.label}</span>
+          </button>
+          <button
+            type="button"
+            onClick={toggleCyberpunk}
+            className={cn(
+              'flex h-11 w-11 items-center justify-center rounded-md transition-colors duration-150 hover:bg-[var(--surface-subtle)]',
+              isCyberpunk
+                ? 'text-[var(--accent)]'
+                : 'text-[var(--muted)] hover:text-[var(--ink)]'
+            )}
+            title={cyberpunkLabel}
+            aria-pressed={isCyberpunk}
+          >
+            <Sparkles className="h-[18px] w-[18px]" aria-hidden="true" />
+            <span className="sr-only">{cyberpunkLabel}</span>
           </button>
           <button
             type="button"

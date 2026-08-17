@@ -14,6 +14,8 @@ interface UserStore {
   favorites: number[];
   ratings: Record<number, number>;
   theme: 'dark' | 'light' | 'cyberpunk';
+  /** The regular theme to return to when leaving cyberpunk mode. */
+  baseTheme: 'dark' | 'light';
   isLoggedIn: boolean;
   pendingMigration: boolean;
   /** Tool id whose latest favorite sync failed; UI shows an inline notice. */
@@ -25,6 +27,7 @@ interface UserStore {
   setRating: (toolId: number, score: number, tags?: string[], comment?: string) => Promise<RatingAggregate | null>;
   getRating: (toolId: number) => number;
   toggleTheme: () => void;
+  toggleCyberpunk: () => void;
   login: () => void;
   logout: () => void;
   migrateFromLocalStorage: () => void;
@@ -42,6 +45,7 @@ export const useUserStore = create<UserStore>()(
       favorites: [],
       ratings: {},
       theme: DEFAULT_THEME,
+      baseTheme: 'dark',
       isLoggedIn: false,
       pendingMigration: false,
       favoriteSyncError: null,
@@ -91,11 +95,25 @@ export const useUserStore = create<UserStore>()(
       getRating: (toolId) => get().ratings[toolId] ?? 0,
 
       toggleTheme: () => {
-        const order = ['dark', 'light', 'cyberpunk'] as const;
-        const current = get().theme;
-        const next = order[(order.indexOf(current) + 1) % order.length];
+        const { theme, baseTheme } = get();
+        // Two-state dark/light toggle. From cyberpunk, the click returns to
+        // the remembered regular theme (the label already announces it).
+        const next = theme === 'cyberpunk'
+          ? baseTheme
+          : theme === 'dark' ? 'light' : 'dark';
         set({ theme: next });
         synchronizeTheme(next);
+      },
+
+      toggleCyberpunk: () => {
+        const { theme, baseTheme } = get();
+        if (theme === 'cyberpunk') {
+          set({ theme: baseTheme });
+          synchronizeTheme(baseTheme);
+        } else {
+          set({ theme: 'cyberpunk', baseTheme: theme });
+          synchronizeTheme('cyberpunk');
+        }
       },
 
       login: () => {

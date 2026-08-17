@@ -96,26 +96,22 @@ async function requireCount(locator, expected, label) {
 }
 
 // ---------------------------------------------------------------------------
-// Three-mode theme helpers (dark -> light -> cyberpunk -> dark).
-// The toggle button's accessible name always announces the NEXT state, e.g.
-// in light mode it reads "切换到赛博朋克主题". All interactions below go
-// through these helpers so the cycle semantics live in exactly one place.
+// Theme helpers. The light/dark button is a two-state toggle (its accessible
+// name announces the target: "切换到亮色主题" / "切换到暗色主题"); the
+// cyberpunk button is a separate toggle that does not participate in the
+// regular cycle. All interactions go through these helpers.
 // ---------------------------------------------------------------------------
-const THEME_CYCLE = ['dark', 'light', 'cyberpunk'];
-
 async function readTheme(page) {
   const attr = await page.locator('html').getAttribute('data-theme');
   return attr ?? (await page.locator('html.dark').count() > 0 ? 'dark' : 'light');
 }
 
-function nextThemeLabel(currentTheme) {
-  const next = THEME_CYCLE[(THEME_CYCLE.indexOf(currentTheme) + 1) % THEME_CYCLE.length];
-  const label = next === 'dark' ? '暗色' : next === 'light' ? '亮色' : '赛博朋克';
-  return `切换到${label}主题`;
+function themeButton(page) {
+  return page.getByRole('button', { name: /切换到(?:亮色|暗色)主题/ });
 }
 
-function themeButton(page) {
-  return page.getByRole('button', { name: /切换到(?:亮色|暗色|赛博朋克)主题/ });
+function cyberpunkButton(page) {
+  return page.getByRole('button', { name: /(?:切换到|退出)赛博朋克主题/ });
 }
 
 async function assertAuthAvailability(dialog, label) {
@@ -262,11 +258,12 @@ async function assertInitialTheme(browser) {
       }));
       const expectedDark = entry.expected === 'dark';
       const expectedColor = entry.expected === 'dark' ? '#080B0E' : '#F3F6F8';
-      const expectedAction = nextThemeLabel(entry.expected);
+      const expectedAction = entry.expected === 'dark' ? '切换到亮色主题' : '切换到暗色主题';
       if (actual.dark !== expectedDark || actual.colorScheme !== entry.expected || actual.themeColor !== expectedColor) {
         throw new Error(`${entry.name}: initial theme is ${JSON.stringify(actual)}, expected ${entry.expected}`);
       }
       await requireCount(themeButton(page), 1, `${entry.name}: theme toggle action`);
+      await requireCount(cyberpunkButton(page), 1, `${entry.name}: cyberpunk toggle action`);
     } finally {
       await context.close();
     }
@@ -338,13 +335,13 @@ async function assertScenarioIdentity(page, scenario, label) {
 }
 
 async function setTheme(page, theme) {
-  // cycle clicks until data-theme reaches the target
-  for (let attempts = 0; attempts < THEME_CYCLE.length; attempts++) {
+  // Two-state toggle: from dark or light, one click reaches the other;
+  // from cyberpunk, one click returns to the remembered regular theme, so
+  // loop at most twice to cover every starting point.
+  for (let attempts = 0; attempts < 2; attempts++) {
     const before = await readTheme(page);
     if (before === theme) break;
     await themeButton(page).click();
-    // Wait for the state to CHANGE (the next click may not reach the target
-    // in a three-mode cycle), then re-check on the next iteration.
     await page.waitForFunction((prev) => {
       const attr = document.documentElement.getAttribute('data-theme');
       const dark = document.documentElement.classList.contains('dark');

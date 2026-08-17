@@ -107,8 +107,11 @@ async function assertThemeToggle(page, label) {
   };
   const initialTheme = await readTheme();
 
-  // The toggle cycles dark -> light -> cyberpunk -> dark.
-  const toggleButton = page.getByRole('button', { name: /切换到(?:亮色|暗色|赛博朋克)主题/ });
+  // The light/dark button is a plain two-state toggle; the cyberpunk button
+  // is a separate control and must exist alongside it.
+  const toggleButton = page.getByRole('button', { name: /切换到(?:亮色|暗色)主题/ });
+  const cyberpunk = page.getByRole('button', { name: /(?:切换到|退出)赛博朋克主题/ });
+  if (await cyberpunk.count() !== 1) fail(`${label}: cyberpunk toggle missing`);
 
   await toggleButton.click();
   const afterFirst = await readTheme();
@@ -117,11 +120,15 @@ async function assertThemeToggle(page, label) {
     return;
   }
 
-  // Two more clicks complete the cycle and restore the starting theme.
-  await toggleButton.click();
   await toggleButton.click();
   const restoredTheme = await readTheme();
   if (restoredTheme !== initialTheme) fail(`${label}: theme was not restored`);
+
+  // Cyberpunk toggle round-trips in and out, leaving the regular theme intact.
+  await cyberpunk.click();
+  if (await readTheme() !== 'cyberpunk') fail(`${label}: cyberpunk did not engage`);
+  await cyberpunk.click();
+  if (await readTheme() !== initialTheme) fail(`${label}: cyberpunk did not restore the regular theme`);
 }
 
 async function runFlow(page) {

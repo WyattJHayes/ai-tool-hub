@@ -886,8 +886,10 @@ test('uses precision navigation rails and outline-only search focus', () => {
   assert.match(navbar, /data-active=\{active \? 'true' : undefined\}/);
   assert.match(navbar, /aria-current=\{active \? 'page' : undefined\}/);
   assert.doesNotMatch(navbar, /aria-label=\{theme === 'dark'/);
-  assert.match(navbar, /sr-only">\{meta.label\}/);
-  assert.match(navbar, /title=\{`当前：\$\{meta.next\}，点击切换主题`\}/);
+  assert.match(navbar, /sr-only">\{regularMeta\.label\}/);
+  assert.match(navbar, /title=\{regularMeta\.label\}/);
+  assert.match(navbar, /aria-pressed=\{isCyberpunk\}/);
+  assert.match(navbar, /toggleCyberpunk/);
   assert.match(bottomNav, /data-orientation="mobile"/);
   assert.match(bottomNav, /data-active=\{active \? 'true' : undefined\}/);
   assert.match(search, /data-search-shell/);
@@ -925,7 +927,8 @@ test('task-first guard toggles away from and restores the current theme in both 
 
   assert.match(helper, /const readTheme = async \(\) =>/);
   assert.match(helper, /getAttribute\('data-theme'\)/);
-  assert.match(helper, /切换到\(\?:亮色\|暗色\|赛博朋克\)主题/);
+  assert.match(helper, /切换到\(\?:亮色\|暗色\)主题/);
+  assert.match(helper, /\(\?:切换到\|退出\)赛博朋克主题/);
   assert.match(helper, /if \(afterFirst === initialTheme\) \{\s*fail\(`\$\{label\}: theme did not change`\);\s*return;\s*\}/);
   assert.match(helper, /restoredTheme !== initialTheme/);
   assert.match(keyboardPath, /await assertThemeToggle\(page,/);
