@@ -1,6 +1,6 @@
 'use client';
 
-import { LayoutGrid, Moon, Share2, Sparkles, Sun, User } from 'lucide-react';
+import { LayoutGrid, Moon, Share2, Sun, User, Zap } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -13,9 +13,11 @@ const navItems = [
   { href: '/resume/', label: '简历优化' },
 ];
 
+// Icon announces the TARGET state (original convention): dark mode shows the
+// sun because the click heads to light, and vice versa. The label agrees.
 const themeMeta = {
-  dark: { icon: Moon, label: '切换到亮色主题' },
-  light: { icon: Sun, label: '切换到暗色主题' },
+  dark: { icon: Sun, label: '切换到亮色主题' },
+  light: { icon: Moon, label: '切换到暗色主题' },
 } as const;
 
 export default function Navbar() {
@@ -90,15 +92,15 @@ export default function Navbar() {
             type="button"
             onClick={toggleCyberpunk}
             className={cn(
-              'flex h-11 w-11 items-center justify-center rounded-md transition-colors duration-150 hover:bg-[var(--surface-subtle)]',
+              'flex h-11 w-11 items-center justify-center rounded-md transition-colors duration-150',
               isCyberpunk
-                ? 'text-[var(--accent)]'
-                : 'text-[var(--muted)] hover:text-[var(--ink)]'
+                ? 'bg-[var(--accent-soft)] text-[var(--accent-ink)] hover:bg-[var(--accent-soft)]'
+                : 'text-[var(--muted)] hover:bg-[var(--surface-subtle)] hover:text-[var(--ink)]'
             )}
             title={cyberpunkLabel}
             aria-pressed={isCyberpunk}
           >
-            <Sparkles className="h-[18px] w-[18px]" aria-hidden="true" />
+            <Zap className="h-[18px] w-[18px]" aria-hidden="true" />
             <span className="sr-only">{cyberpunkLabel}</span>
           </button>
           <button
