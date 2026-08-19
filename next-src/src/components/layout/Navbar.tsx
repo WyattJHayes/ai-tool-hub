@@ -1,10 +1,10 @@
 'use client';
 
-import { LayoutGrid, Moon, Share2, Sun, User, Zap } from 'lucide-react';
+import { LayoutGrid, Share2, User } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { useUserStore } from '@/stores/useUserStore';
+import ThemePicker from './ThemePicker';
 
 const navItems = [
   { href: '/tools', label: '工具' },
@@ -13,25 +13,8 @@ const navItems = [
   { href: '/resume/', label: '简历优化' },
 ];
 
-// Icon announces the TARGET state (original convention): dark mode shows the
-// sun because the click heads to light, and vice versa. The label agrees.
-const themeMeta = {
-  dark: { icon: Sun, label: '切换到亮色主题' },
-  light: { icon: Moon, label: '切换到暗色主题' },
-} as const;
-
 export default function Navbar() {
   const pathname = usePathname();
-  const toggleTheme = useUserStore((state) => state.toggleTheme);
-  const toggleCyberpunk = useUserStore((state) => state.toggleCyberpunk);
-  const theme = useUserStore((state) => state.theme);
-  const baseTheme = useUserStore((state) => state.baseTheme);
-  const isCyberpunk = theme === 'cyberpunk';
-  // From cyberpunk, the light/dark button returns to the remembered theme,
-  // so its label announces that target (same two-state vocabulary).
-  const regularMeta = themeMeta[isCyberpunk ? baseTheme : theme] ?? themeMeta.dark;
-  const ThemeIcon = regularMeta.icon;
-  const cyberpunkLabel = isCyberpunk ? '退出赛博朋克主题' : '切换到赛博朋克主题';
 
   const handleShare = async () => {
     if (navigator.share) {
@@ -79,30 +62,7 @@ export default function Navbar() {
         </div>
 
         <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={toggleTheme}
-            className="flex h-11 w-11 items-center justify-center rounded-md text-[var(--muted)] transition-colors duration-150 hover:bg-[var(--surface-subtle)] hover:text-[var(--ink)]"
-            title={regularMeta.label}
-          >
-            <ThemeIcon className="h-[18px] w-[18px]" aria-hidden="true" />
-            <span className="sr-only">{regularMeta.label}</span>
-          </button>
-          <button
-            type="button"
-            onClick={toggleCyberpunk}
-            className={cn(
-              'flex h-11 w-11 items-center justify-center rounded-md transition-colors duration-150',
-              isCyberpunk
-                ? 'bg-[var(--accent-soft)] text-[var(--accent-ink)] hover:bg-[var(--accent-soft)]'
-                : 'text-[var(--muted)] hover:bg-[var(--surface-subtle)] hover:text-[var(--ink)]'
-            )}
-            title={cyberpunkLabel}
-            aria-pressed={isCyberpunk}
-          >
-            <Zap className="h-[18px] w-[18px]" aria-hidden="true" />
-            <span className="sr-only">{cyberpunkLabel}</span>
-          </button>
+          <ThemePicker />
           <button
             type="button"
             onClick={handleShare}

@@ -96,22 +96,31 @@ async function requireCount(locator, expected, label) {
 }
 
 // ---------------------------------------------------------------------------
-// Theme helpers. The light/dark button is a two-state toggle (its accessible
-// name announces the target: "切换到亮色主题" / "切换到暗色主题"); the
-// cyberpunk button is a separate toggle that does not participate in the
-// regular cycle. All interactions go through these helpers.
+// Theme helpers. A single navbar button ("选择主题") opens a popover dialog
+// listing every theme; picking an option applies it immediately. All theme
+// interactions go through these helpers.
 // ---------------------------------------------------------------------------
 async function readTheme(page) {
   const attr = await page.locator('html').getAttribute('data-theme');
   return attr ?? (await page.locator('html.dark').count() > 0 ? 'dark' : 'light');
 }
 
-function themeButton(page) {
-  return page.getByRole('button', { name: /切换到(?:亮色|暗色)主题/ });
+function themePickerTrigger(page) {
+  return page.getByRole('button', { name: '选择主题', exact: true });
 }
 
-function cyberpunkButton(page) {
-  return page.getByRole('button', { name: /(?:切换到|退出)赛博朋克主题/ });
+function themePickerDialog(page) {
+  return page.getByRole('dialog', { name: '选择主题' });
+}
+
+function themeOption(page, themeKey) {
+  const names = { dark: '暗色', light: '亮色' };
+  return themePickerDialog(page).getByRole('button', { name: names[themeKey], exact: true });
+}
+
+async function openThemePicker(page) {
+  await themePickerTrigger(page).click();
+  await themePickerDialog(page).waitFor({ state: 'visible' });
 }
 
 async function assertAuthAvailability(dialog, label) {
@@ -262,8 +271,12 @@ async function assertInitialTheme(browser) {
       if (actual.dark !== expectedDark || actual.colorScheme !== entry.expected || actual.themeColor !== expectedColor) {
         throw new Error(`${entry.name}: initial theme is ${JSON.stringify(actual)}, expected ${entry.expected}`);
       }
-      await requireCount(themeButton(page), 1, `${entry.name}: theme toggle action`);
-      await requireCount(cyberpunkButton(page), 1, `${entry.name}: cyberpunk toggle action`);
+      await requireCount(themePickerTrigger(page), 1, `${entry.name}: theme picker trigger`);
+      await openThemePicker(page);
+      for (const name of ['暗色', '亮色', '赛博朋克', '暮色琥珀', '深海', '森林']) {
+        await requireCount(themePickerDialog(page).getByRole('button', { name, exact: true }), 1, `${entry.name}: ${name} option`);
+      }
+      await page.keyboard.press('Escape');
     } finally {
       await context.close();
     }
@@ -335,20 +348,14 @@ async function assertScenarioIdentity(page, scenario, label) {
 }
 
 async function setTheme(page, theme) {
-  // Two-state toggle: from dark or light, one click reaches the other;
-  // from cyberpunk, one click returns to the remembered regular theme, so
-  // loop at most twice to cover every starting point.
-  for (let attempts = 0; attempts < 2; attempts++) {
-    const before = await readTheme(page);
-    if (before === theme) break;
-    await themeButton(page).click();
-    await page.waitForFunction((prev) => {
-      const attr = document.documentElement.getAttribute('data-theme');
-      const dark = document.documentElement.classList.contains('dark');
-      const current = attr ?? (dark ? 'dark' : 'light');
-      return current !== prev;
-    }, before);
-  }
+  await openThemePicker(page);
+  await themeOption(page, theme).click();
+  await page.waitForFunction((expected) => {
+    const attr = document.documentElement.getAttribute('data-theme');
+    const dark = document.documentElement.classList.contains('dark');
+    const current = attr ?? (dark ? 'dark' : 'light');
+    return current === expected;
+  }, theme);
   if ((await readTheme(page)) !== theme) throw new Error(`could not reach theme ${theme}`);
   const actual = await page.evaluate((key) => {
     const stored = localStorage.getItem(key);
@@ -615,7 +622,7 @@ async function assertOutline(target, expectedColor, label) {
 async function assertFocusColors(page, scenario, theme, label) {
   const normalTarget = scenario.name === 'auth'
     ? page.getByRole('dialog', { name: '登录' }).getByRole('button', { name: '关闭登录窗口' })
-    : themeButton(page);
+    : themePickerTrigger(page);
   await focusByKeyboard(page, normalTarget, `${label} normal`);
   await assertOutline(normalTarget, themes[theme].focus, `${label} normal focus`);
 
@@ -833,7 +840,7 @@ async function assertFixedSurfaceGeometry(page, scenario, label) {
 }
 
 async function assertResponsiveGeometry(page, scenario, theme, label) {
-  const themeTarget = themeButton(page);
+  const themeTarget = themePickerTrigger(page);
   await assertTargetSize(themeTarget, `${label} theme target`);
 
   if (scenario.name === 'home') {

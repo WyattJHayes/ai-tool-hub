@@ -6,6 +6,7 @@ import {
   createThemeStorage,
   DEFAULT_THEME,
   synchronizeTheme,
+  type Theme,
   THEME_STORAGE_KEY,
   THEME_STORAGE_VERSION,
 } from '@/lib/theme-bootstrap.mjs';
@@ -13,9 +14,7 @@ import {
 interface UserStore {
   favorites: number[];
   ratings: Record<number, number>;
-  theme: 'dark' | 'light' | 'cyberpunk';
-  /** The regular theme to return to when leaving cyberpunk mode. */
-  baseTheme: 'dark' | 'light';
+  theme: Theme;
   isLoggedIn: boolean;
   pendingMigration: boolean;
   /** Tool id whose latest favorite sync failed; UI shows an inline notice. */
@@ -26,8 +25,7 @@ interface UserStore {
   clearFavoriteSyncError: (toolId?: number) => void;
   setRating: (toolId: number, score: number, tags?: string[], comment?: string) => Promise<RatingAggregate | null>;
   getRating: (toolId: number) => number;
-  toggleTheme: () => void;
-  toggleCyberpunk: () => void;
+  setTheme: (theme: Theme) => void;
   login: () => void;
   logout: () => void;
   migrateFromLocalStorage: () => void;
@@ -45,7 +43,6 @@ export const useUserStore = create<UserStore>()(
       favorites: [],
       ratings: {},
       theme: DEFAULT_THEME,
-      baseTheme: 'dark',
       isLoggedIn: false,
       pendingMigration: false,
       favoriteSyncError: null,
@@ -94,28 +91,9 @@ export const useUserStore = create<UserStore>()(
 
       getRating: (toolId) => get().ratings[toolId] ?? 0,
 
-      toggleTheme: () => {
-        const { theme, baseTheme } = get();
-        // The button always does exactly what its label says. From cyberpunk
-        // the label announces the regular theme opposite to baseTheme (e.g.
-        // entered from dark -> "切换到亮色主题"), so the click leaves
-        // cyberpunk and lands on that announced theme.
-        const next = theme === 'cyberpunk'
-          ? (baseTheme === 'dark' ? 'light' : 'dark')
-          : theme === 'dark' ? 'light' : 'dark';
-        set({ theme: next, baseTheme: next });
-        synchronizeTheme(next);
-      },
-
-      toggleCyberpunk: () => {
-        const { theme, baseTheme } = get();
-        if (theme === 'cyberpunk') {
-          set({ theme: baseTheme });
-          synchronizeTheme(baseTheme);
-        } else {
-          set({ theme: 'cyberpunk', baseTheme: theme });
-          synchronizeTheme('cyberpunk');
-        }
+      setTheme: (nextTheme) => {
+        set({ theme: nextTheme });
+        synchronizeTheme(nextTheme);
       },
 
       login: () => {

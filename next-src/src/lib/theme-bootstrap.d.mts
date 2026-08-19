@@ -1,4 +1,4 @@
-export type Theme = 'dark' | 'light' | 'cyberpunk';
+export type Theme = 'dark' | 'light' | 'cyberpunk' | 'amber' | 'ocean' | 'forest';
 
 export const DEFAULT_THEME: Theme;
 export const THEME_STORAGE_KEY: 'ai-tool-hub-user';

@@ -68,7 +68,7 @@ function runThemeBootstrap(script, raw, storageError = false) {
 async function loadUserStore() {
   let source = read('src/stores/useUserStore.ts');
   if (process.env.THEME_STORE_MUTATION === '1') {
-    source = source.replace('        synchronizeTheme(next);', '        // mutation: omit toggle synchronization');
+    source = source.replace('        synchronizeTheme(nextTheme);', '        // mutation: omit theme synchronization');
   }
   const { outputText } = ts.transpileModule(source, {
     compilerOptions: {
@@ -786,7 +786,7 @@ test('boots dark before paint while honoring a persisted theme', async () => {
   assert.match(store, /name:\s*THEME_STORAGE_KEY/);
   assert.match(store, /version:\s*THEME_STORAGE_VERSION/);
   assert.match(store, /storage:\s*createThemeStorage<UserStore>/);
-  assert.match(store, /synchronizeTheme\(next\)/);
+  assert.match(store, /synchronizeTheme\(nextTheme\)/);
   assert.match(store, /synchronizeTheme\(state\.theme\)/);
   assert.match(layout, /id="theme-bootstrap"/);
   assert.match(layout, /dangerouslySetInnerHTML=\{\{ __html: THEME_BOOTSTRAP_SCRIPT \}\}/);
@@ -797,7 +797,7 @@ test('executes persisted user theme synchronization through Zustand storage', as
   await withUserStoreEnvironment({ throwOnSet: true }, async ({ document }) => {
     const useUserStore = await loadUserStore();
     assert.equal(useUserStore.getState().theme, 'dark');
-    assert.doesNotThrow(() => useUserStore.getState().toggleTheme());
+    assert.doesNotThrow(() => useUserStore.getState().setTheme('light'));
     assert.equal(useUserStore.getState().theme, 'light');
     assert.equal(document.documentElement.classList.contains('dark'), false);
     assert.equal(document.documentElement.style.colorScheme, 'light');
@@ -886,10 +886,8 @@ test('uses precision navigation rails and outline-only search focus', () => {
   assert.match(navbar, /data-active=\{active \? 'true' : undefined\}/);
   assert.match(navbar, /aria-current=\{active \? 'page' : undefined\}/);
   assert.doesNotMatch(navbar, /aria-label=\{theme === 'dark'/);
-  assert.match(navbar, /sr-only">\{regularMeta\.label\}/);
-  assert.match(navbar, /title=\{regularMeta\.label\}/);
-  assert.match(navbar, /aria-pressed=\{isCyberpunk\}/);
-  assert.match(navbar, /toggleCyberpunk/);
+  assert.match(navbar, /<ThemePicker \/>/);
+  assert.doesNotMatch(navbar, /toggleCyberpunk|toggleTheme/);
   assert.match(bottomNav, /data-orientation="mobile"/);
   assert.match(bottomNav, /data-active=\{active \? 'true' : undefined\}/);
   assert.match(search, /data-search-shell/);
@@ -927,10 +925,10 @@ test('task-first guard toggles away from and restores the current theme in both 
 
   assert.match(helper, /const readTheme = async \(\) =>/);
   assert.match(helper, /getAttribute\('data-theme'\)/);
-  assert.match(helper, /切换到\(\?:亮色\|暗色\)主题/);
-  assert.match(helper, /\(\?:切换到\|退出\)赛博朋克主题/);
-  assert.match(helper, /if \(afterFirst === initialTheme\) \{\s*fail\(`\$\{label\}: theme did not change`\);\s*return;\s*\}/);
-  assert.match(helper, /restoredTheme !== initialTheme/);
+  assert.match(helper, /name: '选择主题', exact: true/);
+  assert.match(helper, /getByRole\('dialog', \{ name: '选择主题' \}\)/);
+  assert.match(helper, /theme did not change/);
+  assert.match(helper, /theme was not restored/);
   assert.match(keyboardPath, /await assertThemeToggle\(page,/);
   assert.match(responsivePath, /await assertThemeToggle\(page,/);
   assert.equal((guard.match(/await assertThemeToggle\(page,/g) || []).length, 2);

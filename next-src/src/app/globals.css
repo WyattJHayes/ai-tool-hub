@@ -1849,3 +1849,78 @@ body:has(.resume-page) > footer {
   }
 }
 /* resume-workspace:end */
+
+/* ==========================================================================
+   Amber Dusk theme — warm amber accent on deep umber (dark family).
+   ========================================================================== */
+[data-theme='amber'] {
+  color-scheme: dark;
+  --page: #1a1410;
+  --surface: #241c15;
+  --surface-subtle: #2a211a;
+  --surface-hover: #332820;
+  --ink: #f2e8dc;
+  --muted: #b8a894;
+  --muted-subtle: #9a8a76;
+  --line: rgba(245, 158, 11, 0.16);
+  --line-strong: rgba(245, 158, 11, 0.34);
+  --accent: #f59e0b;
+  --accent-hover: #fbbf24;
+  --accent-soft: rgba(245, 158, 11, 0.12);
+  --accent-ink: #fcd34d;
+  --on-accent: #1a1410;
+  --signal: #fb923c;
+  --signal-ink: #fdba74;
+  --signal-soft: rgba(251, 146, 60, 0.1);
+  --tool-surface: #20180f;
+}
+
+/* ==========================================================================
+   Ocean theme — calm blue accent on deep sea (dark family).
+   ========================================================================== */
+[data-theme='ocean'] {
+  color-scheme: dark;
+  --page: #0a1220;
+  --surface: #101b2e;
+  --surface-subtle: #14213a;
+  --surface-hover: #1a2a48;
+  --ink: #dbe7f4;
+  --muted: #8fa5c0;
+  --muted-subtle: #7189a6;
+  --line: rgba(96, 165, 250, 0.16);
+  --line-strong: rgba(96, 165, 250, 0.34);
+  --accent: #60a5fa;
+  --accent-hover: #93c5fd;
+  --accent-soft: rgba(96, 165, 250, 0.12);
+  --accent-ink: #bfdbfe;
+  --on-accent: #0a1220;
+  --signal: #38bdf8;
+  --signal-ink: #7dd3fc;
+  --signal-soft: rgba(56, 189, 248, 0.1);
+  --tool-surface: #0d1626;
+}
+
+/* ==========================================================================
+   Forest theme — emerald accent on deep green (dark family, easy on eyes).
+   ========================================================================== */
+[data-theme='forest'] {
+  color-scheme: dark;
+  --page: #0f1512;
+  --surface: #16201b;
+  --surface-subtle: #1b2721;
+  --surface-hover: #223129;
+  --ink: #dcf0e4;
+  --muted: #9ab5a6;
+  --muted-subtle: #7d9a8a;
+  --line: rgba(52, 211, 153, 0.16);
+  --line-strong: rgba(52, 211, 153, 0.34);
+  --accent: #34d399;
+  --accent-hover: #6ee7b7;
+  --accent-soft: rgba(52, 211, 153, 0.12);
+  --accent-ink: #a7f3d0;
+  --on-accent: #0f1512;
+  --signal: #a3e635;
+  --signal-ink: #bef264;
+  --signal-soft: rgba(163, 230, 53, 0.1);
+  --tool-surface: #121a16;
+}

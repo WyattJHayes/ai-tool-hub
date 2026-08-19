@@ -107,28 +107,25 @@ async function assertThemeToggle(page, label) {
   };
   const initialTheme = await readTheme();
 
-  // The light/dark button is a plain two-state toggle; the cyberpunk button
-  // is a separate control and must exist alongside it.
-  const toggleButton = page.getByRole('button', { name: /切换到(?:亮色|暗色)主题/ });
-  const cyberpunk = page.getByRole('button', { name: /(?:切换到|退出)赛博朋克主题/ });
-  if (await cyberpunk.count() !== 1) fail(`${label}: cyberpunk toggle missing`);
+  // A single trigger opens the theme picker; options apply immediately.
+  const trigger = page.getByRole('button', { name: '选择主题', exact: true });
+  await trigger.click();
+  const dialog = page.getByRole('dialog', { name: '选择主题' });
+  if (await dialog.count() !== 1) fail(`${label}: theme picker did not open`);
 
-  await toggleButton.click();
-  const afterFirst = await readTheme();
-  if (afterFirst === initialTheme) {
+  const targetName = initialTheme === 'dark' ? '亮色' : '暗色';
+  await dialog.getByRole('button', { name: targetName, exact: true }).click();
+  await page.waitForTimeout(250);
+  const after = await readTheme();
+  if (after === initialTheme) {
     fail(`${label}: theme did not change`);
     return;
   }
 
-  await toggleButton.click();
-  const restoredTheme = await readTheme();
-  if (restoredTheme !== initialTheme) fail(`${label}: theme was not restored`);
-
-  // Cyberpunk toggle round-trips in and out, leaving the regular theme intact.
-  await cyberpunk.click();
-  if (await readTheme() !== 'cyberpunk') fail(`${label}: cyberpunk did not engage`);
-  await cyberpunk.click();
-  if (await readTheme() !== initialTheme) fail(`${label}: cyberpunk did not restore the regular theme`);
+  await trigger.click();
+  await page.getByRole('dialog', { name: '选择主题' }).getByRole('button', { name: initialTheme === 'dark' ? '暗色' : '亮色', exact: true }).click();
+  await page.waitForTimeout(250);
+  if (await readTheme() !== initialTheme) fail(`${label}: theme was not restored`);
 }
 
 async function runFlow(page) {

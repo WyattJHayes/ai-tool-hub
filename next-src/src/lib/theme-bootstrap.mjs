@@ -2,7 +2,7 @@ export const DEFAULT_THEME = 'dark';
 export const THEME_STORAGE_KEY = 'ai-tool-hub-user';
 export const THEME_STORAGE_VERSION = 0;
 
-export const THEMES = ['dark', 'light', 'cyberpunk'];
+export const THEMES = ['dark', 'light', 'cyberpunk', 'amber', 'ocean', 'forest'];
 
 export function createSafeStorage(storageSource) {
   const storage = () => {
@@ -46,8 +46,10 @@ export function parseStoredThemeEnvelope(raw) {
   try {
     const parsed = raw ? JSON.parse(raw) : null;
     const theme = parsed?.state?.theme;
-    return parsed?.version === THEME_STORAGE_VERSION
-      && (theme === 'light' || theme === 'dark' || theme === 'cyberpunk')
+    // Self-contained literal (this function is serialized into the pre-paint
+    // script): must not reference module-level constants.
+    const known = ['dark', 'light', 'cyberpunk', 'amber', 'ocean', 'forest'];
+    return parsed?.version === THEME_STORAGE_VERSION && known.includes(theme)
       ? parsed
       : null;
   } catch {
@@ -78,7 +80,7 @@ export function createThemeStorage(storageSource) {
 // verbatim into the pre-paint bootstrap script, so it must be self-contained.
 export function synchronizeTheme(theme, documentRef = typeof document === 'undefined' ? null : document) {
   if (!documentRef) return;
-  const themeColorMeta = { dark: '#080B0E', light: '#F3F6F8', cyberpunk: '#06060B' };
+  const themeColorMeta = { dark: '#080B0E', light: '#F3F6F8', cyberpunk: '#06060B', amber: '#1A1410', ocean: '#0A1220', forest: '#0F1512' };
   const isDark = theme === 'dark';
   const color = themeColorMeta[theme] ?? themeColorMeta.dark;
   const root = documentRef.documentElement;
