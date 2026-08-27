@@ -1,0 +1,85 @@
+name: Consistency Scanner (L4 自治系统)
+
+on:
+  schedule:
+    # UTC 02:17 每日运行（避开高峰时段；UTC 即北京时间 10:17）
+    - cron: '17 2 * * *'
+  workflow_dispatch: # 手动触发
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: consistency-scan
+  cancel-in-progress: false
+
+jobs:
+  scan-and-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Run consistency scanner (auto-fix mode)
+        id: scan
+        run: |
+          # 先采集修复前的扫描输出（作为 PR 描述素材）
+          node scripts/consistency-scan.mjs > scan-report.txt 2>&1 || true
+          # 再做自动修复
+          node scripts/consistency-scan.mjs --fix || true
+          cat scan-report.txt
+
+      - name: Create fix PR when changes exist
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "✅ 一致性扫描通过，无待修复差异"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # 存在差异 → 提交修复并开 PR
+          BRANCH="consistency/fix-$(date +%Y%m%d-%H%M%S)"
+          git config user.name "consistency-bot[bot]"
+          git config user.email "41898282+consistency-bot[bot]@users.noreply.github.com"
+
+          git add -A
+          git commit -m "fix(consistency): 自动修复代码/文档一致性偏差" || true
+          git push origin "HEAD:$BRANCH"
+
+          TITLE="fix(consistency): 自动修复代码/文档一致性偏差"
+          BODY="$(cat <<'EOF'
+## 🤖 L4 自治系统自动修复
+
+本 PR 由 `scripts/consistency-scan.mjs` 定时扫描触发生成，自动修复可确定性修复的偏差。
+
+### 扫描报告
+EOF
+          )"
+          # 附加修复前的扫描摘要到 PR body
+          BODY+="\n\`\`\`\n$(cat scan-report.txt)\n\`\`\`"
+          BODY+="\n\n> 由 GitHub Actions cron 自动创建，请人工 review 后合并。"
+          BODY+="\n> 错误标题/内容如不适用请手动调整。视图: [一致性扫描器 scripts/consistency-scan.mjs](../../blob/main/scripts/consistency-scan.mjs)"
+
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "$TITLE" \
+            --body "$BODY"
+
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: No-op summary
+        if: steps.pr.outputs.changed == 'false'
+        run: echo "扫描完成，未检测到需要修复的差异。"

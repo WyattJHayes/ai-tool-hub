@@ -10,7 +10,9 @@
     "lint": "eslint js",
     "format": "prettier --write \"js/**/*.{js,ts,css,html}\"",
     "test": "NODE_OPTIONS='--experimental-vm-modules' jest",
-    "deploy": "gh-pages -d dist"
+    "deploy": "gh-pages -d dist",
+    "consistency": "node scripts/consistency-scan.mjs",
+    "consistency:fix": "node scripts/consistency-scan.mjs --fix"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

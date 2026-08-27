@@ -105,7 +105,7 @@ next-src/
 │   │   └── utils.ts              # cn() 工具函数
 │   └── types/tool.ts             # TypeScript 类型定义
 ├── public/data/
-│   ├── tools.json                # 83 个工具数据 (含定价/多分类/亮点)
+│   ├── tools.json                # 84 个工具数据 (含定价/多分类/亮点)
 │   └── scenes.json               # 8 个场景数据
 ├── supabase/
 │   └── migrations/
@@ -280,7 +280,7 @@ tools          ← 工具主表 (INTEGER PK, 83 条数据)
 - 内存降级模式 (不配置数据库也能运行)
 
 **数据增强**
-- 83 个工具全部添加 pricing 定价数据
+- 84 个工具全部添加 pricing 定价数据
 - 多分类支持 (categories 数组)
 - 8 个场景数据 + toolIds 映射
 - 零值统计隐藏

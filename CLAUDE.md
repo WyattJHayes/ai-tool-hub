@@ -59,7 +59,7 @@
 | L1 | 规则层 | 有 CLAUDE.md + 行为准则 | hooks、自动化 |
 | **L2** | **反馈回路** | **PreToolUse + SessionStart + Stop 已激活** | **← 初始化完成后在此** |
 | **L3** | **自动修正** | **加上 PostToolUse 后自动格式化** | **取消 settings.json 中 PostToolUse 注释即可** |
-| L4 | 自治系统 | Agent 定期扫描代码/文档一致性，自动发起修复 PR | 垃圾回收 Agent、定时任务 |
+| **L4** | **自治系统** | **consistency 扫描器 + GitHub Actions cron 自动修复 PR** | **已实现：见下方说明** |
 
 # 扩展方向
 
@@ -68,3 +68,13 @@
 **PostToolUse 自动格式化** — hook 文件已预设（.claude/hooks/post-tool-check.mjs），在 settings.json 中取消 PostToolUse 的注释即可启用。检测项目中的 prettier / biome 等工具，每次编辑后自动格式化。无对应工具时静默跳过。
 
 **垃圾回收 Agent**（L4 方向）— OpenAI 团队的做法：设一个定期运行的 Agent，扫描代码与文档的一致性（比如 README 的 API 示例是否还能跑通），发现不一致就自动创建修复 PR。可以用 MCP + 定时任务实现。比泛泛的"记录缺陷率"更具体、更可操作。
+
+# L4 自治系统（已实现）
+
+- **扫描器**：[`scripts/consistency-scan.mjs`](./scripts/consistency-scan.mjs) — 校验三组契约：
+  1. README/设计文档中的"总量声明"（N 个工具数据 / N 个工具全部 / N 个场景）vs 权威数据源（next-src/public/data/*.json）
+  2. server 实际使用的环境变量 vs `.env.example` 声明
+  3. README 声称的 `/api/*` 路由 vs next-src/server 实际注册路由
+- **运行**：`npm run consistency`（只扫描，只读）；`npm run consistency:fix`（自动修复确定性偏差）
+- **定时任务**：[`.github/workflows/consistency.yml`](./.github/workflows/consistency.yml) — 每天 UTC 02:17（北京时间 10:17）自动运行，发现差异即创建修复 PR（可手动 `workflow_dispatch` 触发）
+- **边界**：只自动修复确定性偏差（数字/缺失 env 声明）；语义性差异（需人工判断的）只在报告中出现，交由人工处理
