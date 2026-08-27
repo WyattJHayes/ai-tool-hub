@@ -59,24 +59,26 @@ jobs:
           git push origin "HEAD:$BRANCH"
 
           TITLE="fix(consistency): 自动修复代码/文档一致性偏差"
-          BODY="$(cat <<'EOF'
-## 🤖 L4 自治系统自动修复
-
-本 PR 由 `scripts/consistency-scan.mjs` 定时扫描触发生成，自动修复可确定性修复的偏差。
-
-### 扫描报告
-EOF
-          )"
-          # 附加修复前的扫描摘要到 PR body
-          BODY+="\n\`\`\`\n$(cat scan-report.txt)\n\`\`\`"
-          BODY+="\n\n> 由 GitHub Actions cron 自动创建，请人工 review 后合并。"
-          BODY+="\n> 错误标题/内容如不适用请手动调整。视图: [一致性扫描器 scripts/consistency-scan.mjs](../../blob/main/scripts/consistency-scan.mjs)"
+          # 用 echo 逐行生成 PR body（避免 heredoc/多行字符串破坏 YAML 块标量）
+          {
+            echo "## 🤖 L4 自治系统自动修复"
+            echo
+            echo "本 PR 由 \`scripts/consistency-scan.mjs\` 定时扫描触发生成，自动修复可确定性修复的偏差。"
+            echo
+            echo "### 扫描报告"
+            echo
+            echo "\`\`\`"
+            cat scan-report.txt
+            echo "\`\`\`"
+            echo
+            echo "> 由 GitHub Actions cron 自动创建，请人工 review 后合并。"
+          } > pr_body.md
 
           gh pr create \
             --base main \
             --head "$BRANCH" \
             --title "$TITLE" \
-            --body "$BODY"
+            --body-file pr_body.md
 
           echo "changed=true" >> "$GITHUB_OUTPUT"
 
