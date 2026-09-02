@@ -116,6 +116,37 @@ function checkNumberContracts() {
   if (rootTools !== null && authorityTools !== null && rootTools !== authorityTools) {
     report(`根 tools.json=${rootTools} 与 next-src 权威源=${authorityTools} 不一致`);
   }
+
+  // 表数量契约：migrations 实际建表数 vs README 声称的 "N 表"
+  const realTables = countTables();
+  if (realTables !== null) {
+    const tableRe = /(?<![0-9])(\d+)\s*张?表/g;
+    for (const file of docs) {
+      if (!exists(file)) continue;
+      applyFix(file, (content) => {
+        return content.replace(tableRe, (m, n) => {
+          if (Number(n) === realTables) return m;
+          fixIssue(`表数偏差: ${file} 写 "${m}"，实际 migrations=${realTables}`);
+          return m.replace(n, String(realTables));
+        });
+      });
+    }
+  }
+}
+
+/** 统计 next-src/supabase/migrations 下实际 CREATE TABLE 的数量（去重）。 */
+function countTables() {
+  const migrationsDir = 'next-src/supabase/migrations';
+  if (!fs.existsSync(path.join(root, migrationsDir))) return null;
+  const tables = new Set();
+  for (const file of fs.readdirSync(path.join(root, migrationsDir))) {
+    if (!/\.sql$/.test(file)) continue;
+    const content = read(`${migrationsDir}/${file}`);
+    for (const m of content.matchAll(/CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+([a-zA-Z_][a-zA-Z0-9_]*)/g)) {
+      tables.add(m[1]);
+    }
+  }
+  return tables.size > 0 ? tables.size : null;
 }
 
 /* ────────────────────────────────────────────────

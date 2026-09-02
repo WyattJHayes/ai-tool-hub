@@ -25,38 +25,38 @@
 
 从纯前端静态站升级为 **Next.js 14 全栈应用**，新增用户系统、数据持久化、工具对比、详情页等核心功能。
 
-| 能力 | 旧版 (vanilla JS) | v7.0 (Next.js) |
-|------|--------------------|----------------|
-| 框架 | HTML + Vite | Next.js 14 App Router + TypeScript |
-| 状态管理 | 全局变量 | Zustand (3 stores) |
-| 样式 | 手写 CSS | Tailwind CSS + CSS Variables |
-| 路由 | 单页 | 多页面 (首页/详情/对比/场景/排行榜/用户) |
-| 后端 | 无 | Next.js API Routes (5个) |
-| 数据库 | 无 | Supabase (PostgreSQL + Auth) |
-| 认证 | 无 | Supabase Auth (邮箱注册/登录) |
-| 收藏 | localStorage | 云端 + 本地双写，登录自动同步 |
-| 评分 | 无 | 5星 + 标签 + 短评，聚合展示 |
-| 搜索 | 前端过滤 | 服务端搜索 API + facets + 高亮 |
-| 工具对比 | 无 | 横向表格对比 2-4 款工具 |
-| 详情页 | 无 | `/tools/:id` 独立详情页 |
-| 场景导航 | 无 | 8 个场景入口 + 工具映射 |
-| 定价数据 | 无 | 每个工具含完整定价信息 |
-| 埋点 | 无 | 7 种用户行为追踪事件 |
+| 能力     | 旧版 (vanilla JS) | v7.0 (Next.js)                           |
+| -------- | ----------------- | ---------------------------------------- |
+| 框架     | HTML + Vite       | Next.js 14 App Router + TypeScript       |
+| 状态管理 | 全局变量          | Zustand (3 stores)                       |
+| 样式     | 手写 CSS          | Tailwind CSS + CSS Variables             |
+| 路由     | 单页              | 多页面 (首页/详情/对比/场景/排行榜/用户) |
+| 后端     | 无                | Next.js API Routes (5个)                 |
+| 数据库   | 无                | Supabase (PostgreSQL + Auth)             |
+| 认证     | 无                | Supabase Auth (邮箱注册/登录)            |
+| 收藏     | localStorage      | 云端 + 本地双写，登录自动同步            |
+| 评分     | 无                | 5星 + 标签 + 短评，聚合展示              |
+| 搜索     | 前端过滤          | 服务端搜索 API + facets + 高亮           |
+| 工具对比 | 无                | 横向表格对比 2-4 款工具                  |
+| 详情页   | 无                | `/tools/:id` 独立详情页                  |
+| 场景导航 | 无                | 8 个场景入口 + 工具映射                  |
+| 定价数据 | 无                | 每个工具含完整定价信息                   |
+| 埋点     | 无                | 7 种用户行为追踪事件                     |
 
 ---
 
 ## 🏗️ 技术栈
 
-| 技术 | 版本 | 用途 |
-|------|------|------|
-| **Next.js** | 14.2 | App Router, SSR, API Routes |
-| **React** | 18 | UI 组件 |
-| **TypeScript** | 5 | 类型安全 |
-| **Tailwind CSS** | 3.4 | 样式系统 |
-| **Zustand** | 5.0 | 状态管理 (3 stores) |
-| **Supabase** | 2.107 | Auth + PostgreSQL + RLS |
-| **Lucide React** | 1.17 | 图标库 |
-| **@sentry/nextjs** | 10.x | 错误追踪 (可选) |
+| 技术               | 版本  | 用途                        |
+| ------------------ | ----- | --------------------------- |
+| **Next.js**        | 14.2  | App Router, SSR, API Routes |
+| **React**          | 18    | UI 组件                     |
+| **TypeScript**     | 5     | 类型安全                    |
+| **Tailwind CSS**   | 3.4   | 样式系统                    |
+| **Zustand**        | 5.0   | 状态管理 (3 stores)         |
+| **Supabase**       | 2.107 | Auth + PostgreSQL + RLS     |
+| **Lucide React**   | 1.17  | 图标库                      |
+| **@sentry/nextjs** | 10.x  | 错误追踪 (可选)             |
 
 ---
 
@@ -109,7 +109,7 @@ next-src/
 │   └── scenes.json               # 8 个场景数据
 ├── supabase/
 │   └── migrations/
-│       └── 001_initial.sql       # 数据库 Schema (9 表 + RLS + 触发器)
+│       └── 001_initial.sql       # 数据库 Schema (8 表 + RLS + 触发器)
 ├── scripts/
 │   └── import-tools.ts           # tools.json → Supabase 导入脚本
 └── package.json
@@ -172,28 +172,28 @@ npm start
 
 ## 📖 页面路由
 
-| 路由 | 页面 | 说明 |
-|------|------|------|
-| `/` | 首页 | 热门推荐 + 场景入口 + 全部工具 |
-| `/tools` | 工具浏览 | 搜索 + 分类筛选 + 6 种排序 |
-| `/tools/:id` | 工具详情 | 基本信息 + 定价表 + 评分 + 推荐替代 |
-| `/compare` | 工具对比 | 横向表格对比 2-4 款工具 |
-| `/scenes` | 场景列表 | 8 个场景入口 (PPT/代码/视频/设计/...) |
-| `/scenes/:slug` | 场景详情 | 场景下的工具列表 |
-| `/leaderboard` | 排行榜 | 点击/热门/最新 三栏排行 |
-| `/user` | 用户中心 | 收藏 + 评分记录 + 个性化推荐 |
+| 路由            | 页面     | 说明                                  |
+| --------------- | -------- | ------------------------------------- |
+| `/`             | 首页     | 热门推荐 + 场景入口 + 全部工具        |
+| `/tools`        | 工具浏览 | 搜索 + 分类筛选 + 6 种排序            |
+| `/tools/:id`    | 工具详情 | 基本信息 + 定价表 + 评分 + 推荐替代   |
+| `/compare`      | 工具对比 | 横向表格对比 2-4 款工具               |
+| `/scenes`       | 场景列表 | 8 个场景入口 (PPT/代码/视频/设计/...) |
+| `/scenes/:slug` | 场景详情 | 场景下的工具列表                      |
+| `/leaderboard`  | 排行榜   | 点击/热门/最新 三栏排行               |
+| `/user`         | 用户中心 | 收藏 + 评分记录 + 个性化推荐          |
 
 ---
 
 ## 🔌 API Routes
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| `GET` | `/api/tools` | 获取全部工具 + 分类数据 |
-| `GET` | `/api/search?q=chat&category=writing` | 搜索工具 (含 facets) |
-| `POST` | `/api/track/click` | 点击埋点 |
-| `GET/POST` | `/api/favorites` | 收藏 CRUD (需 Auth) |
-| `GET/POST` | `/api/ratings` | 评分 CRUD (需 Auth) |
+| 方法       | 路径                                  | 说明                    |
+| ---------- | ------------------------------------- | ----------------------- |
+| `GET`      | `/api/tools`                          | 获取全部工具 + 分类数据 |
+| `GET`      | `/api/search?q=chat&category=writing` | 搜索工具 (含 facets)    |
+| `POST`     | `/api/track/click`                    | 点击埋点                |
+| `GET/POST` | `/api/favorites`                      | 收藏 CRUD (需 Auth)     |
+| `GET/POST` | `/api/ratings`                        | 评分 CRUD (需 Auth)     |
 
 所有 API 支持 Supabase 云端 + 内存降级双模式。
 
@@ -221,19 +221,19 @@ tools          ← 工具主表 (INTEGER PK, 83 条数据)
 
 ## 🧩 核心组件
 
-| 组件 | 说明 |
-|------|------|
-| `ToolCard` | 3D 倾斜效果 + 收藏 + 对比勾选 + 价格标签 |
-| `ToolGrid` | 响应式网格 + 骨架屏 + 空状态 |
-| `SearchBar` | 300ms 防抖 + ⌘K 快捷键 + 搜索历史 |
-| `CompareBar` | 底部浮动对比栏 (选择 ≥2 工具后出现) |
-| `RatingWidget` | 5 星 + 10 个预设标签 + 50 字短评 |
-| `AuthModal` | 注册/登录模态框 (Supabase Auth) |
-| `AuthProvider` | 全局认证状态监听 + 云端数据同步 |
-| `SceneCard` | 场景入口卡片 (渐变背景 + hover 动效) |
-| `CategoryFilter` | 分类筛选药丸按钮 |
-| `SortBar` | 6 种排序选项 |
-| `BottomNav` | 移动端底部导航 (首页/工具/排行/我的) |
+| 组件             | 说明                                     |
+| ---------------- | ---------------------------------------- |
+| `ToolCard`       | 3D 倾斜效果 + 收藏 + 对比勾选 + 价格标签 |
+| `ToolGrid`       | 响应式网格 + 骨架屏 + 空状态             |
+| `SearchBar`      | 300ms 防抖 + ⌘K 快捷键 + 搜索历史        |
+| `CompareBar`     | 底部浮动对比栏 (选择 ≥2 工具后出现)      |
+| `RatingWidget`   | 5 星 + 10 个预设标签 + 50 字短评         |
+| `AuthModal`      | 注册/登录模态框 (Supabase Auth)          |
+| `AuthProvider`   | 全局认证状态监听 + 云端数据同步          |
+| `SceneCard`      | 场景入口卡片 (渐变背景 + hover 动效)     |
+| `CategoryFilter` | 分类筛选药丸按钮                         |
+| `SortBar`        | 6 种排序选项                             |
+| `BottomNav`      | 移动端底部导航 (首页/工具/排行/我的)     |
 
 ---
 
@@ -261,12 +261,14 @@ tools          ← 工具主表 (INTEGER PK, 83 条数据)
 ### v7.0.0 (2026-06-04) — Next.js 全栈重构
 
 **架构升级**
+
 - 从 vanilla JS/Vite 迁移到 Next.js 14 App Router + TypeScript
 - Zustand 状态管理 (useToolStore, useUserStore, useCompareStore)
 - Tailwind CSS + CSS Variables 主题系统
 - 完整 TypeScript 类型定义
 
 **新增页面**
+
 - `/tools/:id` — 工具详情页 (信息 + 定价 + 评分 + 推荐)
 - `/compare` — 工具对比页 (横向表格 2-4 款)
 - `/scenes` + `/scenes/:slug` — 场景导航
@@ -274,18 +276,21 @@ tools          ← 工具主表 (INTEGER PK, 83 条数据)
 - `/user` — 用户中心 (收藏 + 评分 + 个性化推荐)
 
 **后端能力**
-- Supabase PostgreSQL (9 表 + RLS + 触发器)
+
+- Supabase PostgreSQL (8 表 + RLS + 触发器)
 - Supabase Auth (邮箱注册/登录)
 - 5 个 API Routes (工具/搜索/收藏/评分/埋点)
 - 内存降级模式 (不配置数据库也能运行)
 
 **数据增强**
+
 - 84 个工具全部添加 pricing 定价数据
 - 多分类支持 (categories 数组)
 - 8 个场景数据 + toolIds 映射
 - 零值统计隐藏
 
 **用户行为追踪**
+
 - 7 种埋点事件 (tool_click, search_query, filter_apply, compare_open, tool_favorite, scene_click, rating_submit)
 
 ---
@@ -301,15 +306,18 @@ tools          ← 工具主表 (INTEGER PK, 83 条数据)
 <summary>历史版本</summary>
 
 ### v4.2.0 (2026-04-19) — 15 款热门 AI 工具
+
 - Gemini, DeepSeek, Grok, Claude Code, Trae, Flux Pro 等新工具
 - DeepSeek 大模型集成
 
 ### v4.0.0 (2026-04-05) — UI 大改版
+
 - 现代白卡设计 + 7 套主题系统
 - 60+ 微交互动画
 - ES6 模块化重构
 
 ### v3.0.0 (2026-04-01) — 架构重构
+
 - Vite 构建工具链
 - ES6 模块化
 
@@ -342,7 +350,7 @@ MIT License — Copyright (c) 2026 a895411690
 
 Made with ❤️ by [a895411690](https://github.com/a895411690)
 
-*最后更新: 2026-06-04 | 版本: v7.0.0*
+_最后更新: 2026-06-04 | 版本: v7.0.0_
 
 **Next.js 14 · TypeScript · Supabase · 83款AI工具 · 全栈应用**
 
