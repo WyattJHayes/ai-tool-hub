@@ -58,7 +58,7 @@
 | L0 | 裸用 | 没有 CLAUDE.md | 一切 |
 | L1 | 规则层 | 有 CLAUDE.md + 行为准则 | hooks、自动化 |
 | **L2** | **反馈回路** | **PreToolUse + SessionStart + Stop 已激活** | **← 初始化完成后在此** |
-| **L3** | **自动修正** | **加上 PostToolUse 后自动格式化** | **取消 settings.json 中 PostToolUse 注释即可** |
+| **L3** | **自动修正** | **PostToolUse 自动格式化已启用（.claude/settings.json）** | **编辑后自动 prettier** |
 | **L4** | **自治系统** | **consistency 扫描器 + GitHub Actions cron 自动修复 PR** | **已实现：见下方说明** |
 
 # 扩展方向
