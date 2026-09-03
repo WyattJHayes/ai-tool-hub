@@ -32,11 +32,6 @@ interface UserStore {
 }
 
 /** The durable slice of UserStore that survives to localStorage. */
-type PersistedUserState = Pick<
-  UserStore,
-  'favorites' | 'ratings' | 'theme' | 'isLoggedIn'
->;
-
 export const useUserStore = create<UserStore>()(
   persist(
     (set, get) => ({
