@@ -37,7 +37,7 @@
     "eslint-plugin-jsx-a11y-x": "0.2.0",
     "eslint-plugin-react-hooks": "7.1.1",
     "postcss": "^8.5.26",
-    "tailwindcss": "^3.4.1",
+    "tailwindcss": "^4.3.3",
     "tsx": "^4.23.1",
     "typescript": "^5",
     "typescript-eslint": "8.67.0"
