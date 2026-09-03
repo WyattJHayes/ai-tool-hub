@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@sentry/nextjs": "^10.70.0",
-    "@supabase/supabase-js": "^2.107.0",
+    "@supabase/supabase-js": "^2.112.3",
     "clsx": "^2.1.1",
     "html2canvas": "^1.4.1",
     "jspdf": "4.2.1",
