@@ -50,6 +50,7 @@
   },
   "overrides": {
     "brace-expansion": "5.0.9",
-    "postcss": "8.5.26"
+    "postcss": "8.5.26",
+    "qs": "6.16.0"
   }
 }
