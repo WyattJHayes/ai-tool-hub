@@ -18,10 +18,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const FIX = process.argv.includes('--fix');
+const invokedAsScript = process.argv[1]
+  && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
 
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const exists = (file) => fs.existsSync(path.join(root, file));
@@ -88,27 +90,19 @@ function checkNumberContracts() {
   }
 
   const docs = ['README.md', 'FIGMA_V4_DESIGN_SPEC.md'];
-
-  // 工具数：仅匹配"总量声明"语境。禁止前面带 `-`（区间右端如 2-4）或别的数字。
-  // 允许的粒度：N 个工具数据、N 个工具全部（完整集声明）。
-  const toolRe = /(?<![0-9-])(\d+)\s*个工具(数据|全部|$)/g;
-  const sceneRe = /(?<![0-9-])(\d+)\s*个场景/g;
+  const realTables = countTables();
 
   for (const file of docs) {
     if (!exists(file)) continue;
     applyFix(file, (content) => {
-      let out = content;
-      out = out.replace(toolRe, (m, n, extra) => {
-        if (Number(n) === realTools) return m;
-        fixIssue(`数量偏差: ${file} 写 "${m}"，权威=${realTools}`);
-        return `${realTools} 个工具${extra}`;
+      const { text, fixed } = applyNumberContract(content, {
+        realTools,
+        authorityScenes,
+        realTables,
+        file,
       });
-      out = out.replace(sceneRe, (m, n) => {
-        if (Number(n) === authorityScenes) return m;
-        fixIssue(`场景数偏差: ${file} 写 "${m}"，权威=${authorityScenes}`);
-        return `${authorityScenes} 个场景`;
-      });
-      return out;
+      for (const message of fixed) fixIssue(message);
+      return text;
     });
   }
 
@@ -116,22 +110,6 @@ function checkNumberContracts() {
   const rootTools = countEntries('tools.json');
   if (rootTools !== null && authorityTools !== null && rootTools !== authorityTools) {
     report(`根 tools.json=${rootTools} 与 next-src 权威源=${authorityTools} 不一致`);
-  }
-
-  // 表数量契约：migrations 实际建表数 vs README 声称的 "N 表"
-  const realTables = countTables();
-  if (realTables !== null) {
-    const tableRe = /(?<![0-9])(\d+)\s*张?表/g;
-    for (const file of docs) {
-      if (!exists(file)) continue;
-      applyFix(file, (content) => {
-        return content.replace(tableRe, (m, n) => {
-          if (Number(n) === realTables) return m;
-          fixIssue(`表数偏差: ${file} 写 "${m}"，实际 migrations=${realTables}`);
-          return m.replace(n, String(realTables));
-        });
-      });
-    }
   }
 }
 
@@ -306,28 +284,59 @@ function checkDependencyAudit() {
 }
 
 /* ────────────────────────────────────────────────
- * 主流程
+ * 主流程（仅以脚本方式运行时执行；被测试 import 时跳过）
  * ──────────────────────────────────────────────── */
-checkNumberContracts();
-checkEnvContract(collectUsedEnvVars(), declaredEnvVars());
-checkApiRoutes();
-checkDependencyAudit();
+if (invokedAsScript) {
+  checkNumberContracts();
+  checkEnvContract(collectUsedEnvVars(), declaredEnvVars());
+  checkApiRoutes();
+  checkDependencyAudit();
 
-const fixable = issues.filter((i) => i.kind === 'fix');
-const notices = issues.filter((i) => i.kind === 'report');
+  const fixable = issues.filter((i) => i.kind === 'fix');
+  const notices = issues.filter((i) => i.kind === 'report');
 
-console.log(`\nL4 一致性扫描完成 — ${fixable.length} 项可修，${notices.length} 项提示\n`);
-for (const i of [...fixable, ...notices]) {
-  console.log(`  ${i.kind === 'fix' ? '🛠️' : 'ℹ️'} ${i.message}`);
-}
+  console.log(`\nL4 一致性扫描完成 — ${fixable.length} 项可修，${notices.length} 项提示\n`);
+  for (const i of [...fixable, ...notices]) {
+    console.log(`  ${i.kind === 'fix' ? '🛠️' : 'ℹ️'} ${i.message}`);
+  }
 
-if (FIX) {
-  console.log(fixable.length > 0 ? '\n已写回自动修复（如适用）。' : '\n无可修项。');
+  if (FIX) {
+    console.log(fixable.length > 0 ? '\n已写回自动修复（如适用）。' : '\n无可修项。');
+    process.exit(0);
+  }
+  if (fixable.length > 0 || notices.length > 0) {
+    console.log('\n提示: 加 --fix 自动处理可确定性修复项；其余需人工判断。');
+    process.exit(1);
+  }
+  console.log('\n全部一致 ✅');
   process.exit(0);
 }
-if (fixable.length > 0 || notices.length > 0) {
-  console.log('\n提示: 加 --fix 自动处理可确定性修复项；其余需人工判断。');
-  process.exit(1);
+
+/* 测试导出：数量契约的正则与替换逻辑（纯函数，供一致性测试使用） */
+export function applyNumberContract(text, { realTools, authorityScenes, realTables = null, file = '?' }) {
+  const toolRe = /(?<![0-9-])(\d+)\s*个工具(数据|全部|$)/g;
+  // 只匹配总量语境（后缀为: 入口/数据/启动  标点或行尾），避免误改语义句如“3 个场景适合新手”
+  const sceneRe = /(?<![0-9-])(\d+)\s*个场景(?=入口|数据|场景|\s*[，。\)\],;:])/g;
+  // 表声明通常出现在“(8 表 + RLS …)”或行尾，同样只匹配总量语境
+  const tableRe = /(?<![0-9])(\d+)\s*张?表(?=\s*[+\]\)\],;:]|\s*$)/g;
+  const fixed = [];
+  let out = text;
+  out = out.replace(toolRe, (m, n, extra) => {
+    if (Number(n) === realTools) return m;
+    fixed.push(`数量偏差: ${file} 写 "${m}"，权威=${realTools}`);
+    return `${realTools} 个工具${extra}`;
+  });
+  out = out.replace(sceneRe, (m, n) => {
+    if (Number(n) === authorityScenes) return m;
+    fixed.push(`场景数偏差: ${file} 写 "${m}"，权威=${authorityScenes}`);
+    return `${authorityScenes} 个场景`;
+  });
+  if (realTables != null) {
+    out = out.replace(tableRe, (m, n) => {
+      if (Number(n) === realTables) return m;
+      fixed.push(`表数偏差: ${file} 写 "${m}"，实际 migrations=${realTables}`);
+      return m.replace(n, String(realTables));
+    });
+  }
+  return { text: out, fixed };
 }
-console.log('\n全部一致 ✅');
-process.exit(0);

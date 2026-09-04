@@ -59,6 +59,7 @@ jobs:
           npm --prefix next-src run build
           node --test scripts/next-audit-guard.test.mjs
           node scripts/next-audit-guard.mjs
+          node --test scripts/consistency-scan.test.mjs
 
       - name: Run Next.js API regressions
         run: |
