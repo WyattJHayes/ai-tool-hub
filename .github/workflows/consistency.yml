@@ -82,6 +82,27 @@ jobs:
 
           echo "changed=true" >> "$GITHUB_OUTPUT"
 
+      - name: Open issue for dependency vulnerabilities
+        # 无文档 diff 但扫描报告里出现依赖漏洞时 → 自动开 issue（不静默放过）
+        if: steps.pr.outputs.changed == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if grep -qE "依赖漏洞|无法运行" scan-report.txt; then
+            {
+              echo "## 🐞 依赖安全告警（L4 自治系统）"
+              echo
+              echo "一致性扫描发现以下依赖漏洞（当日 $(date -u +%Y-%m-%d)）："
+              echo
+              echo "\`\`\`"
+              grep -E "依赖漏洞|依赖审计" scan-report.txt
+              echo "\`\`\`"
+              echo
+              echo "> 由 GitHub Actions cron 自动创建（每日 02:17 UTC）。修复指引：升级依赖或添加 overrides 钉到修复版本。"
+            } > vuln_issue.md
+            gh issue create --title "依赖安全：npm audit 发现漏洞" --body-file vuln_issue.md || true
+          fi
+
       - name: No-op summary
         if: steps.pr.outputs.changed == 'false'
         run: echo "扫描完成，未检测到需要修复的差异。"

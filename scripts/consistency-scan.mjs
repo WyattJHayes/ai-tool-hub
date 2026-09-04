@@ -17,6 +17,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -229,11 +230,88 @@ function checkApiRoutes() {
 }
 
 /* ────────────────────────────────────────────────
+ * 4. 依赖安全契约（npm audit，对齐 CI 的 guard 行为）
+ * ──────────────────────────────────────────────── */
+/**
+ * 运行 npm audit 并返回 { ok, vulns, reason }。
+ * 优先 --offline（本地 lockfile+缓存，快速且无网络依赖）；离线失败再退回在线审计。
+ */
+function runAudit(cwd, args) {
+  const run = (extra) => {
+    try {
+      const out = execSync(`npm audit --json ${args.join(' ')} ${extra}`, {
+        cwd: path.join(root, cwd),
+        encoding: 'utf8',
+        // 本地离线快；在线走统一超时，避免扫死
+        timeout: extra.includes('--offline') ? 30000 : 60000,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      return { ok: true, report: JSON.parse(out) };
+    } catch (err) {
+      // npm audit 有漏洞时以非零退出，但 stdout 正常输出 JSON 报告
+      const out = err.stdout;
+      if (out) {
+        try {
+          const report = JSON.parse(out);
+          if (report && typeof report.vulnerabilities === 'object') {
+            return { ok: true, report };
+          }
+        } catch {
+          /* fall through */
+        }
+      }
+      return { ok: false, reason: `${err.name}: ${err.message?.split('\n')[0] ?? 'npm audit 不可用'}` };
+    }
+  };
+
+  const offline = run('--offline');
+  if (offline.ok) return offline;
+  return run('');
+}
+
+function checkDependencyAudit() {
+  // 与 deploy.yml 行为对齐：root/server 只审计生产依赖，next-src 全量（同 next-audit-guard）
+  const targets = [
+    { dir: '.', name: 'root', args: ['--omit=dev'] },
+    { dir: 'server', name: 'server', args: ['--omit=dev'] },
+    { dir: 'next-src', name: 'next-src', args: [] },
+  ];
+  let blocked = false;
+  let total = 0;
+  for (const target of targets) {
+    const { ok, report, reason } = runAudit(target.dir, target.args);
+    if (!ok) {
+      report(`依赖审计(${target.name}) 无法运行（网络受限? ${reason}）`);
+      blocked = true;
+      continue;
+    }
+    const vulns = report?.vulnerabilities ?? {};
+    const names = Object.keys(vulns);
+    if (names.length === 0) {
+      console.log(`  ✅ 依赖审计(${target.name}): 0 漏洞`);
+      continue;
+    }
+    total += names.length;
+    const details = names
+      .map((name) => `${name}@${vulns[name]?.range ?? '?'}[${vulns[name]?.severity ?? '?'}]`)
+      .join(', ');
+    report(`依赖漏洞(${target.name}): ${details}`);
+  }
+  if (total > 0) {
+    // 依赖漏洞无法确定性自动修复（需人工升级/加 overrides），归为 report 级
+    report(`共 ${total} 个依赖漏洞，需人工处理（升级依赖/加 overrides）`);
+  } else if (blocked) {
+    console.log('  （依赖审计因网络不可用跳过，CI 中会完整执行）');
+  }
+}
+
+/* ────────────────────────────────────────────────
  * 主流程
  * ──────────────────────────────────────────────── */
 checkNumberContracts();
 checkEnvContract(collectUsedEnvVars(), declaredEnvVars());
 checkApiRoutes();
+checkDependencyAudit();
 
 const fixable = issues.filter((i) => i.kind === 'fix');
 const notices = issues.filter((i) => i.kind === 'report');

@@ -71,11 +71,12 @@
 
 # L4 自治系统（已实现）
 
-- **扫描器**：[`scripts/consistency-scan.mjs`](./scripts/consistency-scan.mjs) — 校验四组契约：
+- **扫描器**：[`scripts/consistency-scan.mjs`](./scripts/consistency-scan.mjs) — 校验五组契约：
   1. README/设计文档中的"总量声明"（N 个工具数据 / N 个工具全部 / N 个场景）vs 权威数据源（next-src/public/data/*.json）
   2. server 实际使用的环境变量 vs `.env.example` 声明
   3. README 声称的 `/api/*` 路由 vs next-src/server 实际注册路由
   4. README 声称的表数量（N 表）vs supabase/migrations 实际 CREATE TABLE 数量
+  5. 依赖安全：`npm audit`（root/server 生产依赖 + next-src 全量，对齐 CI guard 行为）。本地优先 `--offline`（快速无网），失败降级在线审计
 - **运行**：`npm run consistency`（只扫描，只读）；`npm run consistency:fix`（自动修复确定性偏差）
-- **定时任务**：[`.github/workflows/consistency.yml`](./.github/workflows/consistency.yml) — 每天 UTC 02:17（北京时间 10:17）自动运行，发现差异即创建修复 PR（可手动 `workflow_dispatch` 触发）
-- **边界**：只自动修复确定性偏差（数字/缺失 env 声明）；语义性差异（需人工判断的）只在报告中出现，交由人工处理
+- **定时任务**：[`.github/workflows/consistency.yml`](./.github/workflows/consistency.yml) — 每天 UTC 02:17（北京时间 10:17）自动运行，发现差异即创建修复 PR（可手动 `workflow_dispatch` 触发）；无文档差异但存在依赖漏洞时自动创建告警 issue
+- **边界**：只自动修复确定性偏差（数字/缺失 env 声明）；语义性差异（需人工判断的，含依赖漏洞升级）只在报告中出现，交由人工处理
