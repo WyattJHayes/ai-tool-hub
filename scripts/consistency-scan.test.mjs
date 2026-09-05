@@ -89,6 +89,40 @@ test('keeps a table count that already matches authoritative value', async () =>
   assert.equal(fixed.length, 0);
 });
 
+test('fixes 款-style tool totals and shield badge, skipping ranges and history', async () => {
+  const { applyNumberContract } = await loadScanner();
+  const input = [
+    '<strong>83款精选AI工具</strong>',
+    '对比 2-4 款工具（区间不应动）',
+    'v4.2.0 — 15 款热门 AI 工具（历史声明不动）',
+    '![Tools](tools-83-brightgreen.svg)',
+    '共 84 款精选 AI 工具',
+  ].join('\n');
+  const { text, fixed } = applyNumberContract(input, {
+    realTools: 84,
+    authorityScenes: 8,
+    file: 'README.md',
+  });
+  // 每处 83 款/83 badge 各一个偏差：1 款声明 + 1 badge
+  assert.match(text, /84款精选AI工具/);
+  assert.match(text, /对比 2-4 款工具/);
+  assert.match(text, /15 款热门 AI 工具/);
+  assert.match(text, /tools-84-brightgreen/);
+  assert.match(text, /共 84 款精选 AI 工具/);
+  assert.equal(fixed.length, 2);
+});
+
+test('does not rewrite 条数据-style schema row notes (not a total-statement)', async () => {
+  const { applyNumberContract } = await loadScanner();
+  const { text, fixed } = applyNumberContract('工具主表 (INTEGER PK, 83 条数据)', {
+    realTools: 84,
+    authorityScenes: 8,
+    file: 'README.md',
+  });
+  assert.equal(text, '工具主表 (INTEGER PK, 83 条数据)');
+  assert.equal(fixed.length, 0);
+});
+
 test('scanner import must not execute the CLI main flow', async () => {
   // import 后不应直接退出进程（invokedAsScript 守卫），否则测试进程会先行结束
   const mod = await import(scannerUrl.href);

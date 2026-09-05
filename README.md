@@ -1,13 +1,13 @@
 # 🤖 AI Tool Hub — Next.js 全栈版
 
 <p align="center">
-  <strong>83款精选AI工具 · 10大领域 · Next.js 14 全栈应用</strong>
+  <strong>84款精选AI工具 · 10大领域 · Next.js 14 全栈应用</strong>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/version-7.0.0-blue.svg" alt="Version" />
   <img src="https://img.shields.io/badge/framework-Next.js_14-black.svg" alt="Framework" />
-  <img src="https://img.shields.io/badge/tools-83-brightgreen.svg" alt="Tools" />
+  <img src="https://img.shields.io/badge/tools-84-brightgreen.svg" alt="Tools" />
   <img src="https://img.shields.io/badge/categories-10-orange.svg" alt="Categories" />
   <img src="https://img.shields.io/badge/auth-Supabase-green.svg" alt="Auth" />
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License" />
@@ -239,7 +239,7 @@ tools          ← 工具主表 (INTEGER PK, 83 条数据)
 
 ## 📊 数据规模
 
-- **83 款精选 AI 工具**，覆盖 10 大领域
+- **84 款精选 AI 工具**，覆盖 10 大领域
 - 每个工具包含：多分类标签、完整定价数据、功能亮点、难度评级
 - 8 个场景入口，每个场景映射相关工具
 - 工具来源：国产 + 海外，免费 + VIP
@@ -352,6 +352,6 @@ Made with ❤️ by [a895411690](https://github.com/a895411690)
 
 _最后更新: 2026-06-04 | 版本: v7.0.0_
 
-**Next.js 14 · TypeScript · Supabase · 83款AI工具 · 全栈应用**
+**Next.js 14 · TypeScript · Supabase · 84款AI工具 · 全栈应用**
 
 </div>

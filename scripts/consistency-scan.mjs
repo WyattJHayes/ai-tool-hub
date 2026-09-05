@@ -319,6 +319,10 @@ export function applyNumberContract(text, { realTools, authorityScenes, realTabl
   const sceneRe = /(?<![0-9-])(\d+)\s*个场景(?=入口|数据|场景|\s*[，。\)\],;:])/g;
   // 表声明通常出现在“(8 表 + RLS …)”或行尾，同样只匹配总量语境
   const tableRe = /(?<![0-9])(\d+)\s*张?表(?=\s*[+\]\)\],;:]|\s*$)/g;
+  // “N 款精选 AI 工具”/“N款AI工具”总量（绕过 2-4 款 区间、15 款热门 历史版本声明）
+  const kuanRe = /(?<![0-9-])(\d+)\s*款\s*(?:精选\s*)?AI\s*工具/g;
+  // Shields badge: tools-83-brightgreen → tools-84-brightgreen
+  const badgeRe = /tools-(\d+)-brightgreen/g;
   const fixed = [];
   let out = text;
   out = out.replace(toolRe, (m, n, extra) => {
@@ -330,6 +334,16 @@ export function applyNumberContract(text, { realTools, authorityScenes, realTabl
     if (Number(n) === authorityScenes) return m;
     fixed.push(`场景数偏差: ${file} 写 "${m}"，权威=${authorityScenes}`);
     return `${authorityScenes} 个场景`;
+  });
+  out = out.replace(kuanRe, (m, n) => {
+    if (Number(n) === realTools) return m;
+    fixed.push(`数量偏差: ${file} 写 "${m}"，权威=${realTools}`);
+    return m.replace(n, String(realTools));
+  });
+  out = out.replace(badgeRe, (m, n) => {
+    if (Number(n) === realTools) return m;
+    fixed.push(`badge 偏差: ${file} 写 tools-${n}，权威=${realTools}`);
+    return m.replace(String(n), String(realTools));
   });
   if (realTables != null) {
     out = out.replace(tableRe, (m, n) => {
