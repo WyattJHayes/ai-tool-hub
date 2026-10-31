@@ -1,13 +1,13 @@
 # 🤖 AI Tool Hub — Next.js 全栈版
 
 <p align="center">
-  <strong>84款精选AI工具 · 10大领域 · Next.js 14 全栈应用</strong>
+  <strong>85款精选AI工具 · 10大领域 · Next.js 14 全栈应用</strong>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/version-7.0.0-blue.svg" alt="Version" />
   <img src="https://img.shields.io/badge/framework-Next.js_14-black.svg" alt="Framework" />
-  <img src="https://img.shields.io/badge/tools-84-brightgreen.svg" alt="Tools" />
+  <img src="https://img.shields.io/badge/tools-85-brightgreen.svg" alt="Tools" />
   <img src="https://img.shields.io/badge/categories-10-orange.svg" alt="Categories" />
   <img src="https://img.shields.io/badge/auth-Supabase-green.svg" alt="Auth" />
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License" />
@@ -40,7 +40,7 @@
 | 工具对比 | 无                | 横向表格对比 2-4 款工具                  |
 | 详情页   | 无                | `/tools/:id` 独立详情页                  |
 | 场景导航 | 无                | 8 个场景入口 + 工具映射                  |
-| 定价数据 | 无                | 每个工具含完整定价信息                   |
+| 定价数据 | 无                | 工具可附带定价信息                   |
 | 埋点     | 无                | 7 种用户行为追踪事件                     |
 
 ---
@@ -105,7 +105,7 @@ next-src/
 │   │   └── utils.ts              # cn() 工具函数
 │   └── types/tool.ts             # TypeScript 类型定义
 ├── public/data/
-│   ├── tools.json                # 84 个工具数据 (含定价/多分类/亮点)
+│   ├── tools.json                # 85 个工具数据 (含定价/多分类/亮点)
 │   └── scenes.json               # 8 个场景数据
 ├── supabase/
 │   └── migrations/
@@ -239,8 +239,8 @@ tools          ← 工具主表 (INTEGER PK, 83 条数据)
 
 ## 📊 数据规模
 
-- **84 款精选 AI 工具**，覆盖 10 大领域
-- 每个工具包含：多分类标签、完整定价数据、功能亮点、难度评级
+- **85 款精选 AI 工具**，覆盖 10 大领域
+- 工具信息包括多分类标签，以及可用的定价数据、功能亮点和使用门槛说明
 - 8 个场景入口，每个场景映射相关工具
 - 工具来源：国产 + 海外，免费 + VIP
 
@@ -284,7 +284,7 @@ tools          ← 工具主表 (INTEGER PK, 83 条数据)
 
 **数据增强**
 
-- 84 个工具全部添加 pricing 定价数据
+- 当时的 84 款工具全部添加 pricing 定价数据
 - 多分类支持 (categories 数组)
 - 8 个场景数据 + toolIds 映射
 - 零值统计隐藏
@@ -352,6 +352,6 @@ Made with ❤️ by [a895411690](https://github.com/a895411690)
 
 _最后更新: 2026-06-04 | 版本: v7.0.0_
 
-**Next.js 14 · TypeScript · Supabase · 84款AI工具 · 全栈应用**
+**Next.js 14 · TypeScript · Supabase · 85款AI工具 · 全栈应用**
 
 </div>

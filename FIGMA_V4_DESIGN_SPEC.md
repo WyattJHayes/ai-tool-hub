@@ -122,13 +122,13 @@ nav-height = 64     page-max = 1200    section-padding-y = 48
 
 - 上新 Badge：圆角 999、`accent/green` 文字 + 12% 绿底，含 sparkles 图标
 - H1：Space Grotesk 700 56/64，「找到适合你的 AI 工具」（承诺式文案，替代「发现最佳 AI 工具」）
-- 副文：14/22 `text/secondary`，「84 款精选工具 · 10 大分类 · 每周持续上新，按需筛选直达」
+- 副文：14/22 `text/secondary`，「85 款精选工具 · 10 大分类 · 每周持续上新，按需筛选直达」
 - 大搜索条：
   - 80h（比当前 48 大幅放大）
   - `bg/surface` 底，1px `border/subtle`，hover/focus `border-strong`
   - 内部：`[search 图标 20px text/tertiary] [input 16/24 placeholder text/quaternary] [⌘K 键帽 28×28 圆角6 bg/overlay 文字 text/secondary + accent/blue 描边]`
   - focus 状态加 8px `accent/blue` 0.15 透明光晕（唯一允许的霓虹大色块）
-- 数据点行（14px `text/secondary`）：`[accent/blue 数字]84 工具 · [accent/purple 数字]10 分类 · [accent/green 数字]本周 +3 上新`，三个分隔点用 · 而非竖线（避免 hero-stat-divider 嵌套卡）
+- 数据点行（14px `text/secondary`）：`[accent/blue 数字]85 工具 · [accent/purple 数字]10 分类 · [accent/green 数字]本周 +3 上新`，三个分隔点用 · 而非竖线（避免 hero-stat-divider 嵌套卡）
 
 **右侧 5/12 列**：3 张错落分布的 Card 缩略图（演示工具多样性）：
 
@@ -142,7 +142,7 @@ nav-height = 64     page-max = 1200    section-padding-y = 48
 **分类（Tag Toggle 一行）**：
 
 ```
-[全部(84)] [AI写作(12)] [AI绘画(8)] [AI代码(11)] [AI视频(9)] [AI语音(8)] [AI设计(7)] [AI办公(11)] [AI音乐(6)] [AI Agent(6)] [AI搜索(6)]
+[全部(85)] [AI写作(12)] [AI绘画(8)] [AI代码(12)] [AI视频(9)] [AI语音(8)] [AI设计(7)] [AI办公(11)] [AI音乐(6)] [AI Agent(6)] [AI搜索(6)]
 ```
 
 - 选中态：`bg/overlay` + `accent/blue` 文字 + 1px `accent/blue` 描边
@@ -183,7 +183,7 @@ section header：H2「平台数据」+ 副文「全站热门，无需登录」�
 
 **顶部一行 4 列**（gap 16）Stats Card：
 
-- `84` AI 工具
+- `85` AI 工具
 - `10` 分类
 - `24.6K` 本周点击
 - `+3` 本周上新
@@ -197,7 +197,7 @@ section header：H2「平台数据」+ 副文「全站热门，无需登录」�
 
 ### 4.6 All Tools（更紧凑）
 
-section header：H2「全部工具」+ 副文「84 款 · 按字母排序」。
+section header：H2「全部工具」+ 副文「85 款 · 按字母排序」。
 
 - 网格：3 列、gap 16
 - 单卡（约 380w × 96h，更扁平的横向卡）：

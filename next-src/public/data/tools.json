@@ -1,6 +1,6 @@
 {
   "version": "2.0",
-  "lastUpdated": "2026-05-31",
+  "lastUpdated": "2026-10-31",
   "categories": [
     {
       "id": "writing",
@@ -3688,6 +3688,43 @@
         "PDF、DOCX、TXT 导入",
         "实时 A4 预览与 PDF 导出",
         "AI 优化需登录并消耗额度"
+      ]
+    },
+    {
+      "id": 96,
+      "name": "agent-qa",
+      "category": "code",
+      "icon": "fa-code",
+      "desc": "vostride 的网页、Android 与 iOS 自然语言测试工具，结合 memidex 持久记忆、经验证的自我改进与可复查证据。支持 CLI/MCP；模型服务费用另计，许可证为 FSL-1.1-ALv2。",
+      "tags": [
+        "cli",
+        "mcp",
+        "testing"
+      ],
+      "toolTags": [
+        "CLI",
+        "MCP",
+        "网页测试",
+        "移动端测试"
+      ],
+      "url": "https://www.vostride.com/",
+      "updateTime": "2026-10",
+      "platform": [
+        "local",
+        "cli"
+      ],
+      "relatedTools": [],
+      "categories": [
+        "code",
+        "agent"
+      ],
+      "pricing": [],
+      "valueTag": "模型服务费用另计",
+      "highlights": [
+        "网页与 Android/iOS 测试",
+        "memidex 持久记忆",
+        "经验证的自我改进",
+        "可复查运行证据"
       ]
     }
   ]
